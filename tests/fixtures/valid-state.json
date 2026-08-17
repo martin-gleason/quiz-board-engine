@@ -1,0 +1,20 @@
+{
+  "_note": "VALID FIXTURE — a well-formed exported state file, for the import round-trip test (spec §4.4, feature F10). Nothing here is broken. `gameHash` is the real SHA-256 of games/demo.json as authored (shasum -a 256 games/demo.json). If demo.json is edited, this hash goes stale: re-run that command and update this field, or session-matching tests will fail for the right reason but the wrong cause. Every cellStates key is inside the demo board's 5x5 census, every value is a state in jeopardy's cellLifecycle [hidden, revealed, answered], and the single bonusCell \"3:1\" is one of demo.json's randomizable cells (never the lockValue cell 4:4). `appVersion` exercises delta D6 — type-checked, then ignored.",
+  "schemaVersion": 1,
+  "appVersion": "1.0.0",
+  "gameHash": "1a9da17e64b24b73af5779630c5f3beaf593094593bb0b17afe2f746d4b4f25e",
+  "gameTitle": "Quiz Board Engine Demo — General Knowledge",
+  "createdAt": "2026-08-16T20:00:00Z",
+  "updatedAt": "2026-08-16T20:41:00Z",
+  "teams": [
+    { "name": "The Corals", "score": 400 },
+    { "name": "The Narwhals", "score": 200 }
+  ],
+  "cellStates": {
+    "0:0": "answered",
+    "0:1": "answered",
+    "1:2": "answered",
+    "3:1": "revealed"
+  },
+  "bonusCells": ["3:1"]
+}

@@ -1,0 +1,28 @@
+{
+  "_note": "DELIBERATELY BROKEN FIXTURE — DO NOT FIX. Fault (exactly one): the first cell's `value` is the STRING \"500\" where a whole number is required. Everything else in this file is valid. Expected: stage 'structural', path 'board.columns[0].cells[0].value', hint 'wrong-type', found 'the string \"500\"'.",
+  "schemaVersion": 1,
+  "title": "Wrong type fixture",
+  "gameType": "jeopardy",
+  "theme": "default",
+  "animation": "fade",
+  "board": {
+    "columns": [
+      {
+        "label": "Types",
+        "valueLadder": [100, 200],
+        "cells": [
+          {
+            "prompt": "JSON tells these two apart even when they look alike on screen.",
+            "answer": "What are a string and a number?",
+            "value": "500"
+          },
+          {
+            "prompt": "Quotation marks around a number turn it into one of these.",
+            "answer": "What is a string?",
+            "value": 200
+          }
+        ]
+      }
+    ]
+  }
+}

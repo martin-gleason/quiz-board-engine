@@ -1,0 +1,12 @@
+{
+  "_note": "Game-type config, spec §4.2. Declarative only: every value is an enum, boolean or number that SELECTS a behavior the renderer already implements. No logic, no markup, no URLs.",
+  "schemaVersion": 1,
+  "id": "jeopardy",
+  "layout": "grid",
+  "cellLifecycle": ["hidden", "revealed", "answered"],
+  "scoring": { "model": "accumulate", "allowNegative": true },
+  "winCondition": "highest-score",
+  "bonus": { "count": 1, "multiplier": 2 },
+  "gridConstraints": { "uniformRows": false },
+  "requiredCellFields": ["prompt", "answer", "value"]
+}

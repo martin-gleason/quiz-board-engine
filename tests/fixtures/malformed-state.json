@@ -1,0 +1,18 @@
+{
+  "_note": "DELIBERATELY BROKEN FIXTURE — DO NOT FIX. kind: state. Fault (exactly one): the first team's `score` is the STRING \"400\" where a whole number is required. Everything else round-trips cleanly — compare valid-state.json, which is byte-for-byte the same shape with a number there. Imported state is untrusted input and is validated exactly like a content file (spec §4.4, §6.6): a hand-corrupted export must land on the error screen, never on a half-restored board. Expected: stage 'structural', path 'teams[0].score', hint 'wrong-type', found 'the string \"400\"'.",
+  "schemaVersion": 1,
+  "appVersion": "1.0.0",
+  "gameHash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "gameTitle": "Quiz Board Engine Demo — General Knowledge",
+  "createdAt": "2026-08-16T20:00:00Z",
+  "updatedAt": "2026-08-16T20:41:00Z",
+  "teams": [
+    { "name": "The Corals", "score": "400" },
+    { "name": "The Narwhals", "score": 200 }
+  ],
+  "cellStates": {
+    "0:0": "answered",
+    "1:2": "revealed"
+  },
+  "bonusCells": ["3:1"]
+}

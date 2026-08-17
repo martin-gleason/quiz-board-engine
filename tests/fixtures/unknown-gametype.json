@@ -1,0 +1,20 @@
+{
+  "_note": "DELIBERATELY BROKEN FIXTURE — DO NOT FIX. Fault (exactly one): `gameType` is \"jepardy\" — a typo of a shipped id. The name is well-formed against PATTERNS.gameTypeId, so it survives the structural check and becomes a path: the loader fetches gametypes/jepardy.json, which does not exist. Spec §5 says a fetch failure IS a validation failure. This fixture covers the TYPO case; missing-gametype-file.json covers the well-formed-but-absent case. Both raise the same class, and that is the correct answer — from the app's side there is no difference between a name you misspelled and a name you never created. Expected: stage 'fetch', file 'gametypes/jepardy.json', kind 'gametype', path '(file)', hint 'fetch-failed'.",
+  "schemaVersion": 1,
+  "title": "Unknown game type fixture",
+  "gameType": "jepardy",
+  "theme": "default",
+  "animation": "fade",
+  "board": {
+    "columns": [
+      {
+        "label": "Game Types",
+        "valueLadder": [100, 200],
+        "cells": [
+          { "prompt": "A content file's gameType must match the id of a file in this directory.", "answer": "What is /gametypes/?" },
+          { "prompt": "A 404 on a game-type file is treated as one of these, not a crash.", "answer": "What is a validation failure?" }
+        ]
+      }
+    ]
+  }
+}

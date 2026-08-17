@@ -1,0 +1,66 @@
+{
+  "_note": "DEMO BINGO CARD. Uniform 5x5, because gametypes/bingo.json sets gridConstraints.uniformRows true and a ragged bingo board is a validation failure (spec §4.2). Bingo needs no point values: bingo.json requires only `prompt`, its scoring model is `none`, and its win condition is a completed pattern. So there is no valueLadder anywhere in this file, and that is correct, not an omission. Squares are general-knowledge callables the host reads out; all public-domain subject matter.",
+  "schemaVersion": 1,
+  "title": "Quiz Board Engine Demo — Trivia Bingo",
+  "gameType": "bingo",
+  "theme": "default",
+  "animation": "fade",
+  "board": {
+    "columns": [
+      {
+        "label": "B — Sky",
+        "cells": [
+          { "prompt": "Halley's Comet" },
+          { "prompt": "The Milky Way" },
+          { "prompt": "A total solar eclipse" },
+          { "prompt": "The Southern Cross" },
+          { "prompt": "Jupiter's Great Red Spot" }
+        ]
+      },
+      {
+        "label": "I — Animals",
+        "cells": [
+          { "prompt": "Emperor penguin" },
+          { "prompt": "Axolotl" },
+          { "prompt": "Pangolin" },
+          { "prompt": "Narwhal" },
+          { "prompt": "Okapi" }
+        ]
+      },
+      {
+        "_note": "The centre square of a 5x5 card is cell key \"2:2\" — column index 2, row index 2 (plan Q7, column first, both zero-based). flags.preMarked true means it starts in its terminal state, which for bingo's two-state lifecycle is `marked`: the classic free space (spec §4.1).",
+        "label": "N — Elements",
+        "cells": [
+          { "prompt": "Helium" },
+          { "prompt": "Tungsten" },
+          {
+            "prompt": "FREE SPACE",
+            "flags": { "randomizable": false, "lockValue": false, "preMarked": true }
+          },
+          { "prompt": "Cobalt" },
+          { "prompt": "Argon" }
+        ]
+      },
+      {
+        "label": "G — Places",
+        "cells": [
+          { "prompt": "The Sahara" },
+          { "prompt": "Lake Baikal" },
+          { "prompt": "The Danube" },
+          { "prompt": "Mount Kilimanjaro" },
+          { "prompt": "The Bay of Fundy" }
+        ]
+      },
+      {
+        "label": "O — Inventions",
+        "cells": [
+          { "prompt": "The printing press" },
+          { "prompt": "The safety pin" },
+          { "prompt": "The bicycle" },
+          { "prompt": "The vacuum flask" },
+          { "prompt": "The zipper" }
+        ]
+      }
+    ]
+  }
+}

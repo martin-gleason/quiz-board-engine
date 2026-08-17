@@ -1,0 +1,20 @@
+{
+  "_note": "DELIBERATELY BROKEN FIXTURE — DO NOT FIX. Fault: the second cell's `answer` string value is missing its CLOSING double quote. NOT valid JSON, by design; the runner fetches it as raw text. Expected: stage 'syntax', hint 'syntax', location set, path null.",
+  "schemaVersion": 1,
+  "title": "Missing quote fixture",
+  "gameType": "jeopardy",
+  "theme": "default",
+  "animation": "fade",
+  "board": {
+    "columns": [
+      {
+        "label": "Missing Quote",
+        "valueLadder": [100, 200],
+        "cells": [
+          { "prompt": "JSON strings must be wrapped in these.", "answer": "What are double quotes?" },
+          { "prompt": "Leaving one off produces this class of error.", "answer": "What is a syntax error? }
+        ]
+      }
+    ]
+  }
+}

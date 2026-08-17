@@ -1,0 +1,20 @@
+{
+  "_note": "DELIBERATELY BROKEN FIXTURE — DO NOT FIX. Fault (exactly one): the SECOND cell has no `answer`, and jeopardy's requiredCellFields is [prompt, answer, value]. This is the CONTRACT stage twin of missing-required-field.json: cells carry no structural `required` list at all (schemas.js says so explicitly, because bingo cells need no prompt), so a missing cell field can only be caught by cross-checking the game type. Expected: stage 'contract', path 'board.columns[0].cells[1].answer', hint 'missing-required-field'.",
+  "schemaVersion": 1,
+  "title": "Missing cell field fixture",
+  "gameType": "jeopardy",
+  "theme": "default",
+  "animation": "fade",
+  "board": {
+    "columns": [
+      {
+        "label": "Cell Contracts",
+        "valueLadder": [100, 200],
+        "cells": [
+          { "prompt": "A game type names the fields its cells must carry in this list.", "answer": "What is requiredCellFields?" },
+          { "prompt": "This cell is missing the field a jeopardy clue cannot do without." }
+        ]
+      }
+    ]
+  }
+}

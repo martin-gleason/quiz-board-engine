@@ -1,0 +1,20 @@
+{
+  "_note": "DELIBERATELY BROKEN FIXTURE — DO NOT FIX. Fault (exactly one): `animation` is \"explode\", which is outside the built-in set [flip, zoom, fade]. NOTE for the runner: unlike an unknown THEME, an unknown animation is caught at the STRUCTURAL stage, because the animation node in schemas.js carries an `enum` of ANIMATIONS with hint 'unknown-value'. The contract-stage animationExists check is therefore unreachable for a plain unknown name — it only ever fires if the enum is relaxed later. Expected: stage 'structural', path 'animation', hint 'unknown-value'.",
+  "schemaVersion": 1,
+  "title": "Unknown animation fixture",
+  "gameType": "jeopardy",
+  "theme": "default",
+  "animation": "explode",
+  "board": {
+    "columns": [
+      {
+        "label": "Animations",
+        "valueLadder": [100, 200],
+        "cells": [
+          { "prompt": "The v1 animation set has exactly this many members.", "answer": "What is three?" },
+          { "prompt": "Every animation must respect this media query.", "answer": "What is prefers-reduced-motion?" }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "_note": "DELIBERATELY BROKEN FIXTURE — DO NOT FIX. Fault: a trailing comma after the last cell object, on the line marked below. This file is NOT valid JSON and cannot be; the test runner fetches it as raw text. Expected: stage 'syntax', hint 'syntax', location line/column/caret pointing at the offending comma region, path null.",
+  "schemaVersion": 1,
+  "title": "Trailing comma fixture",
+  "gameType": "jeopardy",
+  "theme": "default",
+  "animation": "fade",
+  "board": {
+    "columns": [
+      {
+        "label": "Trailing Comma",
+        "valueLadder": [100, 200],
+        "cells": [
+          { "prompt": "This punctuation mark ends a list item.", "answer": "What is a comma?" },
+          { "prompt": "JSON forbids one of these after the final item.", "answer": "What is a trailing comma?" },
+        ]
+      }
+    ]
+  }
+}

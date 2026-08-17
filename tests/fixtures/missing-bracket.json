@@ -1,0 +1,19 @@
+{
+  "_note": "DELIBERATELY BROKEN FIXTURE — DO NOT FIX. Fault: the `cells` array is never closed — its `]` is missing, so the document ends with unbalanced brackets. NOT valid JSON, by design; the runner fetches it as raw text. Expected: stage 'syntax', hint 'syntax', location set, path null.",
+  "schemaVersion": 1,
+  "title": "Missing bracket fixture",
+  "gameType": "jeopardy",
+  "theme": "default",
+  "animation": "fade",
+  "board": {
+    "columns": [
+      {
+        "label": "Missing Bracket",
+        "valueLadder": [100, 200],
+        "cells": [
+          { "prompt": "This character closes a JSON array.", "answer": "What is a right square bracket?" },
+          { "prompt": "An unclosed array produces this class of error.", "answer": "What is a syntax error?" }
+      }
+    ]
+  }
+}

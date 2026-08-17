@@ -1,0 +1,27 @@
+{
+  "_note": "DELIBERATELY BROKEN FIXTURE - DO NOT FIX. GENERATED, not hand-typed. Fault (exactly one): board.columns[0].label is 81 characters, one over the 80-character label cap in spec section 5. The cap covers the whole 'label class' - column labels, the game title, and team names - so any of the three could stand in for this row of the matrix; the column label was chosen because it is the one a board author types most often. Expected: stage 'structural', path 'board.columns[0].label', hint 'too-long'.",
+  "schemaVersion": 1,
+  "title": "Over-limit label fixture",
+  "gameType": "jeopardy",
+  "theme": "default",
+  "animation": "fade",
+  "board": {
+    "columns": [
+      {
+        "label": "This column label runs to exactly 81 characters, one over the cap, padded here: B",
+        "cells": [
+          {
+            "prompt": "Column labels, the game title and team names share one length cap.",
+            "answer": "What is 80 characters?",
+            "value": 100
+          },
+          {
+            "prompt": "A label this long would also be unreadable from the back of a room.",
+            "answer": "What is a usability problem?",
+            "value": 200
+          }
+        ]
+      }
+    ]
+  }
+}

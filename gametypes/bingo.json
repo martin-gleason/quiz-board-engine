@@ -1,0 +1,12 @@
+{
+  "_note": "Bingo. uniformRows MUST be true — spec §4.2 says validation fails ragged bingo boards. The lifecycle is two states only: a square is hidden until the host marks it. `bonus` and `patterns` order follow the canonical sets in schemas.js. No scoring: the win condition is a pattern, not a total.",
+  "schemaVersion": 1,
+  "id": "bingo",
+  "layout": "grid",
+  "cellLifecycle": ["hidden", "marked"],
+  "scoring": { "model": "none" },
+  "winCondition": "pattern-complete",
+  "patterns": ["row", "column", "diagonal", "full-card"],
+  "gridConstraints": { "uniformRows": true },
+  "requiredCellFields": ["prompt"]
+}

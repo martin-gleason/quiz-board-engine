@@ -1,0 +1,20 @@
+{
+  "_note": "DELIBERATELY BROKEN FIXTURE — DO NOT FIX. Fault (exactly one): `gameType` is \"wheel-of-fortune\" — a perfectly well-formed id for a game type that was simply never authored, so gametypes/wheel-of-fortune.json returns 404. This is the 'reference to a missing game-type file' row of the spec §9 matrix; unknown-gametype.json is its typo-shaped sibling. Expected: stage 'fetch', file 'gametypes/wheel-of-fortune.json', kind 'gametype', path '(file)', hint 'fetch-failed', found 'HTTP 404'.",
+  "schemaVersion": 1,
+  "title": "Missing game-type file fixture",
+  "gameType": "wheel-of-fortune",
+  "theme": "default",
+  "animation": "fade",
+  "board": {
+    "columns": [
+      {
+        "label": "Missing References",
+        "valueLadder": [100, 200],
+        "cells": [
+          { "prompt": "The three game types this build ships.", "answer": "What are jeopardy, bingo and feud?" },
+          { "prompt": "A reference to a file that is not there fails at this pipeline stage.", "answer": "What is the fetch stage?" }
+        ]
+      }
+    ]
+  }
+}

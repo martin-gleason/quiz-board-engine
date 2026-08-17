@@ -1,0 +1,8 @@
+{
+  "_note": "Theme manifest, spec §4.3. ONLY CSS files listed here ever load (§6.4). Values are bare filenames resolved under /themes/ — no paths, no URLs. Adding a theme means trusting its author; the README says so explicitly.",
+  "schemaVersion": 1,
+  "themes": {
+    "default": "default.css",
+    "midnight": "midnight.css"
+  }
+}

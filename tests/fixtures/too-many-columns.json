@@ -1,0 +1,207 @@
+{
+  "_note": "DELIBERATELY BROKEN FIXTURE - DO NOT FIX. GENERATED, not hand-typed. Fault (exactly one): board.columns holds 13 columns; the cap is 12 (spec section 5). Every individual column below is valid, and every cell carries an explicit value, so the columns array itself is the only thing wrong. Expected: stage 'structural', path 'board.columns', hint 'too-many-items', found 'an array of 13 items'.",
+  "schemaVersion": 1,
+  "title": "Too many columns fixture",
+  "gameType": "jeopardy",
+  "theme": "default",
+  "animation": "fade",
+  "board": {
+    "columns": [
+      {
+        "label": "Category 1",
+        "cells": [
+          {
+            "prompt": "Filler clue number 1, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 1?",
+            "value": 100
+          },
+          {
+            "prompt": "Filler clue number 2, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 2?",
+            "value": 200
+          }
+        ]
+      },
+      {
+        "label": "Category 2",
+        "cells": [
+          {
+            "prompt": "Filler clue number 1, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 1?",
+            "value": 100
+          },
+          {
+            "prompt": "Filler clue number 2, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 2?",
+            "value": 200
+          }
+        ]
+      },
+      {
+        "label": "Category 3",
+        "cells": [
+          {
+            "prompt": "Filler clue number 1, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 1?",
+            "value": 100
+          },
+          {
+            "prompt": "Filler clue number 2, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 2?",
+            "value": 200
+          }
+        ]
+      },
+      {
+        "label": "Category 4",
+        "cells": [
+          {
+            "prompt": "Filler clue number 1, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 1?",
+            "value": 100
+          },
+          {
+            "prompt": "Filler clue number 2, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 2?",
+            "value": 200
+          }
+        ]
+      },
+      {
+        "label": "Category 5",
+        "cells": [
+          {
+            "prompt": "Filler clue number 1, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 1?",
+            "value": 100
+          },
+          {
+            "prompt": "Filler clue number 2, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 2?",
+            "value": 200
+          }
+        ]
+      },
+      {
+        "label": "Category 6",
+        "cells": [
+          {
+            "prompt": "Filler clue number 1, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 1?",
+            "value": 100
+          },
+          {
+            "prompt": "Filler clue number 2, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 2?",
+            "value": 200
+          }
+        ]
+      },
+      {
+        "label": "Category 7",
+        "cells": [
+          {
+            "prompt": "Filler clue number 1, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 1?",
+            "value": 100
+          },
+          {
+            "prompt": "Filler clue number 2, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 2?",
+            "value": 200
+          }
+        ]
+      },
+      {
+        "label": "Category 8",
+        "cells": [
+          {
+            "prompt": "Filler clue number 1, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 1?",
+            "value": 100
+          },
+          {
+            "prompt": "Filler clue number 2, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 2?",
+            "value": 200
+          }
+        ]
+      },
+      {
+        "label": "Category 9",
+        "cells": [
+          {
+            "prompt": "Filler clue number 1, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 1?",
+            "value": 100
+          },
+          {
+            "prompt": "Filler clue number 2, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 2?",
+            "value": 200
+          }
+        ]
+      },
+      {
+        "label": "Category 10",
+        "cells": [
+          {
+            "prompt": "Filler clue number 1, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 1?",
+            "value": 100
+          },
+          {
+            "prompt": "Filler clue number 2, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 2?",
+            "value": 200
+          }
+        ]
+      },
+      {
+        "label": "Category 11",
+        "cells": [
+          {
+            "prompt": "Filler clue number 1, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 1?",
+            "value": 100
+          },
+          {
+            "prompt": "Filler clue number 2, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 2?",
+            "value": 200
+          }
+        ]
+      },
+      {
+        "label": "Category 12",
+        "cells": [
+          {
+            "prompt": "Filler clue number 1, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 1?",
+            "value": 100
+          },
+          {
+            "prompt": "Filler clue number 2, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 2?",
+            "value": 200
+          }
+        ]
+      },
+      {
+        "label": "Category 13",
+        "cells": [
+          {
+            "prompt": "Filler clue number 1, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 1?",
+            "value": 100
+          },
+          {
+            "prompt": "Filler clue number 2, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 2?",
+            "value": 200
+          }
+        ]
+      }
+    ]
+  }
+}

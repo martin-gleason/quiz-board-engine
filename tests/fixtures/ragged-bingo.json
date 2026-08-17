@@ -1,0 +1,38 @@
+{
+  "_note": "DELIBERATELY BROKEN FIXTURE — DO NOT FIX. Fault (exactly one): under gameType `bingo`, gridConstraints.uniformRows is true, so every column must hold the same number of cells. Columns 0 and 1 hold four; column 2 holds three. Spec §4.2: 'validation fails ragged bingo boards.' Expected: stage 'contract', path 'board.columns[2].cells', hint 'ragged-grid'. There is deliberately no valueLadder anywhere here — bingo requires no values, so its absence is not a second fault.",
+  "schemaVersion": 1,
+  "title": "Ragged bingo fixture",
+  "gameType": "bingo",
+  "theme": "default",
+  "animation": "fade",
+  "board": {
+    "columns": [
+      {
+        "label": "Four squares",
+        "cells": [
+          { "prompt": "Alpha" },
+          { "prompt": "Bravo" },
+          { "prompt": "Charlie" },
+          { "prompt": "Delta" }
+        ]
+      },
+      {
+        "label": "Also four squares",
+        "cells": [
+          { "prompt": "Echo" },
+          { "prompt": "Foxtrot" },
+          { "prompt": "Golf" },
+          { "prompt": "Hotel" }
+        ]
+      },
+      {
+        "label": "Only three squares",
+        "cells": [
+          { "prompt": "India" },
+          { "prompt": "Juliett" },
+          { "prompt": "Kilo" }
+        ]
+      }
+    ]
+  }
+}

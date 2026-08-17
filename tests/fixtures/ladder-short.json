@@ -1,0 +1,23 @@
+{
+  "_note": "DELIBERATELY BROKEN FIXTURE — DO NOT FIX. Fault (exactly one): the column declares five cells but a valueLadder of only four entries, and the fifth cell carries no per-cell `value`. Plan Q8 rules this an ERROR, not a silent zero — a board with an invisible missing point value is exactly the failure the error screen exists to prevent. Cells 0-3 are covered by the ladder by position, so there is precisely one uncovered cell and precisely one failure. Expected: stage 'contract', path 'board.columns[0].cells[4].value', hint 'ladder-short'.",
+  "schemaVersion": 1,
+  "title": "Short value ladder fixture",
+  "gameType": "jeopardy",
+  "theme": "default",
+  "animation": "fade",
+  "board": {
+    "columns": [
+      {
+        "label": "Point Ladders",
+        "valueLadder": [100, 200, 300, 400],
+        "cells": [
+          { "prompt": "A ladder entry is matched to a cell by this.", "answer": "What is its position?" },
+          { "prompt": "When a cell states its own value, this happens to the ladder entry.", "answer": "What is it loses?" },
+          { "prompt": "A cell with no value and no ladder entry is worth this many points.", "answer": "What is none at all?" },
+          { "prompt": "Rather than score that cell as zero, the app does this.", "answer": "What is refuse to load the board?" },
+          { "prompt": "This fifth cell is the uncovered one, and the only fault in this file.", "answer": "What is the cell with no points?" }
+        ]
+      }
+    ]
+  }
+}

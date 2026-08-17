@@ -1,0 +1,82 @@
+{
+  "_note": "DELIBERATELY BROKEN FIXTURE - DO NOT FIX. GENERATED, not hand-typed. Fault (exactly one): the single column holds 13 cells; the cap is 12 per column (spec section 5). There is deliberately NO valueLadder here - a 13-entry ladder would breach its own 12-item cap and give this file a second fault, so every cell states its own value instead. Expected: stage 'structural', path 'board.columns[0].cells', hint 'too-many-items', found 'an array of 13 items'.",
+  "schemaVersion": 1,
+  "title": "Too many cells fixture",
+  "gameType": "jeopardy",
+  "theme": "default",
+  "animation": "fade",
+  "board": {
+    "columns": [
+      {
+        "label": "Thirteen Cells",
+        "cells": [
+          {
+            "prompt": "Filler clue number 1, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 1?",
+            "value": 100
+          },
+          {
+            "prompt": "Filler clue number 2, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 2?",
+            "value": 200
+          },
+          {
+            "prompt": "Filler clue number 3, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 3?",
+            "value": 300
+          },
+          {
+            "prompt": "Filler clue number 4, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 4?",
+            "value": 400
+          },
+          {
+            "prompt": "Filler clue number 5, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 5?",
+            "value": 500
+          },
+          {
+            "prompt": "Filler clue number 6, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 6?",
+            "value": 600
+          },
+          {
+            "prompt": "Filler clue number 7, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 7?",
+            "value": 700
+          },
+          {
+            "prompt": "Filler clue number 8, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 8?",
+            "value": 800
+          },
+          {
+            "prompt": "Filler clue number 9, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 9?",
+            "value": 900
+          },
+          {
+            "prompt": "Filler clue number 10, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 10?",
+            "value": 1000
+          },
+          {
+            "prompt": "Filler clue number 11, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 11?",
+            "value": 1100
+          },
+          {
+            "prompt": "Filler clue number 12, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 12?",
+            "value": 1200
+          },
+          {
+            "prompt": "Filler clue number 13, present only so this fixture is otherwise valid.",
+            "answer": "What is filler clue 13?",
+            "value": 1300
+          }
+        ]
+      }
+    ]
+  }
+}

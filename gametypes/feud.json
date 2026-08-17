@@ -1,0 +1,12 @@
+{
+  "_note": "Feud, SCOPED per spec §10 F9 and plan Q11: a ranked answer-reveal board with point values. The column label is the survey question; each cell is one ranked answer with its points. Strikes and steals are HOST-MEDIATED and deliberately not modeled — no strike counter, no steal flow. Those are named v2.0 seam items. Points are awarded with the same team controls jeopardy uses, hence scoring accumulate / highest-score.",
+  "schemaVersion": 1,
+  "id": "feud",
+  "layout": "ranked-list",
+  "cellLifecycle": ["hidden", "revealed"],
+  "scoring": { "model": "accumulate", "allowNegative": false },
+  "winCondition": "highest-score",
+  "bonus": { "count": 0, "multiplier": 1 },
+  "gridConstraints": { "uniformRows": false },
+  "requiredCellFields": ["answer", "value"]
+}

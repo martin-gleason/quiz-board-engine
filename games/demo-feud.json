@@ -1,0 +1,23 @@
+{
+  "_note": "DEMO RANKED-LIST BOARD. Per plan Q11, layout `ranked-list` renders ONE column of answer rows ordered by descending value, each row hidden until the host reveals it. That is why this board declares exactly one column: the column label is the survey question, and the cells are its ranked answers. The point numbers below are INVENTED for the demo — no real survey was consulted, and none is implied. Strikes and steals are host-mediated and not modeled anywhere in code (spec §10 F9); the host awards these points with the same team controls jeopardy uses. Cells carry `answer` and `value` because those are feud.json's requiredCellFields — a ranked answer needs no separate prompt, the question is the column label.",
+  "schemaVersion": 1,
+  "title": "Quiz Board Engine Demo — Ranked Answers",
+  "gameType": "feud",
+  "theme": "midnight",
+  "animation": "zoom",
+  "board": {
+    "columns": [
+      {
+        "label": "Name something people realize they forgot after leaving the house.",
+        "cells": [
+          { "answer": "Their keys", "value": 38 },
+          { "answer": "Their phone", "value": 24 },
+          { "answer": "Their wallet", "value": 15 },
+          { "answer": "To lock the door", "value": 11 },
+          { "answer": "To turn off the stove", "value": 7 },
+          { "answer": "Their umbrella", "value": 5 }
+        ]
+      }
+    ]
+  }
+}

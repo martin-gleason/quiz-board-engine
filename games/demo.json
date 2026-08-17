@@ -1,0 +1,153 @@
+{
+  "_note": "DEMO CONTENT. This file is the fixture the whole test matrix leans on — /tests/index.html and both MCP walkthroughs load it. Subject matter is deliberately general-knowledge, public-domain, and fictional-where-invented: the repo is public and carries no identifiable or regulated data, ever. Jeopardy convention is honored throughout: `prompt` is a statement, `answer` is phrased as a question. Point values come from each column's `valueLadder` by position (plan Q8: cells[i] takes valueLadder[i]); one cell below carries an explicit `value` to exercise the per-cell override. This whole key is a comment and is stripped by the validator (spec §2.4).",
+  "schemaVersion": 1,
+  "title": "Quiz Board Engine Demo — General Knowledge",
+  "gameType": "jeopardy",
+  "theme": "midnight",
+  "animation": "flip",
+  "board": {
+    "columns": [
+      {
+        "_note": "A second comment, nested one level down, proving _note is legal at every object level and not just at the root.",
+        "label": "World Capitals",
+        "valueLadder": [100, 200, 300, 400, 500],
+        "cells": [
+          {
+            "prompt": "This city on the Seine has been the capital of France since the Middle Ages.",
+            "answer": "What is Paris?"
+          },
+          {
+            "prompt": "Japan's capital took its modern name in 1868; before that it was called Edo.",
+            "answer": "What is Tokyo?",
+            "flags": { "randomizable": true, "lockValue": false, "preMarked": false }
+          },
+          {
+            "prompt": "In 1960 Brazil moved its capital inland to this purpose-built city.",
+            "answer": "What is Brasilia?"
+          },
+          {
+            "prompt": "This Bhutanese capital is often called the only world capital with no traffic lights.",
+            "answer": "What is Thimphu?",
+            "flags": { "randomizable": true, "lockValue": false, "preMarked": false }
+          },
+          {
+            "prompt": "Kazakhstan's capital has changed names repeatedly; it went back to this one in 2022.",
+            "answer": "What is Astana?"
+          }
+        ]
+      },
+      {
+        "label": "Classical Mythology",
+        "valueLadder": [100, 200, 300, 400, 500],
+        "cells": [
+          {
+            "prompt": "This king of the Greek gods ruled from Olympus and threw thunderbolts.",
+            "answer": "Who is Zeus?"
+          },
+          {
+            "prompt": "This hero's twelve labours began with strangling the lion of Nemea.",
+            "answer": "Who is Heracles, or Hercules?",
+            "flags": { "randomizable": true, "lockValue": false, "preMarked": false }
+          },
+          {
+            "prompt": "This Norse trickster fathered the wolf Fenrir and engineered Balder's death.",
+            "answer": "Who is Loki?"
+          },
+          {
+            "prompt": "This Egyptian goddess gathered up the scattered pieces of her husband Osiris.",
+            "answer": "Who is Isis?"
+          },
+          {
+            "prompt": "In the Mesopotamian epic, this wild man of the steppe becomes Gilgamesh's closest friend.",
+            "answer": "Who is Enkidu?",
+            "flags": { "randomizable": true, "lockValue": false, "preMarked": false }
+          }
+        ]
+      },
+      {
+        "label": "The Periodic Table",
+        "valueLadder": [100, 200, 300, 400, 500],
+        "cells": [
+          {
+            "prompt": "Element number one, and by far the most abundant element in the universe.",
+            "answer": "What is hydrogen?"
+          },
+          {
+            "prompt": "This metal's symbol, Fe, comes from its Latin name ferrum.",
+            "answer": "What is iron?"
+          },
+          {
+            "prompt": "This noble gas glows orange-red in a discharge tube and lent its name to bright signs.",
+            "answer": "What is neon?",
+            "flags": { "randomizable": true, "lockValue": false, "preMarked": false }
+          },
+          {
+            "prompt": "Liquid at room temperature, this metal was once known as quicksilver.",
+            "answer": "What is mercury?"
+          },
+          {
+            "prompt": "Element 79 takes its symbol, Au, from the Latin aurum.",
+            "answer": "What is gold?"
+          }
+        ]
+      },
+      {
+        "label": "Shakespeare",
+        "valueLadder": [100, 200, 300, 400, 500],
+        "cells": [
+          {
+            "prompt": "This Danish prince wonders aloud whether to be, or not to be.",
+            "answer": "Who is Hamlet?"
+          },
+          {
+            "prompt": "Two households, both alike in dignity, feud through this Verona tragedy.",
+            "answer": "What is Romeo and Juliet?",
+            "flags": { "randomizable": true, "lockValue": false, "preMarked": false }
+          },
+          {
+            "prompt": "Three witches on a heath greet this Scottish thane with a prophecy.",
+            "answer": "Who is Macbeth?"
+          },
+          {
+            "prompt": "This aging king divides his kingdom among his daughters, with catastrophic results.",
+            "answer": "Who is King Lear?"
+          },
+          {
+            "prompt": "Shipwrecked and exiled to an island, this magician commands the spirit Ariel.",
+            "answer": "Who is Prospero?"
+          }
+        ]
+      },
+      {
+        "label": "Ocean Life",
+        "valueLadder": [100, 200, 300, 400, 500],
+        "cells": [
+          {
+            "prompt": "The largest animal known to have lived, it strains krill through plates of baleen.",
+            "answer": "What is the blue whale?"
+          },
+          {
+            "prompt": "This eight-armed mollusc changes colour and squeezes through impossibly small gaps.",
+            "answer": "What is an octopus?",
+            "flags": { "randomizable": true, "lockValue": false, "preMarked": false }
+          },
+          {
+            "prompt": "The deepest known point in any ocean lies at the bottom of this Pacific trench.",
+            "answer": "What is the Mariana Trench?"
+          },
+          {
+            "prompt": "These colonial animals build reefs from calcium carbonate and host algae in their tissues.",
+            "answer": "What are corals?"
+          },
+          {
+            "_note": "The one cell in this file with an explicit per-cell `value` (it equals the ladder position anyway, so the board still reads cleanly) and the one cell flagged lockValue — its points must never be altered by bonus randomization or any future mechanic (spec §4.1). Because lockValue is set, the bonus picker must skip it, so randomizable stays false here.",
+            "prompt": "In this fish, uniquely, the male carries the fertilized eggs and gives birth.",
+            "answer": "What is the seahorse?",
+            "value": 500,
+            "flags": { "randomizable": false, "lockValue": true, "preMarked": false }
+          }
+        ]
+      }
+    ]
+  }
+}

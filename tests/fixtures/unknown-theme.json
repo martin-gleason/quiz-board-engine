@@ -1,0 +1,20 @@
+{
+  "_note": "DELIBERATELY BROKEN FIXTURE — DO NOT FIX. Fault (exactly one): `theme` names \"neon-dreams\", which is not a key in /themes/themes.json. The name is well-formed, so it passes the structural pattern check and dies at the contract stage — that is the point of the fixture. Themes load ONLY via the manifest (spec §6.4), so an unlisted name must never be turned into a <link href>. Expected: stage 'contract', path 'theme', hint 'unresolved-reference'.",
+  "schemaVersion": 1,
+  "title": "Unknown theme fixture",
+  "gameType": "jeopardy",
+  "theme": "neon-dreams",
+  "animation": "fade",
+  "board": {
+    "columns": [
+      {
+        "label": "Themes",
+        "valueLadder": [100, 200],
+        "cells": [
+          { "prompt": "This file is the only place the app will look for a theme's CSS.", "answer": "What is themes.json?" },
+          { "prompt": "Adding a theme to the manifest means doing this to its author.", "answer": "What is trusting them?" }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "_note": "DELIBERATELY BROKEN FIXTURE — DO NOT FIX. Fault (exactly one): schemaVersion is 2, a version this build does not implement. Spec §4.1 is explicit — the renderer REFUSES versions it does not implement, with no best-effort parsing — so validation must stop here and report nothing else, even though the board below would otherwise validate. Expected: stage 'structural', path 'schemaVersion', hint 'unsupported-schema-version', exactly ONE failure.",
+  "schemaVersion": 2,
+  "title": "Future schema version fixture",
+  "gameType": "jeopardy",
+  "theme": "default",
+  "animation": "fade",
+  "board": {
+    "columns": [
+      {
+        "label": "Versions",
+        "valueLadder": [100, 200],
+        "cells": [
+          { "prompt": "This field tells the app which contract a data file was written against.", "answer": "What is schemaVersion?" },
+          { "prompt": "Rather than guess at an unknown version, a careful app does this.", "answer": "What is refuse to load it?" }
+        ]
+      }
+    ]
+  }
+}

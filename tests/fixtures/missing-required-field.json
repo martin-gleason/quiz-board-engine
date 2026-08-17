@@ -1,0 +1,19 @@
+{
+  "_note": "DELIBERATELY BROKEN FIXTURE — DO NOT FIX. Fault (exactly one): the required top-level `title` field is absent. Everything else is valid. `title` was chosen over a nested field so the reported path is unambiguous. Expected: stage 'structural', path 'title', hint 'missing-required-field', found 'nothing (the field is absent)'.",
+  "schemaVersion": 1,
+  "gameType": "jeopardy",
+  "theme": "default",
+  "animation": "fade",
+  "board": {
+    "columns": [
+      {
+        "label": "Required Fields",
+        "valueLadder": [100, 200],
+        "cells": [
+          { "prompt": "Every content file must declare one of these, at the top level.", "answer": "What is a title?" },
+          { "prompt": "A validator reports an absent required field at this kind of address.", "answer": "What is a JSON path?" }
+        ]
+      }
+    ]
+  }
+}
