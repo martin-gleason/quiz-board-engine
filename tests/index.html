@@ -1,0 +1,115 @@
+<!doctype html>
+<!--
+  Quiz Board Engine — test runner page.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  Spec §9 mandates an extensive error-screen matrix; spec §2.1 forbids GitHub Actions. So the
+  matrix lives in a page you open. No build, no dependencies, no network beyond this repo.
+
+  Serve the repo root over HTTP and open http://localhost:8000/tests/ —
+  file:// blocks ES module imports and fetch, and there is no way around that.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  WHY <base>: the loader identifies files by repo-root-relative path ('games/demo.json'), and
+  those identity strings appear in every ValidationFailure and in the fixture manifest. Without
+  a base, fetches from this page would resolve against /tests/ and land one directory too deep.
+  Module specifiers are unaffected — they resolve against the importing module's own URL, not
+  the document base — so runner.js still finds ../js/ correctly.
+-->
+<base href="../">
+<title>Quiz Board Engine tests</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --ok: #1a7f37;
+    --bad: #cf222e;
+    --rule: rgba(128, 128, 128, .3);
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  body {
+    font: 15px/1.5 system-ui, sans-serif;
+    margin: 0 auto;
+    max-width: 68rem;
+    padding: 2rem 1.5rem 6rem;
+  }
+  h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+  .lede { margin: 0 0 1.5rem; opacity: .75; }
+  code { font-family: var(--mono); font-size: .9em; }
+
+  .summary {
+    border: 2px solid var(--rule);
+    border-radius: 8px;
+    padding: .9rem 1.1rem;
+    font-size: 1.15rem;
+    margin-bottom: 2rem;
+    position: sticky;
+    top: 0;
+    background: Canvas;
+  }
+  .summary.pass { border-color: var(--ok); }
+  .summary.fail { border-color: var(--bad); }
+  .summary.pass strong { color: var(--ok); }
+  .summary.fail strong { color: var(--bad); }
+
+  h2 {
+    font-size: .8rem;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    opacity: .7;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: .35rem;
+    margin: 2rem 0 .5rem;
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: 1.5rem minmax(14rem, 22rem) 1fr;
+    gap: .6rem;
+    padding: .3rem 0;
+    align-items: baseline;
+  }
+  .row + .row { border-top: 1px solid var(--rule); }
+  .mark { font-weight: 700; text-align: center; }
+  .ok .mark { color: var(--ok); }
+  .bad .mark { color: var(--bad); }
+  .bad { background: color-mix(in srgb, var(--bad) 8%, transparent); }
+  .name { font-family: var(--mono); font-size: .88em; word-break: break-all; }
+  .detail { opacity: .8; font-size: .92em; }
+
+  /* The rendered error screens. Spec §7 makes these a product surface, so they are shown at
+     something close to their real size rather than squeezed into a table cell. */
+  .errorscreen {
+    border: 1px dashed var(--rule);
+    border-radius: 6px;
+    margin: .5rem 0 1.25rem 2.1rem;
+    padding: .75rem 1rem;
+    overflow-x: auto;
+  }
+  .errorscreen pre {
+    font-family: var(--mono);
+    font-size: .85em;
+    overflow-x: auto;
+    /* Tabs would misalign the caret; the scanner reports columns in characters. */
+    tab-size: 1;
+  }
+</style>
+</head>
+<body>
+  <h1>Quiz Board Engine — test matrix</h1>
+  <p class="lede">
+    Spec §9. Every failing fixture shows its real, human-facing error output below the row —
+    the assertions prove the message is correct, your eyes prove it is useful.
+  </p>
+  <main id="report"></main>
+
+  <script type="module">
+    // Resolved against <base>, i.e. the repo root.
+    import { run } from './tests/runner.js';
+    run(document.getElementById('report'));
+  </script>
+</body>
+</html>
