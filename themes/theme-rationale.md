@@ -104,3 +104,66 @@ scrim 16.25 · focus 10.61.
 locked, detail overlay, all three game types) against the real CSS files, with
 a theme/game/animation switcher. It is a design tool, not a deliverable — the
 CSS files stand alone in the repo.
+
+---
+
+## Maintainer response to the findings — theme contract v1.2 (2026-08-17)
+
+*Appended by the engine side; the prose above is the collaborator's and is unedited.*
+
+Findings 1, 2 and 3 were **adopted**. The deciding evidence was not the argument but the
+repetition: all four override themes — `midnight`, `civic`, `chalkboard`, `marquee` — were
+writing the same three class overrides, and each one had written its own paragraph explaining
+why it had to. When every theme must override the same rule, the token set is missing something.
+
+Five tokens were added to `themes/default.css`, all additive, each defaulted so that `default`
+and `midnight` are pixel-identical before and after:
+
+| Token | Default | Finding |
+|---|---|---|
+| `--cell-answered-border` | `2px dashed #6f675a` | 1 — the spent rim |
+| `--cell-revealed-accent` | `var(--accent)` | 2 — the revealed ring *and* value |
+| `--cell-revealed-value-color` | `var(--cell-revealed-accent)` | 2 — the value alone |
+| `--detail-close-color` | `var(--board-bg)` | 3 — the Close label |
+| `--detail-close-border` | `2px solid var(--board-bg)` | 3 — the same button's rule |
+
+Finding 2 became **two** tokens rather than one, because the four themes split on it: `chalkboard`
+and `marquee` needed the ring and the value to move together, while `midnight` and `civic`-dark
+deliberately kept the accent ring and re-coloured only the number. One token would have forced
+two of the four back into a class override.
+
+Finding 4 was **declined**, on evidence gathered from all five `.qbe-column-label` overrides
+rather than on the count alone. They are not the same override in different clothes:
+
+- **Case.** `midnight`, `civic` and `marquee` set `uppercase`; `chalkboard` explicitly refuses
+  it — "uppercase would fight the handwriting face" — and stays mixed-case. A shared token would
+  be doing opposite work in the same set.
+- **The rule.** `midnight` and `civic` draw a 2px *bottom* rule and flatten the radius to make a
+  kicker; `chalkboard` draws a dashed bottom rule; `marquee` keeps the filled tab and draws a
+  full 1px box around all four sides. `--column-label-border` as a single shorthand cannot say
+  *which edge*, and the split is 3–1 on the answer.
+- **Everything else.** Tracking runs 0.07 / 0.08 / 0.09em and none; weight runs 400 / 600 / 700;
+  every one of the four also changes padding.
+
+So the two proposed tokens would have deleted **zero** class overrides — all four themes would
+still be overriding `.qbe-column-label` for the padding, radius, tracking and weight they also
+change. That is the bar: a token earns its place by removing a rule, not by moving one
+declaration out of one. **Column labels are legitimately per-theme territory**, and this is now
+written into the contract (§4, Typography) so the question does not get re-opened by accident.
+
+Finding 5 needs no action — the platform stacks stand.
+
+**What the refactor deleted.** `midnight` 8 → 5 class overrides; `civic` 5 → 4 plus two of its
+three dark-block rules; `chalkboard` 6 → 4; `marquee` 6 → 4. Every surviving override now carries
+a one-line note saying why it cannot become a token. Two of them are the same reason: `box-shadow`
+is a single property, so the revealed panel's shadow *list* has to be rewritten whole and cannot
+be composed from tokens. Only its colour was tokenised.
+
+**One defect found while doing this, and left alone deliberately.** `default.css` writes the
+revealed ring as `box-shadow: inset 0 0 0 4px <accent>, var(--cell-shadow)`. A theme that sets
+`--cell-shadow: none` produces `..., none`, which is not a legal box-shadow list — the whole
+declaration is invalid at computed-value time and the ring disappears. `chalkboard` is immune
+because it rewrites the property outright (which is why that override survives the refactor);
+`civic`'s **dark** scheme is not, and is currently missing its revealed ring. Fixing it would
+change that theme's appearance, which is out of scope for a refactor whose contract was
+pixel-identity, so it is reported here for the maintainer rather than silently changed.

@@ -57,6 +57,8 @@ Read the object rather than scraping rendered text.
 | `security` | Every `?game=` rejection case (spec §6.3): absolute and protocol-relative URLs, traversal encoded and plain, double-encoded, backslashes, wrong extensions, null-byte smuggling, query/fragment injection. Plus the cases that must be *accepted*. |
 | `scanner` | Our own JSON scanner (plan Q6), fed strings directly. Never touches `JSON.parse`, because the whole point is not depending on the engine's wording. |
 | `cleaning` | `_note` stripped at every depth, cleaned object not aliasing the raw one, result frozen. Spec §5: the renderer only ever receives a cleaned object. |
+| `shell` | Boots the real `index.html` in an iframe and measures computed geometry: the base layer under the selected sheet, `.qbe-board` as a grid with one track per column, a projector-sized cell, the detail overlay positioned above the board. Two boots cover the content-driven theme selection; a third boot then applies **every theme registered in `themes/themes.json`** and re-measures. |
+| `themes` | Audits every registered theme as a file: it fetches 200 and is non-empty, makes no external request (no `@import`, no `http(s)`/protocol-relative `url()` — `data:` is fine), carries the SPDX header, invents no custom property `themes/default.css` does not define, and targets only `.qbe-*` classes theme-contract §2 says the renderer emits. Also checks the manifest against the directory in both directions. |
 | `invariants` | Fetches our own source and asserts zero forbidden DOM/dynamic-code APIs, SPDX headers present, and that the schema's limits match the numbers the spec promises. |
 
 ## Adding a fixture

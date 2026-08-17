@@ -60,10 +60,21 @@
   /* revealed: the chalk slab. */
   --cell-revealed-bg: #e9e4d2;
   --cell-revealed-text: #24352d;     /* 10.17:1 (AAA) */
+  /* The revealed slab's ring AND value. default.css paints both with
+     --cell-revealed-accent, which falls back to --accent = yellow chalk: 1.03:1
+     on the pale slab, invisible. Both take the slab's own dark green. Contrast
+     maths, not taste. Two class overrides in the donated file; one token in
+     contract v1.2. */
+  --cell-revealed-accent: #41604f;   /* 5.48:1 vs --cell-revealed-bg (non-text 3:1; and AA body as the value) */
 
   /* answered: erased. See header. */
   --cell-answered-bg: #2e403a;       /* 1.08:1 vs ground — an erased square IS the board */
   --cell-answered-text: #9fb0a4;     /* 4.83:1 on --cell-answered-bg (AA body) */
+  /* Cue (c): the crisp chalk rule degrades to a faint dashed one, the way a
+     half-erased line looks. The fill barely moves (1.08:1 vs the board), so
+     this rim is what keeps the erased square findable. Tokenised in contract
+     v1.2 — it was a class override in the donated file. */
+  --cell-answered-border: 2px dashed #8fa094;  /* 4.30:1 vs --board-bg, 3.99:1 vs --cell-answered-bg (non-text 3:1) — findable, clearly not fresh */
 
   /* marked: the teacher's tick-circle square. */
   --cell-marked-bg: #3d5a4e;
@@ -92,6 +103,10 @@
   --detail-text: #24352d;            /* 10.17:1 (AAA) */
   --detail-scrim: rgba(22, 33, 28, 0.85);
   --answer-color: #41604f;           /* 5.48:1 on --detail-bg (AA body) */
+  /* The Close label sits on the SCRIM, and this board is dark, so default's
+     --board-bg expression would be dark-on-dark (the midnight.css finding). */
+  --detail-close-color: var(--board-fg);   /* 13.74:1 on the flattened scrim (AAA) */
+  --detail-close-border: 2px solid var(--board-fg);
 
   /* --- Score bar -------------------------------------------------------- */
   /* The chalk tray: one step darker than the board. */
@@ -107,7 +122,10 @@
 }
 
 /* ==========================================================================
-   CLASS OVERRIDES — six
+   CLASS OVERRIDES — four
+   (Six in the donated file. The spent rim, the revealed VALUE's colour and the
+   Close label all became tokens in theme-contract v1.2, which is what the
+   reporting duty in §6 is for.)
    ========================================================================== */
 
 /* 1. Column labels: hand-written headers with a dashed hand-rule under them.
@@ -119,14 +137,7 @@
   font-weight: 400;                  /* chalk faces carry no real bold; faux-bold smears */
 }
 
-/* 2. The erased square's rim: the crisp rule degrades to a faint dashed one.
-      default.css hardcodes its own answered border colour, so it is restated. */
-.qbe-cell[data-state="answered"] {
-  border-color: #8fa094;             /* 4.30:1 vs --board-bg, 3.99:1 vs --cell-answered-bg (non-text 3:1) — findable, clearly not fresh */
-  border-style: dashed;
-}
-
-/* 3. The eraser smudge: two soft chalk-dust clouds instead of default's
+/* 2. The eraser smudge: two soft chalk-dust clouds instead of default's
       hatch. Texture is a theme's own vocabulary (midnight.css says the same). */
 .qbe-cell[data-state="answered"]::before {
   background:
@@ -134,30 +145,25 @@
     radial-gradient(ellipse 65% 40% at 68% 66%, rgba(242, 239, 226, 0.1), rgba(0, 0, 0, 0) 70%);
 }
 
-/* 4. The revealed slab's ring and value. default.css paints both with
-      var(--accent) — yellow chalk on the pale slab is 1.03:1, invisible. Both
-      take the slab's own dark green instead. Contrast maths, not taste. */
+/* 3. The revealed slab's RING — colour now comes from the token; the rule
+      survives only because of the shadow LIST. default.css writes
+      `inset 0 0 0 4px <accent>, var(--cell-shadow)`, and this theme sets
+      --cell-shadow: none — `none` is not a legal item inside a box-shadow list,
+      so that declaration would be invalid at computed-value time and the ring
+      would vanish entirely. Restating the single-layer list is the only way to
+      keep it. Cannot become a token: box-shadow is one property, and the layer
+      COUNT, not the colour, is what differs here. */
 .qbe-cell[data-state="revealed"] {
-  box-shadow: inset 0 0 0 4px #41604f;   /* 5.48:1 vs --cell-revealed-bg (non-text 3:1) */
-}
-.qbe-cell[data-state="revealed"] .qbe-cell-value {
-  color: #41604f;                    /* 5.48:1 on --cell-revealed-bg (AA body) */
+  box-shadow: inset 0 0 0 4px var(--cell-revealed-accent);
 }
 
-/* 5. The bingo mark: a drawn chalk circle, not an X — a teacher circles what
+/* 4. The bingo mark: a drawn chalk circle, not an X — a teacher circles what
       counts. Mask, so --cell-mark-glyph-color still recolours it. The path is
       deliberately not a perfect circle (two arcs, slightly open) so it reads
       as drawn. */
 .qbe-cell-mark {
   -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 12 C 74 10 90 28 88 50 C 86 74 70 90 48 88 C 26 86 10 70 12 48 C 14 28 30 15 46 13' fill='none' stroke='%23000' stroke-width='9' stroke-linecap='round'/%3E%3C/svg%3E");
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 12 C 74 10 90 28 88 50 C 86 74 70 90 48 88 C 26 86 10 70 12 48 C 14 28 30 15 46 13' fill='none' stroke='%23000' stroke-width='9' stroke-linecap='round'/%3E%3C/svg%3E");
-}
-
-/* 6. Overlay Close label: this board is dark, so default's var(--board-bg)
-      label would be dark-on-dark scrim (the midnight.css finding). */
-.qbe-detail-close {
-  color: var(--board-fg);            /* 13.74:1 on the flattened scrim (AAA) */
-  border-color: var(--board-fg);
 }
 
 /* Active-team tint, in yellow chalk. */

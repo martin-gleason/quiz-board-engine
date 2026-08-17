@@ -26,6 +26,8 @@ import * as loader from './loader.js';
 import * as validator from './validator.js';
 import * as errors from './errors.js';
 import * as renderer from './renderer.js';
+import * as state from './state.js';
+import { KINDS } from './schemas.js';
 
 // Vendored reveal.css is linked by index.html so it applies before first paint. These constants
 // exist so `ensureVendorStyles()` can prove the links are there when app.js is booted into some
@@ -88,15 +90,21 @@ export async function boot({ search = window.location.search, mounts = {} } = {}
 
   const result = await loadAndValidate(search);
 
-  if (!result.ok) {
-    // THE FAILURE PATH. Hide the empty reveal skeleton (an attribute, not a style — the shell's CSS
-    // honours [hidden]) so the error report owns the screen, and stop. Reveal is never initialised
-    // and `renderBoard` is never called.
+  // THE FAILURE PATH, used at boot and at every later step that can fail (a corrupt saved session, a
+  // refused import, a storage write that will not go through). Hiding the reveal skeleton is an
+  // attribute, not a style — the shell's CSS honours [hidden] — so the error report owns the screen.
+  const failScreen = (failures) => {
     if (revealMount) revealMount.setAttribute('hidden', '');
-    errors.renderErrorScreen(result.failures, errorMount);
+    errors.renderErrorScreen(failures, errorMount);
     // Also to the console, one line per failure: the host may be looking at a projector while a
     // helper reads the developer tools on the laptop.
-    for (const f of result.failures) console.error(errors.formatFailure(f));
+    for (const f of failures) console.error(errors.formatFailure(f));
+  };
+
+  if (!result.ok) {
+    // Nothing is drawn on a failed load. Reveal is never initialised and `renderBoard` is never
+    // called (spec §5).
+    failScreen(result.failures);
     return;
   }
 
@@ -115,51 +123,360 @@ export async function boot({ search = window.location.search, mounts = {} } = {}
   if (!stage) throw new Error('boot(): no .qbe-stage element to draw into');
 
   // --------------------------------------------------------------------------------------------
-  // THE STATE SEAM — F6 / F7 / F10 attach here, and nothing about them is stubbed.
+  // REVEAL IS INITIALISED **BEFORE** THE FIRST SCREEN NOW, and the reason is not cosmetic.
   // --------------------------------------------------------------------------------------------
-  // Phase 3 replaces the object below with `js/state.js`: `state.newSession(...)` or
-  // `state.loadSession(...)` produces it, `state.update(mutator)` mutates it, and
-  // `state.subscribe(...)` drives the two `renderer.update*` calls (module-contracts §10 steps
-  // 4-8). Until then this is a plain in-memory session of exactly the shape state.js will hand
-  // over — `cellStates` keyed `"<col>:<row>"` (plan Q7), `bonusCells` a list of the same keys —
-  // so the handlers below already speak the final vocabulary and F6 is a swap of the OWNER of this
-  // object, not a rewrite of the renderer's interface.
+  // Until F6 the first thing drawn was the board, so reveal could start afterwards and measure a
+  // complete slide. F6 puts a screen in front of the board — team setup, or the resume list — and
+  // `reveal.css` hides every `.slides > section` until reveal marks one present. Starting reveal
+  // after that screen therefore means drawing it into a slide the browser is not displaying: a
+  // blank projector and a host with nothing to click.
   //
-  // What is deliberately NOT here: no teams, no scores, no scorebar, no bonus picking, no
-  // localStorage, no resume screen, no export. Those are F6/F7/F10 and inventing placeholder
-  // versions of them now would mean writing behaviour the maintainer never specified and a later
-  // phase would have to unpick. An absent feature is honest; a fake one is a lie with a schedule.
-  const session = { cellStates: {}, bonusCells: [] };
+  // A reveal failure is still NOT routed to the error screen. That screen explains problems in the
+  // user's JSON, in the user's language; a broken vendored dependency is our bug, not theirs, and
+  // dressing it up as a content error would send a teacher hunting through a file that is fine. But
+  // it can no longer be shrugged off either, because the slide would stay hidden — so the catch
+  // applies the display value REVEAL_CONFIG itself declares, which keeps ownership of the stage's
+  // `display` with the renderer (theme-contract §2) rather than inventing a value here.
+  try {
+    await renderer.initReveal(revealMount);
+  } catch (err) {
+    console.error('reveal.js failed to initialise; showing the stage without it.', err);
+    stage.style.setProperty('display', renderer.REVEAL_CONFIG.display);
+  }
 
-  const view = renderer.renderBoard({
+  // --------------------------------------------------------------------------------------------
+  // STAGE 4 — identity. The session shelf is keyed by a hash of the content file's BYTES, so the
+  // same file resumes and an edited file does not silently resume onto a board that changed shape.
+  // --------------------------------------------------------------------------------------------
+  // `hashContent` returns a Result rather than throwing, because the one way it fails is a page
+  // served from an origin the browser calls insecure (`http://192.168.1.20:8000` to a projector),
+  // where `crypto.subtle` does not exist. That is a user-facing condition with an actionable fix, so
+  // it goes to the error screen with the fix in the message.
+  const hashed = await state.hashContent(result.raw.content.text);
+  if (!hashed.ok) {
+    failScreen(hashed.failures);
+    return;
+  }
+  const gameHash = hashed.value;
+
+  // Spec §4.4: keep the last 10 sessions, prune the oldest SILENTLY. Done before listing so the
+  // resume screen never offers a row that is about to be pruned out from under it.
+  state.pruneToCap();
+
+  const ctx = {
+    doc, stage, revealMount, bundle, gameHash, failScreen,
+    screen: null,     // the team-setup / resume overlay currently up, or null
+    board: null,      // BoardView, once the game has started
+    panel: null,      // PanelView, or null for a game type with no scoring
+    toolbar: null,
+    // VIEW-ONLY session facts, deliberately not persisted — see `renderer.updateScorePanel`.
+    awardKey: null,   // the cell whose points the +/- buttons are currently offering
+    activeTeam: null, // whose turn the host has marked, for the room
+  };
+
+  const sessions = state.listSessions();
+  if (sessions.some((s) => s.gameHash === gameHash)) {
+    showResume(ctx, sessions);
+  } else {
+    startFresh(ctx);
+  }
+}
+
+/**
+ * Open a brand-new game.
+ *
+ * TEAM SETUP IS SKIPPED FOR A GAME TYPE WITH NO SCORING. Spec §4.4 puts team creation "at session
+ * start", but a bingo card draws no score bar (theme-contract §2), so teams collected there would be
+ * invisible for the whole game — a screen between the host and the board that asks a question whose
+ * answer is never used. `state.newSession` is perfectly happy with an empty team list.
+ */
+function startFresh(ctx) {
+  if (ctx.bundle.gametype.scoring.model !== 'none') {
+    showTeamSetup(ctx, {});
+    return;
+  }
+  const session = state.newSession({ bundle: ctx.bundle, gameHash: ctx.gameHash, teams: [] });
+  const adopted = state.adopt(session);
+  if (!adopted.ok) return ctx.failScreen(adopted.failures);
+  if (ctx.screen) {
+    ctx.screen.destroy();
+    ctx.screen = null;
+  }
+  startGame(ctx);
+  return undefined;
+}
+
+// =============================================================================================
+// THE SESSION SEQUENCE (module-contracts §10 steps 4-8)
+// =============================================================================================
+//
+// Three entry points into one game: a NEW session (team setup -> newSession -> adopt), a RESUMED
+// session (loadSession -> validateState -> adopt), and an IMPORTED session (file -> validateState ->
+// adopt). All three converge on `startGame`, and all three reach `state.adopt()` by way of the
+// validator — `state` never validates and `validator` never persists (module-contracts §2), and
+// this module is the only place allowed to join them.
+
+/** The resume / discard / new screen. Redrawn rather than patched when a row is discarded. */
+function showResume(ctx, sessions) {
+  if (ctx.screen) ctx.screen.destroy();
+  ctx.screen = renderer.renderResumeScreen({
+    sessions,
+    gameHash: ctx.gameHash,
+    mount: ctx.stage,
+    handlers: {
+      onResume: (hash) => resumeSession(ctx, hash),
+      onDiscard: (hash) => {
+        state.discardSession(hash);
+        const left = state.listSessions();
+        // NOTHING RESUMABLE LEFT MEANS MOVE ON. The test is "does any remaining session belong to
+        // THIS game", not "are there any sessions at all": a shelf holding three other games' boards
+        // would otherwise keep the host on a screen asking "resume?" with no Resume button on it.
+        if (!left.some((s) => s.gameHash === ctx.gameHash)) startFresh(ctx);
+        else showResume(ctx, left);
+      },
+      onNewGame: () => startFresh(ctx),
+    },
+  });
+}
+
+/** Team setup, both at session start and from the toolbar mid-game. */
+function showTeamSetup(ctx, { editing } = {}) {
+  if (ctx.screen) ctx.screen.destroy();
+  const live = state.current();
+  ctx.screen = renderer.renderTeamSetup({
+    mount: ctx.stage,
+    editing: !!editing,
+    names: editing && live ? live.teams.map((t) => t.name) : undefined,
+    handlers: {
+      onTeamsSubmit: (names) => {
+        if (editing) {
+          const saved = state.setTeams(names);
+          if (!saved.ok) return ctx.failScreen(saved.failures);
+          ctx.screen.destroy();
+          ctx.screen = null;
+          // The subscriber has already repainted the bar; the team COUNT may have changed, which
+          // `updateScorePanel` handles by rebuilding its rows.
+          return undefined;
+        }
+        // A NEW SESSION. `newSession` draws the F7 bonus cells here, once — spec §8's "a new session
+        // reshuffles" — and `adopt` is what persists it and makes it current.
+        const session = state.newSession({ bundle: ctx.bundle, gameHash: ctx.gameHash, teams: names });
+        const adopted = state.adopt(session);
+        if (!adopted.ok) return ctx.failScreen(adopted.failures);
+        ctx.screen.destroy();
+        ctx.screen = null;
+        startGame(ctx);
+        return undefined;
+      },
+      onCancel: () => {
+        ctx.screen.destroy();
+        ctx.screen = null;
+      },
+    },
+  });
+}
+
+/**
+ * Resume a stored session.
+ *
+ * A stored session is UNTRUSTED INPUT (CLAUDE.md), exactly like an imported file: an older build
+ * wrote it, or somebody edited it in devtools, or the game file changed under it. So it takes the
+ * same route as an import — raw document, `validator.validateState`, then `state.adopt` — and it is
+ * `state.loadSession`'s deliberate design that it hands back a RawDocument rather than a session.
+ */
+function resumeSession(ctx, gameHash) {
+  const loaded = state.loadSession(gameHash);
+  if (!loaded.ok) {
+    // A stored entry that will not parse comes back with the raw text attached, so the error screen
+    // can show a located caret instead of "it's broken somewhere".
+    if (loaded.raw) return ctx.failScreen(errors.syntaxFailure(loaded.raw).failures);
+    return ctx.failScreen(loaded.failures);
+  }
+  return adoptValidated(ctx, loaded.value, { expectGameHash: gameHash, file: loaded.value.path });
+}
+
+/** The one path from a raw untrusted state document to a live session. */
+function adoptValidated(ctx, raw, opts) {
+  const checked = validator.validateState({ raw, bundle: ctx.bundle });
+  if (!checked.ok) return ctx.failScreen(checked.failures);
+
+  const adopted = state.adopt(checked.value, opts);
+  if (!adopted.ok) return ctx.failScreen(adopted.failures);
+
+  if (ctx.screen) {
+    ctx.screen.destroy();
+    ctx.screen = null;
+  }
+  // An import lands on a board that is already drawn; a resume lands before there is one. The first
+  // case is repainted by the subscriber, the second has to build the board.
+  if (!ctx.board) startGame(ctx);
+  return undefined;
+}
+
+/**
+ * Draw the game and wire every change back through `state`.
+ *
+ * ONE SUBSCRIBER, ONE REPAINT PATH. Nothing here paints optimistically: a handler asks `state` to
+ * change something, `state` persists it, and only then does the subscriber repaint. That ordering is
+ * what keeps the projected board and the saved session from ever disagreeing — a click whose write
+ * failed leaves the board showing what is actually stored, and the error screen explains why.
+ */
+function startGame(ctx) {
+  const { bundle, stage } = ctx;
+  const session = state.current();
+
+  // theme-contract §2: the score bar exists ONLY when the game type has scoring. Bingo gets no bar
+  // rather than an empty one.
+  if (bundle.gametype.scoring.model !== 'none') {
+    ctx.panel = renderer.renderScorePanel({
+      bundle,
+      session,
+      mount: stage,
+      handlers: {
+        onScoreAdjust: (teamIndex, delta) => {
+          const scored = state.adjustScore({ bundle, teamIndex, delta });
+          if (!scored.ok) ctx.failScreen(scored.failures);
+        },
+        onTeamActivate: (teamIndex) => {
+          // A toggle, so a host can clear the marker between questions. It is a marker for the room,
+          // not a turn lock — plan Q4 has no notion of whose click is allowed.
+          ctx.activeTeam = ctx.activeTeam === teamIndex ? null : teamIndex;
+          repaint(ctx, state.current());
+        },
+      },
+    });
+  }
+
+  ctx.board = renderer.renderBoard({
     bundle,
     session,
     mount: stage,
     handlers: {
-      // `onCellAdvance` is the only handler that changes anything in this phase. It records the new
-      // state and asks the renderer to repaint — exactly the two lines F6 replaces with
-      // `state.update(draft => { draft.cellStates[key] = next; })`, whose subscriber calls
-      // `updateBoard` for us.
-      onCellAdvance(cellKey, nextState) {
-        session.cellStates[cellKey] = nextState;
-        renderer.updateBoard(view, { bundle, session });
+      // The award the +/- buttons offer follows the cell in play, including F7's bonus multiplier
+      // (`state.cellAward`). It is NOT cleared on close: the host closes the overlay and then scores
+      // the team that answered, and a mis-click needs the same amount available to undo it.
+      onCellActivate: (cellKey) => {
+        ctx.awardKey = cellKey;
+        repaint(ctx, state.current());
+      },
+      onCellAdvance: (cellKey, nextState) => {
+        const saved = state.setCellState(cellKey, nextState);
+        if (!saved.ok) ctx.failScreen(saved.failures);
       },
     },
   });
 
-  // Reveal last: the board is already in the DOM, so reveal has a complete slide to measure and
-  // there is no flash of an empty deck. `initReveal` forces `keyboard:false` (plan Q12) so reveal's
-  // own navigation can never fight a focused cell button.
-  //
-  // A reveal failure is NOT routed to the error screen. That screen explains problems in the user's
-  // JSON, in the user's language; a broken vendored dependency is our bug, not theirs, and dressing
-  // it up as a content error would send a teacher hunting through a file that is perfectly fine.
-  // The board is already drawn and keyboard-operable, so we log loudly and carry on.
-  try {
-    await renderer.initReveal(revealMount);
-  } catch (err) {
-    console.error('reveal.js failed to initialise; the board is drawn but the deck is inert.', err);
+  // Export/Import are offered for every game type — a bingo card a host cannot export is data loss
+  // wearing a layout decision. Teams… is offered only when there is a score bar to show a team IN:
+  // passing no handler is what tells the renderer to leave the button out entirely rather than draw
+  // one that does nothing (see `renderToolbar`).
+  const toolbarHandlers = {
+    onExport: () => exportSession(ctx),
+    onImport: (file) => importSession(ctx, file),
+  };
+  if (ctx.panel) toolbarHandlers.onTeamsEdit = () => showTeamSetup(ctx, { editing: true });
+  ctx.toolbar = renderer.renderToolbar({ mount: stage, handlers: toolbarHandlers });
+
+  // Not unsubscribed anywhere, and that is correct rather than a leak: the document holds exactly
+  // one game for its whole life, and the subscriber dies with the page.
+  state.subscribe((next) => repaint(ctx, next));
+  repaint(ctx, session);
+}
+
+/** The single repaint. `null` arrives when the live session is discarded; there is nothing to draw. */
+function repaint(ctx, session) {
+  if (!session) return;
+  if (ctx.board) renderer.updateBoard(ctx.board, { bundle: ctx.bundle, session });
+  if (ctx.panel) {
+    renderer.updateScorePanel(ctx.panel, {
+      session,
+      award: ctx.awardKey ? state.cellAward({ bundle: ctx.bundle, session, cellKey: ctx.awardKey }) : 0,
+      activeTeam: ctx.activeTeam,
+    });
   }
+}
+
+// =============================================================================================
+// F10 — EXPORT AND IMPORT
+// =============================================================================================
+
+/**
+ * Export the live session as a downloadable file.
+ *
+ * `state` produces strings and this module produces the download, because a download is DOM work and
+ * `state` never touches the DOM (module-contracts §9). The object URL is revoked immediately after
+ * the click: every engine in the matrix has already read the blob synchronously by then, and an
+ * un-revoked URL pins the whole session in memory for the life of the document.
+ */
+function exportSession(ctx) {
+  const payload = state.exportPayload();
+  if (!payload) return;
+  const doc = ctx.doc;
+  const url = URL.createObjectURL(new Blob([payload.json], { type: 'application/json' }));
+  const link = doc.createElement('a');
+  link.href = url;
+  link.download = payload.filename;
+  // Not appended to the document: a click on a detached anchor still downloads in Chrome, Firefox
+  // and Safari, and nothing flashes on a projected screen.
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Import a session file (spec §4.4: "imported state is untrusted input, validated like everything
+ * else"; spec §5: no partial render, ever).
+ *
+ * Three gates, in the order a bad file meets them: it must be readable, it must PARSE — and a parse
+ * failure goes through `errors.syntaxFailure`, so a hand-edited file gets the same line/column/caret
+ * report a broken game file gets — and it must then satisfy `validator.validateState` against THIS
+ * bundle, which is what stops another game's scores landing on this board. Nothing is applied
+ * half-way: a failure at any gate routes to the error screen and the live session is untouched.
+ */
+async function importSession(ctx, file) {
+  const identity = 'import:' + String(file.name || 'quiz-state.json');
+
+  // THE BYTE CAP COMES BEFORE THE READ, exactly as it does in `loader.fetchJsonFile` and for the
+  // same reason (module-contracts §4.2): parsing first would hand a hostile 40 MB file to
+  // `JSON.parse` and freeze the tab, and the cap would then be a report on a denial of service that
+  // had already happened. A state file is a few KB; the loader's non-content cap is generous here.
+  // `File.size` is known without reading a byte, so this file is never even loaded into memory.
+  if (Number.isFinite(file.size) && file.size > loader.DEFAULT_MAX_BYTES) {
+    ctx.failScreen([
+      errors.failure({
+        file: identity,
+        kind: KINDS.STATE,
+        stage: 'fetch',
+        path: '(file)',
+        location: null,
+        expected: 'a saved session file of at most ' + Math.round(loader.DEFAULT_MAX_BYTES / 1024) + ' KB',
+        found: 'a file of ' + Math.round(file.size / 1024) + ' KB',
+        hint: 'file-too-large',
+      }),
+    ]);
+    return;
+  }
+
+  let text;
+  try {
+    text = await file.text();
+  } catch (err) {
+    console.error('the imported file could not be read', err);
+    return;
+  }
+
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (_err) {
+    ctx.failScreen(errors.syntaxFailure({ file: identity, kind: KINDS.STATE, text }).failures);
+    return;
+  }
+
+  adoptValidated(
+    ctx,
+    { path: identity, kind: KINDS.STATE, text, bytes: new TextEncoder().encode(text).length, data },
+    { expectGameHash: ctx.gameHash, file: identity },
+  );
 }
 
 // =============================================================================================

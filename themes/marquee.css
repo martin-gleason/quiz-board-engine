@@ -55,10 +55,21 @@
   /* revealed: incandescent — the panel lights up warm ivory. */
   --cell-revealed-bg: #fff6e0;
   --cell-revealed-text: #2b1d06;     /* 15.23:1 (AAA) */
+  /* The lit panel's accent: the ring and the value. default.css paints both
+     with --cell-revealed-accent, which falls back to --accent = gold, and gold
+     on lit ivory is 1.56:1 — invisible as a number, and short of the 3:1
+     boundary as a ring. Both take stage crimson. Contrast maths, not taste.
+     Two class overrides in the donated file; one token in contract v1.2. */
+  --cell-revealed-accent: #8a1c26;   /* 8.58:1 vs --cell-revealed-bg (AAA as the value, non-text 3:1 as the ring) */
 
   /* answered: switched off. See header for the three cues. */
   --cell-answered-bg: #0a1027;       /* darker than the ground — a hole where a sign was */
   --cell-answered-text: #8d93ad;     /* 6.19:1 on --cell-answered-bg (AA body) */
+  /* Cue (c): the gilt frame decays to a thin cool rule. This is what keeps a
+     dead sign findable — a cell the host cannot see is a cell they cannot
+     recover. --cell-border is one shorthand for all states and its gold would
+     contradict "switched off". Tokenised in contract v1.2. */
+  --cell-answered-border: 2px dashed #5a648c;  /* 3.08:1 vs --board-bg, 3.26:1 vs --cell-answered-bg (non-text 3:1) */
 
   /* marked: the velvet square — deep crimson, gold star stamp. */
   --cell-marked-bg: #6e1a24;
@@ -83,6 +94,10 @@
   --detail-text: #f3ead1;            /* 13.23:1 (AAA) */
   --detail-scrim: rgba(6, 10, 28, 0.88);
   --answer-color: #f2c14e;           /* 9.46:1 on --detail-bg (AAA) */
+  /* The Close label sits on the SCRIM. Dark board, so default's --board-bg
+     expression disappears (the midnight.css finding). Tokenised in v1.2. */
+  --detail-close-color: var(--board-fg);   /* 16.25:1 on the flattened scrim (AAA) */
+  --detail-close-border: 2px solid var(--board-fg);
 
   /* --- Score bar -------------------------------------------------------- */
   --score-bg: #091026;
@@ -98,7 +113,10 @@
 }
 
 /* ==========================================================================
-   CLASS OVERRIDES — six
+   CLASS OVERRIDES — four
+   (Six in the donated file. The spent rim, the revealed VALUE's colour and the
+   Close label all became tokens in theme-contract v1.2, which is what the
+   reporting duty in §6 is for.)
    ========================================================================== */
 
 /* 1. Column labels as title cards: small didone caps, tracked out like a
@@ -110,16 +128,7 @@
   font-weight: 700;
 }
 
-/* 2. The switched-off panel's frame: the gilt rule decays to a thin cool one.
-      This is what keeps a dead sign findable — a cell the host cannot see is
-      a cell they cannot recover. Glow restated off because --cell-shadow is
-      one token for all states. */
-.qbe-cell[data-state="answered"] {
-  border-color: #5a648c;             /* 3.08:1 vs --board-bg, 3.26:1 vs --cell-answered-bg (non-text 3:1) */
-  box-shadow: none;
-}
-
-/* 3. The unlit bulb matrix: a dot grid in a cool faint tone. Same job as
+/* 2. The unlit bulb matrix: a dot grid in a cool faint tone. Same job as
       default's hatch — a non-hue spent cue — in this theme's vocabulary. */
 .qbe-cell[data-state="answered"]::before {
   background:
@@ -127,32 +136,23 @@
     7px 7px;
 }
 
-/* 4. The revealed value. default.css paints it var(--accent): gold on the lit
-      ivory panel is 1.56:1 — invisible. It takes stage crimson instead.
-      Contrast maths, not taste. */
-.qbe-cell[data-state="revealed"] .qbe-cell-value {
-  color: #8a1c26;                    /* 8.58:1 on --cell-revealed-bg (AAA) */
-}
-
-/* 4b. Same maths for the ring default draws in var(--accent): gold on ivory
-      fails the 3:1 boundary, crimson passes. */
+/* 3. The lit panel's shadow LIST — the colour is now the token's job, but the
+      rule survives. default.css writes `inset ring, var(--cell-shadow)`, and
+      this theme's --cell-shadow is three layers including the warm glow and an
+      inset gold keyline; on the revealed panel the 4px crimson ring replaces
+      that keyline and the glow is deliberately not restated. Cannot become a
+      token: box-shadow is a single property, so the layer LIST cannot be
+      composed from parts, only rewritten whole. */
 .qbe-cell[data-state="revealed"] {
-  box-shadow: inset 0 0 0 4px #8a1c26,   /* 8.58:1 vs --cell-revealed-bg (non-text 3:1) */
+  box-shadow: inset 0 0 0 4px var(--cell-revealed-accent),
     0 8px 20px rgba(0, 0, 0, 0.5);
 }
 
-/* 5. The bingo stamp: a star — the marquee glyph. Mask, so
+/* 4. The bingo stamp: a star — the marquee glyph. Mask, so
       --cell-mark-glyph-color still recolours it; only the shape changes. */
 .qbe-cell-mark {
   -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 6 L61 38 L95 38 L67 58 L78 92 L50 71 L22 92 L33 58 L5 38 L39 38 Z' fill='%23000'/%3E%3C/svg%3E");
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 6 L61 38 L95 38 L67 58 L78 92 L50 71 L22 92 L33 58 L5 38 L39 38 Z' fill='%23000'/%3E%3C/svg%3E");
-}
-
-/* 6. Overlay Close label: dark board, so default's var(--board-bg) label
-      disappears on the scrim (the midnight.css finding). */
-.qbe-detail-close {
-  color: var(--board-fg);            /* 16.25:1 on the flattened scrim (AAA) */
-  border-color: var(--board-fg);
 }
 
 /* Active-team tint, in warm gold. */

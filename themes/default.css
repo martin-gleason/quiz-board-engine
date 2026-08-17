@@ -76,6 +76,19 @@
      the brightest thing on the board — the host's eye should land on it. */
   --cell-revealed-bg: #fffdf8;
   --cell-revealed-text: #1c1a17;      /* 17.08:1 on --cell-revealed-bg (AAA ✓) */
+  /* The revealed panel's accent: the 4px inset ring AND, by default, the point
+     value drawn on that panel. Split out of --accent in contract v1.2 because
+     the two live on different grounds — an accent chosen to pass 3:1 against
+     --board-bg routinely fails on the revealed panel, which is usually the
+     lightest surface in the theme (marquee measured its gold at 1.56:1 on
+     ivory; chalkboard's yellow chalk measured 1.03:1 on its slab). Defaulting
+     to var(--accent) keeps this theme, and every theme written against v1.1,
+     pixel-identical. */
+  --cell-revealed-accent: var(--accent);
+  /* Narrower knob: the value alone, when the ring is fine as it is. Two of the
+     four override themes wanted exactly this and no more (midnight keeps its
+     magenta ring but needs a cyan number; civic-dark the same in sage/amber). */
+  --cell-revealed-value-color: var(--cell-revealed-accent);
 
   /* answered = spent. THREE redundant cues, none of them hue (theme-contract
      §5.3; ~8% of men have a colour vision deficiency):
@@ -88,6 +101,13 @@
      still belongs to the palette. */
   --cell-answered-bg: #dcd4c4;        /* 1.29:1 vs --board-bg — deliberately near-invisible as an *object* */
   --cell-answered-text: #4a443a;      /* 6.54:1 on --cell-answered-bg (AA body ✓) — dim, but never illegible */
+  /* The spent rim, as a full shorthand like --cell-border. It is its own token
+     (contract v1.2) because it cannot be derived from --cell-border: the
+     answered fill deliberately sits at the ground's luminance, so the rim is
+     the only thing keeping the button findable, and its colour has to be
+     re-measured against a DIFFERENT background than the resting rim was. Every
+     override theme was rewriting this rule by hand. */
+  --cell-answered-border: 2px dashed #6f675a;  /* 4.87:1 vs --board-bg, 3.79:1 vs --cell-answered-bg (non-text 3:1 ✓) */
 
   /* marked = a claimed bingo square. Deep green: the only place hue carries
      meaning, and it is backed by the stamped glyph, so hue is never alone. */
@@ -141,6 +161,14 @@
      shrink it for elegance. */
   --prompt-size: clamp(1.5rem, 4.2vw, 4rem);
   --answer-color: #0f5c4a;            /* 7.80:1 on --detail-bg (AA body ✓) */
+  /* Close is the outline button, and its label sits on the SCRIM, not on the
+     overlay. On this light-ground theme --board-bg is the paper colour and
+     reads at 7.81:1 there; on any dark-ground theme the same expression is
+     near-black on a near-black scrim. The relationship inverts with the
+     ground, which is precisely why it needs a token of its own rather than an
+     expression baked into the rule (contract v1.2). */
+  --detail-close-color: var(--board-bg);   /* 7.81:1 on the flattened scrim (#4c4945) (AA ✓) */
+  --detail-close-border: 2px solid var(--board-bg);
 
   /* --- Score bar -------------------------------------------------------- */
 
@@ -150,6 +178,22 @@
      which fails the 3:1 floor for a non-text indicator. This is the kind of
      pair that only shows up if you actually compute it. */
   --team-active-outline: 3px solid #ffd45e;  /* 12.26:1 vs --score-bg (non-text ✓) */
+
+  /* --- Chrome buttons (contract v1.3) ------------------------------------ */
+
+  /* Full border shorthand for .qbe-btn — the score bar's +/− controls, the
+     toolbar, and the buttons on the setup and resume screens.
+     WHY IT IS A TOKEN AND NOT `--accent`: the buttons are filled with --accent
+     and their LABEL contrast is fine (--accent-contrast, 6.04:1). What is not
+     fine is the button's own BOUNDARY, which WCAG wants at 3:1 against the
+     surface behind it — and the same accent sits on two different surfaces
+     here: 5.36:1 against --board-bg (the toolbar, the setup panel: passes) but
+     only 2.83:1 against --score-bg (the score bar: fails). One rim colour in a
+     token fixes both, and a theme whose accent lands the other way round can
+     re-measure it in one place instead of in four rules. */
+  --btn-border: 2px solid var(--accent-contrast);  /* 16.05:1 vs --score-bg, 1.11:1 vs --board-bg —
+                                                      the fill carries the boundary on the light
+                                                      ground, the rim carries it on the dark one */
 
   /* --- Accent, focus, motion -------------------------------------------- */
 
@@ -444,13 +488,13 @@ body,
   /* A solid accent inset. This is the STATIC half of the state change: with
      motion removed the cell must still be obviously different (spec §8), and
      an inset ring is visible whether or not anything animated. */
-  box-shadow: inset 0 0 0 4px var(--accent), var(--cell-shadow);
+  box-shadow: inset 0 0 0 4px var(--cell-revealed-accent), var(--cell-shadow);
 }
 
 .qbe-cell[data-state="revealed"] .qbe-cell-value {
-  /* Amber-on-white is 1.39:1 — unusable. The value takes the accent on a
-     light card instead: 6.04:1. */
-  color: var(--accent);
+  /* Amber-on-white is 1.39:1 — unusable. The value takes the revealed accent
+     on a light card instead: 6.04:1. */
+  color: var(--cell-revealed-value-color);
 }
 
 /* --- answered: spent --------------------------------------------------- */
@@ -464,8 +508,7 @@ body,
      the ground on purpose, so without a rim the button would effectively
      vanish — and a host cannot recover a cell they cannot see
      (theme-contract §5.7). */
-  border-color: #6f675a;             /* 4.87:1 vs --board-bg, 3.79:1 vs --cell-answered-bg (non-text 3:1 ✓) */
-  border-style: dashed;
+  border: var(--cell-answered-border);
 }
 
 /* Cue (b): diagonal hatch. Pure geometry — a repeating-linear-gradient, no
@@ -631,8 +674,233 @@ body,
   background: rgba(255, 212, 94, 0.14);
 }
 
+/* A host may start with no teams at all (they keep score on a whiteboard, or
+   they are demoing the board). An empty bar would still draw its padding and
+   its ground — a black stripe above the board explaining nothing. */
+.qbe-scorebar:empty {
+  display: none;
+}
+
+/* The team name is a BUTTON (contract v1.3): pressing it marks that team as
+   active for the room. It must not LOOK like a button — it is the team's name,
+   and a UA-chrome box around it would put a control where a label belongs — so
+   the platform styling is stripped and the affordance is carried by the hover
+   tint, the focus ring (§7) and data-active. */
+.qbe-team-name {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  padding: 0.15em 0.4em;
+  border: 0;
+  border-radius: calc(var(--cell-radius) * 0.5);
+  background: rgba(0, 0, 0, 0);
+  color: inherit;
+  font-family: inherit;
+  font-size: clamp(0.75rem, 1.1vw, 1.25rem);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-align: center;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.qbe-team-name:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.qbe-team-controls {
+  display: flex;
+  gap: 0.35rem;
+  justify-content: center;
+}
+
 /* ==========================================================================
-   6. DETAIL OVERLAY
+   6. CHROME BUTTONS, TOOLBAR, SETUP AND RESUME SCREENS  (contract v1.3)
+   One button class, varied by data-action. Sized for a projected screen
+   operated by someone standing up: nothing here is smaller than a 44px touch
+   target on a laptop trackpad.
+   ========================================================================== */
+
+.qbe-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  min-height: 2.2em;
+  padding: 0.4em 0.9em;
+  border: var(--btn-border);
+  border-radius: calc(var(--cell-radius) * 0.75);
+  background: var(--accent);
+  color: var(--accent-contrast);       /* 6.04:1 on --accent (AA ✓) */
+  font-family: var(--font-body);
+  font-size: clamp(0.85rem, 1.2vw, 1.2rem);
+  font-weight: 600;
+  line-height: 1.1;
+  cursor: pointer;
+}
+
+/* The award buttons carry a signed number, so they are set in the display face
+   with tabular figures: +200 and −200 must be the same width or the score bar
+   twitches every time the award changes. */
+.qbe-btn[data-action="score-up"],
+.qbe-btn[data-action="score-down"] {
+  min-width: 3.5em;
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* Disabled means "there is nothing to award yet" — before the first cell is
+   opened. Dimmed AND cursor-blocked: two cues, neither of them colour alone. */
+.qbe-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.qbe-btn:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+/* The always-present footer. Right-aligned and quiet: it is host equipment, not
+   part of the game, and the room should read past it. */
+.qbe-toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+/* ---- The pre-game overlay: team setup and the resume list ---------------- */
+
+/* Same geometry as .qbe-detail, and the same reason for the [hidden] rule
+   underneath it. Above the overlay in z-order because it is only ever up when
+   there is no board to open a cell on. */
+.qbe-setup {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: clamp(1rem, 4vw, 3rem);
+  background: var(--detail-scrim);
+  overflow: auto;
+}
+
+.qbe-setup[hidden] {
+  display: none;
+}
+
+.qbe-setup-panel {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(0.75rem, 2vh, 1.5rem);
+  box-sizing: border-box;
+  width: min(100%, 46rem);
+  padding: clamp(1rem, 3vw, 2.5rem);
+  border-radius: var(--cell-radius);
+  background: var(--detail-bg);
+  color: var(--detail-text);          /* 17.08:1 on --detail-bg (AAA ✓) */
+  font-family: var(--font-body);
+}
+
+.qbe-setup-title {
+  margin: 0;
+  font-family: var(--font-display);
+  /* Deliberately smaller than --prompt-size: this text is read by the host at
+     arm's length before the game starts, not by the room from thirty feet. */
+  font-size: clamp(1.25rem, 2.6vw, 2.25rem);
+  line-height: 1.15;
+}
+
+.qbe-setup-note {
+  margin: 0;
+  font-size: clamp(0.9rem, 1.2vw, 1.1rem);
+  line-height: 1.45;
+  opacity: 0.85;
+}
+
+.qbe-setup-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-height: 55vh;
+  /* The team list can reach 12 rows and the session list 10. Wide/long content
+     scrolls inside its own box, never the page (theme-contract §5.8). */
+  overflow: auto;
+}
+
+.qbe-setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+/* A label wrapping its own input: the whole row is the click target, and the
+   association needs no `for`/`id` pair to go wrong. */
+.qbe-field {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: clamp(0.85rem, 1.1vw, 1.05rem);
+  font-weight: 600;
+}
+
+.qbe-field-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.5em 0.7em;
+  border: var(--cell-border);
+  border-radius: calc(var(--cell-radius) * 0.5);
+  background: var(--board-bg);
+  color: var(--board-fg);             /* 15.16:1 on --board-bg (AAA ✓) */
+  font-family: var(--font-body);
+  font-size: clamp(0.95rem, 1.4vw, 1.25rem);
+  font-weight: 400;
+}
+
+.qbe-session {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+  padding: 0.75rem;
+  border: var(--cell-border);
+  border-radius: calc(var(--cell-radius) * 0.5);
+}
+
+.qbe-session-title {
+  flex: 1 1 12rem;
+  min-width: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.qbe-session-meta {
+  flex: 1 1 100%;
+  font-size: 0.9em;
+  opacity: 0.8;
+}
+
+/* The ARIA live region the renderer announces score changes into. It lives on
+   <body>, not on the stage, and it is NOT A DESIGN SURFACE: leave it hidden.
+   `display: none` would be wrong — it removes the element from the
+   accessibility tree, so the announcement would never be made at all. The 1px
+   clipped box is the technique that keeps it readable by a screen reader and
+   invisible on a projector. */
+.qbe-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   7. DETAIL OVERLAY
    ========================================================================== */
 
 /* The overlay surface itself. It sets `display: flex`, which is why the
@@ -727,21 +995,28 @@ body,
 }
 
 /* Close is the secondary action, so it is the outline variant. Its label sits
-   on the scrim, which is dark, so the label takes the light paper colour. */
+   on the scrim, not on the overlay — see --detail-close-color, which is where
+   the "which side of the ground am I on" decision now lives. */
 .qbe-detail-close {
   background: rgba(0, 0, 0, 0);
-  color: var(--board-bg);              /* 7.81:1 on the flattened scrim (#4c4945 = --detail-scrim composited over --board-bg) (AA ✓) */
-  border-color: var(--board-bg);
+  color: var(--detail-close-color);
+  border: var(--detail-close-border);
 }
 
 /* ==========================================================================
-   7. FOCUS
-   Never removed, only restyled (theme-contract §5.4).
+   8. FOCUS
+   Never removed, only restyled (theme-contract §5.4). Every interactive
+   element in the contract is listed here — a control that is reachable by Tab
+   and invisible when it gets there fails WCAG 2.4.7 no matter how good the
+   rest of the theme is.
    ========================================================================== */
 
 .qbe-cell:focus-visible,
 .qbe-detail-next:focus-visible,
-.qbe-detail-close:focus-visible {
+.qbe-detail-close:focus-visible,
+.qbe-btn:focus-visible,
+.qbe-team-name:focus-visible,
+.qbe-field-input:focus-visible {
   outline: var(--focus-ring);
   /* The offset is LOAD-BEARING, not decoration. --accent measures 5.36:1
      against --board-bg but only 1.87:1 against --cell-bg. Pushing the ring
@@ -756,15 +1031,25 @@ body,
 }
 
 /* ==========================================================================
-   8. ANIMATIONS (F5)
+   9. ANIMATIONS (F5)
    Three shipped: flip, zoom, fade. Selected by data-animation on .qbe-stage,
    triggered by data-state changing on .qbe-cell.
 
    HOW THE TRIGGER WORKS: when data-state changes, a rule that was not matching
    starts matching, and the `animation` property is newly applied — so the
-   keyframes run once. No JS class toggling, no transitionend. Cells rest at
-   data-state="hidden", which has NO animation, so a 144-cell board does not
-   flutter on first paint.
+   keyframes run once. No JS class toggling, no transitionend.
+
+   WHY EVERY CELL RULE BELOW ALSO REQUIRES [data-animate="true"]: data-state
+   alone cannot tell "this cell just moved" from "this cell was built already
+   spent". The renderer writes data-animate ONLY in updateBoard, i.e. only on a
+   runtime transition; buildCell never writes it. Without that gate, resuming a
+   played-out 12x12 board applied `animation` to 144 answered cells on the
+   first painted frame (288 running animations, measured), and a bingo card's
+   preMarked free squares played their mark animation at load. Resting at
+   data-state="hidden" was never enough on its own, because a RESUMED board
+   does not rest at hidden.
+   The overlay rules further down need no gate: .qbe-detail is hidden at build
+   time and can only be unhidden by a click.
 
    Every keyframe below is timed by --anim-duration and eased by --anim-easing,
    so a theme retunes all three by setting two tokens. --anim-duration: 0s
@@ -803,16 +1088,16 @@ body,
   transform-style: preserve-3d;
 }
 
-.qbe-stage[data-animation="flip"] .qbe-cell[data-state="revealed"],
-.qbe-stage[data-animation="flip"] .qbe-cell[data-state="answered"],
-.qbe-stage[data-animation="flip"] .qbe-cell[data-state="marked"] {
+.qbe-stage[data-animation="flip"] .qbe-cell[data-animate="true"][data-state="revealed"],
+.qbe-stage[data-animation="flip"] .qbe-cell[data-animate="true"][data-state="answered"],
+.qbe-stage[data-animation="flip"] .qbe-cell[data-animate="true"][data-state="marked"] {
   animation: qbe-flip-card var(--anim-duration) var(--anim-easing) 1;
 }
 
-.qbe-stage[data-animation="flip"] .qbe-cell[data-state="revealed"] .qbe-cell-value,
-.qbe-stage[data-animation="flip"] .qbe-cell[data-state="answered"] .qbe-cell-value,
-.qbe-stage[data-animation="flip"] .qbe-cell[data-state="marked"] .qbe-cell-value,
-.qbe-stage[data-animation="flip"] .qbe-cell[data-state="marked"] .qbe-cell-mark {
+.qbe-stage[data-animation="flip"] .qbe-cell[data-animate="true"][data-state="revealed"] .qbe-cell-value,
+.qbe-stage[data-animation="flip"] .qbe-cell[data-animate="true"][data-state="answered"] .qbe-cell-value,
+.qbe-stage[data-animation="flip"] .qbe-cell[data-animate="true"][data-state="marked"] .qbe-cell-value,
+.qbe-stage[data-animation="flip"] .qbe-cell[data-animate="true"][data-state="marked"] .qbe-cell-mark {
   animation: qbe-flip-face var(--anim-duration) var(--anim-easing) 1;
 }
 
@@ -835,18 +1120,18 @@ body,
   100% { opacity: 1; transform: scale(1); }
 }
 
-.qbe-stage[data-animation="zoom"] .qbe-cell[data-state="revealed"],
-.qbe-stage[data-animation="zoom"] .qbe-cell[data-state="answered"],
-.qbe-stage[data-animation="zoom"] .qbe-cell[data-state="marked"] {
+.qbe-stage[data-animation="zoom"] .qbe-cell[data-animate="true"][data-state="revealed"],
+.qbe-stage[data-animation="zoom"] .qbe-cell[data-animate="true"][data-state="answered"],
+.qbe-stage[data-animation="zoom"] .qbe-cell[data-animate="true"][data-state="marked"] {
   animation: qbe-zoom-card var(--anim-duration) var(--anim-easing) 1;
   /* Lift above neighbours during the overshoot so the swell is not clipped by
      the next card's shadow. */
   z-index: 2;
 }
 
-.qbe-stage[data-animation="zoom"] .qbe-cell[data-state="revealed"] .qbe-cell-value,
-.qbe-stage[data-animation="zoom"] .qbe-cell[data-state="answered"] .qbe-cell-value,
-.qbe-stage[data-animation="zoom"] .qbe-cell[data-state="marked"] .qbe-cell-mark {
+.qbe-stage[data-animation="zoom"] .qbe-cell[data-animate="true"][data-state="revealed"] .qbe-cell-value,
+.qbe-stage[data-animation="zoom"] .qbe-cell[data-animate="true"][data-state="answered"] .qbe-cell-value,
+.qbe-stage[data-animation="zoom"] .qbe-cell[data-animate="true"][data-state="marked"] .qbe-cell-mark {
   animation: qbe-zoom-face var(--anim-duration) var(--anim-easing) 1;
 }
 
@@ -872,9 +1157,9 @@ body,
     color var(--anim-duration) var(--anim-easing);
 }
 
-.qbe-stage[data-animation="fade"] .qbe-cell[data-state="revealed"] .qbe-cell-value,
-.qbe-stage[data-animation="fade"] .qbe-cell[data-state="answered"] .qbe-cell-value,
-.qbe-stage[data-animation="fade"] .qbe-cell[data-state="marked"] .qbe-cell-mark {
+.qbe-stage[data-animation="fade"] .qbe-cell[data-animate="true"][data-state="revealed"] .qbe-cell-value,
+.qbe-stage[data-animation="fade"] .qbe-cell[data-animate="true"][data-state="answered"] .qbe-cell-value,
+.qbe-stage[data-animation="fade"] .qbe-cell[data-animate="true"][data-state="marked"] .qbe-cell-mark {
   animation: qbe-fade-face var(--anim-duration) var(--anim-easing) 1;
 }
 
@@ -913,7 +1198,7 @@ body,
 }
 
 /* ==========================================================================
-   9. REDUCED MOTION
+   10. REDUCED MOTION
    Belt AND braces, on purpose:
      · the media query covers the theme being parsed before any JS runs, and
        the case where JS is broken or slow;
@@ -972,7 +1257,7 @@ html[data-reduced-motion="true"] .qbe-cell:active {
 }
 
 /* ==========================================================================
-   10. HIGH-CONTRAST / FORCED COLORS
+   11. HIGH-CONTRAST / FORCED COLORS
    Not required by the contract, but a projected board is exactly where someone
    turns forced colours on. Keep the structural cues that survive: borders and
    the hatch, both of which forced-colors respects.

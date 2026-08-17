@@ -41,7 +41,7 @@
 // jeopardy's three states would make F8 (bingo) a rewrite of this file instead of a JSON file.
 
 import Reveal from '../vendor/reveal.js/reveal.esm.js';
-import { PATTERNS } from './schemas.js';
+import { PATTERNS, LIMITS } from './schemas.js';
 
 // =============================================================================================
 // SECTION 1 — reveal.js integration
@@ -520,6 +520,13 @@ export function updateBoard(view, { bundle, session }) {
     view.renderedStates.set(key, state);
 
     record.button.setAttribute('data-state', state);
+    // `data-animate` is the marker that separates "this cell just moved" from "this cell was
+    // BUILT in that state". theme-contract §3/§8: the reveal animations are gated on it, and
+    // only this line ever sets it — `buildCell` deliberately does not. Without the gate, resuming
+    // a played-out 12x12 board replayed 144 flips plus 144 face fades on the first painted frame,
+    // and a bingo card's `preMarked` free squares played their mark animation at load. The
+    // animation marks the EVENT of a reveal, not the fact that a page was opened.
+    record.button.setAttribute('data-animate', 'true');
     record.button.setAttribute('aria-label', accessibleName(record.cell, record.column, b, state));
     if (bonus) record.button.setAttribute('data-bonus', 'true');
     else record.button.removeAttribute('data-bonus');
@@ -621,7 +628,12 @@ export function openCell(view, cellKey) {
   // On an engine old enough not to implement `inert` this is an inert property assignment in the
   // other sense — no throw, no effect — and the early return above still prevents the leak. Feature
   // support, never a user-agent test (CLAUDE.md constraint 5).
-  view.root.inert = true;
+  //
+  // F6 WIDENED THIS from `view.root` (the board) to every stage child except the overlay itself.
+  // The board is no longer the only focusable thing behind the scrim: the score bar's award buttons
+  // and the toolbar's Export/Import are stage children too, and Shift+Tab from the dialog reached
+  // them — a host could award points to the wrong team, invisibly, through a 0.78-alpha scrim.
+  setStageInert(view, true);
 
   if (view.handlers.onCellActivate) view.handlers.onCellActivate(cellKey);
 
@@ -644,6 +656,24 @@ export function openCell(view, cellKey) {
     detail.next.focus();
   } catch (_e) {
     /* a detached mount cannot take focus; the overlay is still correct */
+  }
+}
+
+/**
+ * Make everything on the stage except the open overlay inert, or live again.
+ *
+ * Falls back to the board alone when the view has no stage handle (a fixture that rendered a board
+ * into a bare container), so this can never be the reason an overlay leaves the board focusable.
+ */
+function setStageInert(view, on) {
+  const stage = view.stage;
+  if (!stage || typeof stage.children === 'undefined') {
+    view.root.inert = on;
+    return;
+  }
+  for (const child of stage.children) {
+    if (child === view.detail.root) continue;
+    child.inert = on;
   }
 }
 
@@ -735,7 +765,7 @@ export function closeCell(view) {
   }
 
   // Before the focus restore below, not after: a cell inside an inert subtree cannot take focus.
-  view.root.inert = false;
+  setStageInert(view, false);
 
   const open = view.open;
   view.open = null;
@@ -750,12 +780,531 @@ export function closeCell(view) {
 }
 
 // =============================================================================================
-// SECTION 6 — announcements: DELIBERATELY ABSENT UNTIL F6
+// SECTION 6 — announcements (F6)
 // =============================================================================================
 //
-// There used to be an `announce()` here, writing into a hidden live region in index.html, and
-// nothing in the repo called either of them. Both are gone rather than kept warm: state changes are
-// announced by the platform, because `closeCell` returns focus to a cell whose `aria-label` already
-// carries its new state, and a live region saying the same thing would talk over it. module-contracts
-// §8 still lists `announce` among the renderer's eventual exports — it comes back with the feature
-// that needs it (F6 scoring), not before.
+// `announce()` was removed in Phase 2 rather than kept warm, because nothing called it: a cell's
+// state change is announced by the PLATFORM, since `closeCell` returns focus to a button whose
+// `aria-label` already carries the new state, and a live region repeating it would talk over that.
+//
+// F6 is the feature that needs it back, and for one reason the platform cannot cover: a score
+// change alters text the host is NOT focused on. The award button keeps focus and keeps its own
+// name ("Award 200 points to Blue Team"); the number that changed is in a sibling element that no
+// screen reader has any reason to read. Without this region, a blind or low-vision host gets
+// silence on the only feedback the action produces.
+
+let liveRegion = null;
+
+/**
+ * Speak `text` to assistive technology. Silent for sighted users.
+ *
+ * The region is created on demand and lives on `<body>`, OUTSIDE the stage — it is not part of the
+ * board and must not become a stage child that a theme's `flex` rules try to lay out. It is hidden
+ * by `.qbe-live` in `themes/default.css` (the always-loaded base layer, theme-contract §7) rather
+ * than by an inline style here: the renderer imposes no visual decision of its own, because a single
+ * inline declaration outranks every theme rule and would be both unoverridable and undiscoverable
+ * from the contract. The hiding technique is a 1px clipped box rather than `display:none`, which
+ * would take the element out of the accessibility tree and make it announce nothing at all —
+ * theme-contract §5 now names "never unhide `.qbe-live`" as a non-negotiable for the same reason a
+ * theme may not delete the focus ring.
+ */
+export function announce(text, doc = document) {
+  if (typeof text !== 'string' || text === '') return;
+  if (!liveRegion || !liveRegion.isConnected) {
+    liveRegion = doc.createElement('div');
+    liveRegion.className = 'qbe-live';
+    liveRegion.setAttribute('role', 'status');
+    liveRegion.setAttribute('aria-live', 'polite');
+    (doc.body || doc.documentElement).appendChild(liveRegion);
+  }
+  liveRegion.textContent = text;
+}
+
+// =============================================================================================
+// SECTION 7 — chrome: the score bar, the toolbar, team setup, the resume screen (F6/F7/F10)
+// =============================================================================================
+//
+// THE CONTRACT WAS AMENDED FOR THIS, NOT BYPASSED. theme-contract §2 described a score bar of three
+// elements — `.qbe-team`, `.qbe-team-name`, `.qbe-team-score` — which is a READOUT and not a
+// control: it can display a score but gives the host no way to change one, no way to say whose turn
+// it is, and no way to create the teams in the first place. It also had nowhere at all to hang F10's
+// Export/Import. So the contract went to **v1.3** with the additions below, and the handoff to the
+// design collaborator was revised in the same breath (delta D11: a silent divergence corrupts
+// someone else's work). Everything here is published; nothing here is invented DOM.
+//
+// The additions, in one place, so a reader can check this file against the document:
+//   .qbe-team gains data-team="<index>" and two children — a `<button>` name and .qbe-team-controls
+//   button.qbe-btn[data-action]      ONE button class for every piece of chrome, varied by attribute
+//   footer.qbe-toolbar               always present, even when the game type has no scoring
+//   .qbe-setup[hidden][data-screen]  the pre-game overlay: team setup and the resume list
+//
+// WHY THE HOST CONTROLS ARE NOT A SEPARATE "HOST PANEL": plan Q4 is a single projected screen with
+// no player view. Everything on it is visible to the room, so the controls sit with the thing they
+// control — the +/− buttons live inside the team they score, which is also what makes their
+// accessible names unambiguous without any extra ARIA.
+
+const BTN_CLASS = 'qbe-btn';
+
+/** One chrome button. Real `<button>`, real text, and an accessible name that is never a glyph. */
+function chromeButton(doc, action, text, ariaLabel) {
+  const b = el(doc, 'button', BTN_CLASS, text);
+  b.type = 'button';
+  b.setAttribute('data-action', action);
+  if (ariaLabel) b.setAttribute('aria-label', ariaLabel);
+  return b;
+}
+
+// U+2212 MINUS SIGN, not a hyphen. On a projector at 30 feet a hyphen next to a 3-digit number is
+// a speck; the minus sign is drawn at the same width and weight as the plus.
+const MINUS = '−';
+
+/**
+ * Draw the score bar.
+ *
+ * @param {{bundle:object, session:object, mount:HTMLElement, handlers?:object}} args
+ * @returns {PanelView}
+ *
+ * `mount` is the stage. The bar is inserted as the stage's FIRST child, because theme-contract §2
+ * puts it above the board and a theme's `flex-direction: column` on the stage turns document order
+ * into visual order.
+ *
+ * CALLED ONLY WHEN `scoring.model !== 'none'` (theme-contract §2). Bingo has no scores, so it gets
+ * no bar at all rather than an empty one — which is why no "no teams yet" empty state is drawn here.
+ *
+ * Handlers: `onScoreAdjust(teamIndex, delta)` and `onTeamActivate(teamIndex)`. Both optional; a
+ * missing one makes that control inert rather than throwing (module-contracts §8).
+ */
+export function renderScorePanel({ bundle, session, mount, handlers }) {
+  const doc = mount.ownerDocument || document;
+  const view = {
+    root: el(doc, 'header', 'qbe-scorebar'),
+    stage: mount,
+    bundle,
+    handlers: handlers || {},
+    rows: [],
+    award: 0,
+    activeTeam: null,
+    // What is currently PAINTED, so `updateScorePanel` can tell a real change from a repaint and
+    // announce only the former. Same idea as the board's `renderedStates`.
+    paintedScores: [],
+  };
+
+  // One delegated listener for the whole bar — 12 teams cost three listeners, not 36.
+  view.root.addEventListener('click', (event) => {
+    const target = event.target instanceof Element ? event.target.closest('button') : null;
+    if (!target || !view.root.contains(target)) return;
+    const teamEl = target.closest('.qbe-team');
+    if (!teamEl) return;
+    const index = Number(teamEl.getAttribute('data-team'));
+    if (!Number.isInteger(index)) return;
+
+    if (target.classList.contains('qbe-team-name')) {
+      if (view.handlers.onTeamActivate) view.handlers.onTeamActivate(index);
+      return;
+    }
+    const delta = Number(target.getAttribute('data-delta'));
+    if (Number.isFinite(delta) && delta !== 0 && view.handlers.onScoreAdjust) {
+      view.handlers.onScoreAdjust(index, delta);
+    }
+  });
+
+  buildTeamRows(view, session);
+  mount.insertBefore(view.root, mount.firstChild);
+  return view;
+}
+
+/** Build (or rebuild) one row per team. Called on first paint and whenever the team COUNT changes. */
+function buildTeamRows(view, session) {
+  const doc = view.root.ownerDocument || document;
+  const teams = (session && Array.isArray(session.teams) ? session.teams : []).slice(0, LIMITS.maxTeams);
+
+  view.root.textContent = '';
+  view.rows = [];
+  view.paintedScores = [];
+
+  const fragment = doc.createDocumentFragment();
+  for (let i = 0; i < teams.length; i++) {
+    const row = el(doc, 'div', 'qbe-team');
+    row.setAttribute('data-team', String(i));
+
+    // THE NAME IS THE BUTTON (contract v1.3). Marking whose turn it is needs a control, and a
+    // separate "make active" button beside a static name would be a second thing to aim at on a
+    // projector for no gain. `aria-pressed` makes it a toggle rather than an action, which is what
+    // it is: the state it announces is the state the room can see in `data-active`.
+    const name = el(doc, 'button', 'qbe-team-name', teams[i].name);
+    name.type = 'button';
+    name.setAttribute('aria-pressed', 'false');
+
+    const score = el(doc, 'span', 'qbe-team-score', String(teams[i].score));
+
+    const controls = el(doc, 'div', 'qbe-team-controls');
+    const minus = chromeButton(doc, 'score-down', MINUS + '0');
+    const plus = chromeButton(doc, 'score-up', '+0');
+    controls.appendChild(minus);
+    controls.appendChild(plus);
+
+    row.appendChild(name);
+    row.appendChild(score);
+    row.appendChild(controls);
+    fragment.appendChild(row);
+
+    view.rows.push({ row, name, score, minus, plus });
+    view.paintedScores.push(null);
+  }
+  view.root.appendChild(fragment);
+  paintTeamRows(view, teams);
+}
+
+/**
+ * Repaint the rows against `teams`, the current award, and the active team.
+ *
+ * WHY THE BUTTONS CARRY AN AMOUNT rather than a fixed step: the host is awarding *this cell*, and a
+ * generic "+100" would be wrong on every board whose ladder is not 100 — and silently wrong on a
+ * bonus cell, where F7's multiplier is the entire point of the feature. `app.js` computes the award
+ * with `state.cellAward` (which applies the multiplier and refuses to apply it to a `lockValue`
+ * cell) and passes it in; this file only draws the number it is given.
+ *
+ * Before any cell has been opened there is nothing to award, so both buttons are `disabled` with a
+ * name that says why. A disabled button is honest; a button that silently adds zero is not.
+ */
+function paintTeamRows(view, teams) {
+  const award = Number.isFinite(view.award) ? Math.round(view.award) : 0;
+  for (let i = 0; i < view.rows.length; i++) {
+    const team = teams[i];
+    if (!team) continue;
+    const r = view.rows[i];
+    const active = view.activeTeam === i;
+
+    if (r.name.textContent !== team.name) r.name.textContent = team.name;
+    r.name.setAttribute('aria-pressed', active ? 'true' : 'false');
+    r.name.setAttribute('aria-label', team.name + ', ' + team.score + ' points');
+
+    r.score.textContent = String(team.score);
+    if (active) r.row.setAttribute('data-active', 'true');
+    else r.row.removeAttribute('data-active');
+
+    r.plus.textContent = '+' + award;
+    r.plus.setAttribute('data-delta', String(award));
+    r.plus.disabled = award <= 0;
+    r.plus.setAttribute(
+      'aria-label',
+      award > 0
+        ? 'Award ' + award + ' points to ' + team.name
+        : 'Award points to ' + team.name + ' — open a cell first',
+    );
+
+    r.minus.textContent = MINUS + award;
+    r.minus.setAttribute('data-delta', String(-award));
+    r.minus.disabled = award <= 0;
+    r.minus.setAttribute(
+      'aria-label',
+      award > 0
+        ? 'Deduct ' + award + ' points from ' + team.name
+        : 'Deduct points from ' + team.name + ' — open a cell first',
+    );
+
+    // Announce only a score that actually MOVED. Repainting the bar because the award changed, or
+    // because another team scored, must not make this team's number speak again.
+    if (view.paintedScores[i] !== null && view.paintedScores[i] !== team.score) {
+      announce(team.name + ', ' + team.score + ' points');
+    }
+    view.paintedScores[i] = team.score;
+  }
+}
+
+/**
+ * Repaint the score bar from a new session.
+ *
+ * @param {PanelView} view
+ * @param {{session:object, award?:number, activeTeam?:number|null}} args
+ *
+ * `award` and `activeTeam` are additive to module-contracts §8's `updateScorePanel(view, {session})`
+ * and are both VIEW facts rather than session facts, which is why they arrive as arguments instead
+ * of being read off the state object:
+ *   - the award belongs to the cell currently in play, which is a thing happening on this screen;
+ *   - the active team is a marker the host sets for the room, and spec §4.4's state shape has no
+ *     field for it. Persisting it would mean either an unschema'd key (dropped on the next import,
+ *     so export/import would stop round-tripping exactly — Gate 3) or a state schema delta nobody
+ *     ratified. plan Q4 already says there is no turn system to persist.
+ */
+export function updateScorePanel(view, { session, award, activeTeam }) {
+  if (!view) return;
+  if (award !== undefined) view.award = award;
+  if (activeTeam !== undefined) view.activeTeam = activeTeam;
+
+  const teams = session && Array.isArray(session.teams) ? session.teams : [];
+  if (teams.length !== view.rows.length) {
+    buildTeamRows(view, session); // the team LIST changed (host edited it): structure, not text
+    return;
+  }
+  paintTeamRows(view, teams);
+}
+
+/**
+ * The always-present footer: Export, Import, and the team editor.
+ *
+ * NOT part of the score bar, and that is the whole reason it exists as its own element: the score
+ * bar is absent for any game type with `scoring.model: "none"` (bingo), and F10 export/import has to
+ * work there too. A file a host cannot export from a bingo card is a data-loss bug wearing a layout
+ * decision.
+ *
+ * THE FILE INPUT. `<input type="file">` is the only way to read a local file without a server, and
+ * its UA-rendered button cannot be styled to match a projected theme. So the real input is `hidden`
+ * and a real `<button>` opens it — the accessible name and keyboard behaviour come from the button,
+ * and the input's `change` event does the work. `value` is cleared after every pick so choosing the
+ * SAME file twice still fires (a host re-importing after a mistake would otherwise get silence).
+ */
+export function renderToolbar({ mount, handlers }) {
+  const doc = mount.ownerDocument || document;
+  const h = handlers || {};
+  const root = el(doc, 'footer', 'qbe-toolbar');
+
+  const exportBtn = chromeButton(doc, 'export', 'Export', 'Export this session as a JSON file');
+  const importBtn = chromeButton(doc, 'import', 'Import', 'Import a session from a JSON file');
+
+  const file = el(doc, 'input', 'qbe-file');
+  file.type = 'file';
+  file.accept = '.json,application/json';
+  file.hidden = true;
+
+  // Teams… exists only when there is somewhere for a team to be seen. A game type with no scoring
+  // (bingo) draws no score bar, so a team edited here would change nothing anybody could look at —
+  // the caller signals that by passing no `onTeamsEdit`, and the button is then absent rather than
+  // present-and-inert. A dead control on a projected screen is worse than a missing one: the host
+  // presses it mid-game and has to work out whether the app is broken.
+  if (h.onTeamsEdit) root.appendChild(chromeButton(doc, 'teams', 'Teams…', 'Edit the team names'));
+  root.appendChild(exportBtn);
+  root.appendChild(importBtn);
+  root.appendChild(file);
+
+  root.addEventListener('click', (event) => {
+    const target = event.target instanceof Element ? event.target.closest('button') : null;
+    if (!target || !root.contains(target)) return;
+    const action = target.getAttribute('data-action');
+    if (action === 'export' && h.onExport) h.onExport();
+    else if (action === 'teams' && h.onTeamsEdit) h.onTeamsEdit();
+    else if (action === 'import') file.click();
+  });
+
+  file.addEventListener('change', () => {
+    const picked = file.files && file.files[0];
+    file.value = '';
+    if (picked && h.onImport) h.onImport(picked);
+  });
+
+  mount.appendChild(root);
+  return { root, destroy: () => root.remove() };
+}
+
+/** The shared pre-game overlay shell: scrim, panel, title, note, body, actions. */
+function buildSetup(doc, screen, title, note) {
+  const root = el(doc, 'div', 'qbe-setup');
+  root.setAttribute('data-screen', screen);
+  // Same reasoning as `.qbe-detail`: named by its heading, focus moved into it, but NOT `aria-modal`
+  // and no focus trap — there is nothing behind it worth protecting and trapping a keyboard user is
+  // forbidden outright (CLAUDE.md accessibility rule).
+  root.setAttribute('role', 'dialog');
+
+  const panel = el(doc, 'div', 'qbe-setup-panel');
+  const heading = el(doc, 'h2', 'qbe-setup-title', title);
+  heading.id = 'qbe-setup-title-' + screen;
+  heading.setAttribute('tabindex', '-1');
+  root.setAttribute('aria-labelledby', heading.id);
+
+  const body = el(doc, 'div', 'qbe-setup-body');
+  const actions = el(doc, 'div', 'qbe-setup-actions');
+
+  panel.appendChild(heading);
+  if (note) panel.appendChild(el(doc, 'p', 'qbe-setup-note', note));
+  panel.appendChild(body);
+  panel.appendChild(actions);
+  root.appendChild(panel);
+
+  return { root, panel, heading, body, actions };
+}
+
+/**
+ * Team setup — the screen a NEW session starts on (spec §4.4: "teams are created in-app at session
+ * start"), and the same screen the toolbar's Teams… button reopens mid-game.
+ *
+ * @param {{mount:HTMLElement, handlers?:object, names?:string[], editing?:boolean}} args
+ * @returns {{root:HTMLElement, destroy:Function}}
+ *
+ * Two boxes to start, because two teams is the smallest game anyone actually runs, and a button to
+ * add more up to `LIMITS.maxTeams`. Blank boxes are not an error: `state.setTeams` drops them, so a
+ * host who wants three teams types three names and presses Start without deleting anything.
+ *
+ * STARTING WITH NO TEAMS IS ALLOWED. A host demoing a board, or one keeping score on a whiteboard,
+ * presses Start on empty boxes and gets a board with an empty score bar (which `default.css` hides).
+ * Refusing to start would be the app inventing a rule the spec does not have.
+ */
+export function renderTeamSetup({ mount, handlers, names, editing }) {
+  const doc = mount.ownerDocument || document;
+  const h = handlers || {};
+  const initial = Array.isArray(names) && names.length > 0 ? names.slice(0, LIMITS.maxTeams) : ['', ''];
+
+  const ui = buildSetup(
+    doc,
+    'teams',
+    editing ? 'Edit the teams' : 'Who is playing?',
+    editing
+      ? 'Rename a team, add one, or clear a box to remove it. Scores are kept.'
+      : 'Type a name for each team. Leave a box empty to skip it — you can add teams later.',
+  );
+
+  const inputs = [];
+  const addField = (value) => {
+    if (inputs.length >= LIMITS.maxTeams) return;
+    const index = inputs.length;
+    const field = el(doc, 'label', 'qbe-field', 'Team ' + (index + 1));
+    const input = el(doc, 'input', 'qbe-field-input');
+    input.type = 'text';
+    input.maxLength = LIMITS.maxLabelChars;
+    input.value = typeof value === 'string' ? value : '';
+    input.autocomplete = 'off';
+    // Enter submits, the way a form would — without a <form>, whose default submit would reload the
+    // page and take the game with it.
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        submit();
+      }
+    });
+    field.appendChild(input);
+    ui.body.appendChild(field);
+    inputs.push(input);
+  };
+
+  const submit = () => {
+    if (h.onTeamsSubmit) h.onTeamsSubmit(inputs.map((i) => i.value));
+  };
+
+  for (const value of initial) addField(value);
+
+  const add = chromeButton(doc, 'add-team', 'Add a team', 'Add another team name box');
+  const start = chromeButton(doc, 'start', editing ? 'Save teams' : 'Start the game');
+  ui.actions.appendChild(add);
+  ui.actions.appendChild(start);
+  if (editing) {
+    const cancel = chromeButton(doc, 'cancel', 'Cancel');
+    ui.actions.appendChild(cancel);
+  }
+
+  ui.root.addEventListener('click', (event) => {
+    const target = event.target instanceof Element ? event.target.closest('button') : null;
+    if (!target || !ui.root.contains(target)) return;
+    const action = target.getAttribute('data-action');
+    if (action === 'add-team') {
+      addField('');
+      const last = inputs[inputs.length - 1];
+      if (last) tryFocus(last);
+      add.disabled = inputs.length >= LIMITS.maxTeams;
+    } else if (action === 'start') {
+      submit();
+    } else if (action === 'cancel' && h.onCancel) {
+      h.onCancel();
+    }
+  });
+
+  mount.appendChild(ui.root);
+  tryFocus(inputs[0] || ui.heading);
+  return { root: ui.root, destroy: () => ui.root.remove() };
+}
+
+/**
+ * The resume screen (spec §4.4: "a resume screen lists recent sessions by title and date with
+ * resume/discard").
+ *
+ * @param {{sessions:object[], gameHash:string, mount:HTMLElement, handlers?:object}} args
+ *
+ * EVERY saved session is listed, but only the ones saved against the CURRENTLY LOADED game file can
+ * be resumed — a session is keyed by the content hash, and `state.adopt` refuses a mismatch outright.
+ * The others are shown with their Resume button absent and a line saying why, because the alternative
+ * (hiding them) leaves a host who edited one comma in their game file staring at "no saved sessions"
+ * with no way to discard the orphan and no explanation. Discard is offered on every row: the shelf
+ * holds ten, and this screen is the only place it can be tidied.
+ */
+export function renderResumeScreen({ sessions, gameHash, mount, handlers }) {
+  const doc = mount.ownerDocument || document;
+  const h = handlers || {};
+  const list = Array.isArray(sessions) ? sessions : [];
+
+  const ui = buildSetup(
+    doc,
+    'resume',
+    'Pick up where you left off?',
+    'This browser has a saved session for this game. Resuming restores the board, the teams, the scores and the bonus cells exactly as they were.',
+  );
+
+  for (let i = 0; i < list.length; i++) {
+    const summary = list[i];
+    const resumable = summary.gameHash === gameHash;
+    const row = el(doc, 'div', 'qbe-session');
+    row.setAttribute('data-session', String(i));
+
+    row.appendChild(el(doc, 'div', 'qbe-session-title', summary.gameTitle));
+    row.appendChild(
+      el(
+        doc,
+        'div',
+        'qbe-session-meta',
+        // A non-resumable row is either another game entirely or the same game after an edit — from
+        // the hash alone the two are indistinguishable, so the copy says only what is certainly true.
+        describeSession(summary) + (resumable ? '' : ' · saved from a different game file, so it cannot be resumed here'),
+      ),
+    );
+    if (resumable) {
+      row.appendChild(chromeButton(doc, 'resume', 'Resume', 'Resume ' + summary.gameTitle + ', ' + describeSession(summary)));
+    }
+    row.appendChild(chromeButton(doc, 'discard', 'Discard', 'Discard the saved session for ' + summary.gameTitle));
+    ui.body.appendChild(row);
+  }
+
+  ui.actions.appendChild(chromeButton(doc, 'new', 'Start a new game', 'Start a new game and leave the saved session alone'));
+
+  ui.root.addEventListener('click', (event) => {
+    const target = event.target instanceof Element ? event.target.closest('button') : null;
+    if (!target || !ui.root.contains(target)) return;
+    const action = target.getAttribute('data-action');
+    if (action === 'new') {
+      if (h.onNewGame) h.onNewGame();
+      return;
+    }
+    const rowEl = target.closest('.qbe-session');
+    if (!rowEl) return;
+    const summary = list[Number(rowEl.getAttribute('data-session'))];
+    if (!summary) return;
+    if (action === 'resume' && h.onResume) h.onResume(summary.gameHash);
+    else if (action === 'discard' && h.onDiscard) h.onDiscard(summary.gameHash);
+  });
+
+  mount.appendChild(ui.root);
+  tryFocus(ui.heading);
+  return { root: ui.root, destroy: () => ui.root.remove() };
+}
+
+/**
+ * "16 Aug 2026, 20:41 · 2 teams", or a bare team count when the timestamp will not parse.
+ *
+ * `toLocaleString` is the browser's job, not ours: the host is reading their own clock, and a
+ * hand-rolled format would be wrong in most of the world. A stored `updatedAt` is untrusted text
+ * (an edited devtools entry), so an unparseable one degrades to no date rather than "Invalid Date".
+ */
+function describeSession(summary) {
+  const teams = summary.teamCount === 1 ? '1 team' : summary.teamCount + ' teams';
+  const when = new Date(summary.updatedAt);
+  if (Number.isNaN(when.getTime())) return teams;
+  return when.toLocaleString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+  }) + ' · ' + teams;
+}
+
+/** Focus without letting a detached or disabled node throw the caller off its feet. */
+function tryFocus(node) {
+  if (!node) return;
+  try {
+    node.focus();
+  } catch (_e) {
+    /* a detached mount cannot take focus; the screen is still correct */
+  }
+}

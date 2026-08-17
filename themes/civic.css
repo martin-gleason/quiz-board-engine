@@ -55,6 +55,11 @@
   /* answered: sinks into the inset-surface tone. See header for the cues. */
   --cell-answered-bg: #e7e4db;       /* 1.17:1 vs --board-bg — near-invisible as an object, on purpose */
   --cell-answered-text: #5c5a52;     /* 5.43:1 on --cell-answered-bg (AA body) */
+  /* The spent rim, in the system's strong-border tone — which is exactly the
+     3:1 control boundary it was derived to be. Tokenised in contract v1.2;
+     this was a class override in the donated file. The same tone works on both
+     dark surfaces, so the dark block below does not restate it. */
+  --cell-answered-border: 2px dashed #828074;  /* 3.64:1 vs --board-bg, 3.12:1 vs --cell-answered-bg (non-text 3:1) */
 
   /* marked: the action green itself. Hue never carries it alone — the stamp
      glyph and the fill-lightness change are the redundant cues. */
@@ -101,7 +106,9 @@
 }
 
 /* ==========================================================================
-   CLASS OVERRIDES — five, each because a token cannot express it
+   CLASS OVERRIDES — four, each because a token cannot express it.
+   (Five in the donated file. The spent rim became --cell-answered-border in
+   theme-contract v1.2, along with the two dark-block rules noted below.)
    ========================================================================== */
 
 /* 1. Column labels as kickers: mono, uppercase, tracked, sitting on the
@@ -119,14 +126,7 @@
   font-weight: 600;
 }
 
-/* 2. The spent-cell rim. default.css hardcodes its own warm grey; this theme
-      uses the system's strong border tone, which is exactly the 3:1 control
-      boundary it was derived to be. */
-.qbe-cell[data-state="answered"] {
-  border-color: #828074;             /* 3.64:1 vs --board-bg, 3.12:1 vs --cell-answered-bg (non-text 3:1) */
-}
-
-/* 3. The hatch, retinted to the system's warm neutral so the texture belongs
+/* 2. The hatch, retinted to the system's warm neutral so the texture belongs
       to the stationery rather than reading as a grey stain. */
 .qbe-cell[data-state="answered"]::before {
   background: repeating-linear-gradient(
@@ -136,13 +136,13 @@
   );
 }
 
-/* 4. Active-team tint: default tints with its amber rgba; this palette's
+/* 3. Active-team tint: default tints with its amber rgba; this palette's
       amber differs. Kept faint — the outline is the message. */
 .qbe-team[data-active="true"] {
   background: rgba(217, 154, 62, 0.16);
 }
 
-/* 5. Point values track slightly tight: mono digits at display size set wide,
+/* 4. Point values track slightly tight: mono digits at display size set wide,
       and a 12-column board needs every pixel back. Not tokenised. */
 .qbe-cell-value {
   letter-spacing: -0.02em;
@@ -154,6 +154,8 @@
    barely lighter than the ground whose 3:1 rim does the separating (the dark
    ramp casts no shadows — surfaces rise instead), and sage flips to a light
    fill with dark ink wherever it is a fill.
+   The dark block keeps ONE class override — the hatch retint — for the same
+   reason the light block does: texture is a theme's own vocabulary.
    ========================================================================== */
 
 @media (prefers-color-scheme: dark) {
@@ -198,11 +200,22 @@
     --accent: #8aa163;               /* 5.80:1 vs --board-bg (focus ring in the gutter ✓) */
     --accent-contrast: #1c1f22;      /* 5.80:1 on --accent (AA body) */
     --focus-ring: 3px solid #8aa163;
-  }
 
-  /* Dark spent rim: same strong-border tone works on both dark surfaces. */
-  .qbe-cell[data-state="answered"] {
-    border-color: #828074;           /* 4.17:1 vs ground, 4.44:1 vs --cell-answered-bg */
+    /* The spent rim needs no dark override: the same strong-border tone is
+       correct on both surfaces (4.17:1 vs the dark ground, 4.44:1 vs the dark
+       answered fill), and --cell-answered-border already carries it. */
+
+    /* Revealed VALUE only. --cell-revealed-accent still resolves to --accent =
+       light sage, which is fine for the ring (4.66:1, and the ring is what says
+       "open"); the number reads better in the panel's own ink. Was a class
+       override in the donated file; a token in contract v1.2. */
+    --cell-revealed-value-color: #dfa858;  /* 6.18:1 on --cell-revealed-bg — the dark ramp's amber-text tone; large ✓, body ✓ */
+
+    /* The Close label sits on the SCRIM. default.css expresses it as
+       --board-bg, near-black here on a near-black scrim (the midnight.css
+       finding — the relationship inverts with the ground). Tokenised in v1.2. */
+    --detail-close-color: var(--board-fg);   /* 13.5:1+ on the flattened scrim (AAA) */
+    --detail-close-border: 2px solid var(--board-fg);
   }
 
   .qbe-cell[data-state="answered"]::before {
@@ -211,20 +224,5 @@
       rgba(148, 143, 132, 0.35) 0 2px,
       rgba(0, 0, 0, 0) 2px 9px
     );
-  }
-
-  /* Revealed-value colour: default.css paints it var(--accent) = light sage,
-     which on the dark revealed panel is fine (4.66:1 large ✓) — but the ring
-     already says "open"; the value reads better in the panel's own ink. */
-  .qbe-cell[data-state="revealed"] .qbe-cell-value {
-    color: #dfa858;                  /* 6.18:1 on --cell-revealed-bg — the dark ramp's amber-text tone; large ✓, body ✓ */
-  }
-
-  /* The overlay's Close label: default.css sets it to var(--board-bg), which
-     is near-black here on a near-black scrim (the midnight.css finding — the
-     relationship inverts with the ground, and a token can't express that). */
-  .qbe-detail-close {
-    color: var(--board-fg);          /* 13.5:1+ on the flattened scrim (AAA) */
-    border-color: var(--board-fg);
   }
 }

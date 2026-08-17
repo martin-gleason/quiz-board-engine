@@ -26,9 +26,53 @@ import * as errors from '../js/errors.js';
 // transitive source audit below — the invariant suite now CONFIRMS that reachability rather than
 // assuming it.
 import * as renderer from '../js/renderer.js';
+// F6/F7/F10 additions. Importing state.js here does the same two jobs the renderer import does: the
+// state and bonus suites drive the REAL module (never a copy of its arithmetic), and the import is
+// also what pulls js/state.js into the transitive source audit below, so its forbidden-API and SPDX
+// checks happen for the same reason every other module's do.
+import * as state from '../js/state.js';
 import { KINDS, LIMITS, NOTE_KEY } from '../js/schemas.js';
 
 const MANIFEST = 'tests/fixtures/manifest.json';
+const THEME_MANIFEST = 'themes/themes.json';
+const THEMES_DIR = 'themes/';
+
+// ---------------------------------------------------------------------------------------------
+// The theme manifest, read ONCE and shared by the theme audit and the shell suite.
+//
+// WHY IT IS READ AT RUNTIME RATHER THAN LISTED HERE. Both suites used to carry a hardcoded pair of
+// themes — `['themes/default.css', 'themes/midnight.css']` in the invariant sweep, and two literal
+// {game, theme} cases in the shell suite. Three donated themes (civic, chalkboard, marquee) were
+// then added to themes/themes.json and the suite went on reporting a full green without ever
+// fetching one of them. That is the same defect class as the hardcoded ENTRY_SOURCES list this file
+// already fixed once: a check that silently narrows itself as the repo grows. Reading the manifest
+// means a sixth theme cannot arrive untested — it is audited the moment it is registered, which is
+// also the moment it becomes loadable (spec §6.4).
+// ---------------------------------------------------------------------------------------------
+
+let themeManifestPromise = null;
+
+/** Resolve to `[{ name, file }]` in manifest order. Rejects loudly; callers record the failure. */
+function loadThemeManifest() {
+  if (!themeManifestPromise) {
+    themeManifestPromise = fetch(THEME_MANIFEST + '?v=' + Date.now(), { cache: 'no-store' })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((json) => {
+        const map = json && typeof json.themes === 'object' && json.themes !== null ? json.themes : null;
+        if (!map) throw new Error('no "themes" object in ' + THEME_MANIFEST);
+        return Object.keys(map).map((name) => ({ name, file: map[name] }));
+      });
+  }
+  return themeManifestPromise;
+}
+
+/** CSS with comments removed. Every scan below runs on this, never on the raw text — see §6.4. */
+function stripCssComments(css) {
+  return css.replace(/\/\*[\s\S]*?\*\//g, '');
+}
 
 // ---------------------------------------------------------------------------------------------
 // Assertion plumbing
@@ -566,6 +610,15 @@ const CONTRACT_CLASSES = new Set([
   'qbe-cell-mark',
   'qbe-detail', 'qbe-detail-prompt', 'qbe-detail-answer', 'qbe-detail-actions',
   'qbe-detail-next', 'qbe-detail-close',
+  // contract v1.3 (F6/F7/F10): the host controls. The score bar published in v1.2 was a READOUT —
+  // it could display a score but gave the host no way to change one, no way to mark whose turn it
+  // is, and nowhere to hang Export/Import. Transcribed here from theme-contract §2 for the same
+  // reason as everything above it: the published document is the authority, and this set is how a
+  // divergence gets caught by an assertion rather than by the design collaborator.
+  'qbe-team-controls', 'qbe-btn', 'qbe-toolbar', 'qbe-file',
+  'qbe-setup', 'qbe-setup-panel', 'qbe-setup-title', 'qbe-setup-note', 'qbe-setup-body',
+  'qbe-setup-actions', 'qbe-field', 'qbe-field-input',
+  'qbe-session', 'qbe-session-title', 'qbe-session-meta',
 ]);
 
 // theme-contract §3, verbatim. `null` in the list means "the attribute may also be absent", which is
@@ -574,10 +627,21 @@ const CONTRACT_ATTR_VALUES = {
   'data-state': ['hidden', 'revealed', 'answered', 'marked'],
   'data-bonus': ['true'],
   'data-locked': ['true'],
+  // contract v1.4: "this cell moved at runtime", written only by updateBoard. It is what the theme
+  // layer's animation selectors are gated on, so a wrong value would silently disable every reveal
+  // animation rather than break anything visible in the DOM.
+  'data-animate': ['true'],
   'data-layout': ['grid', 'ranked-list'],
   'data-animation': ['flip', 'zoom', 'fade'],
   'data-phase': ['prompt', 'answer'],
   'data-active': ['true'],
+  // contract v1.3. `data-team` and `data-session` are absent from this table on purpose: they carry
+  // an INDEX, not a value from a closed set, so there is no enum to check them against.
+  'data-screen': ['teams', 'resume'],
+  'data-action': [
+    'score-up', 'score-down', 'export', 'import', 'teams',
+    'add-team', 'start', 'cancel', 'resume', 'discard', 'new',
+  ],
 };
 
 // Which element each attribute is allowed to sit on (§3's "On" column). An attribute on the wrong
@@ -587,10 +651,13 @@ const CONTRACT_ATTR_HOST = {
   'data-state': '.qbe-cell',
   'data-bonus': '.qbe-cell',
   'data-locked': '.qbe-cell',
+  'data-animate': '.qbe-cell',
   'data-layout': '.qbe-board',
   'data-animation': '.qbe-stage',
   'data-phase': '.qbe-detail',
   'data-active': '.qbe-team',
+  'data-screen': '.qbe-setup',
+  'data-action': '.qbe-btn',
 };
 
 function classOf(node) {
@@ -624,7 +691,9 @@ function contractProblems(stage) {
   const scorebar = children.filter((n) => classOf(n) === 'qbe-scorebar');
   const boards = children.filter((n) => classOf(n) === 'qbe-board');
   const details = children.filter((n) => classOf(n) === 'qbe-detail');
-  if (children.length !== scorebar.length + boards.length + details.length) {
+  // contract v1.3: the toolbar and the pre-game overlay are stage children too.
+  const chrome = children.filter((n) => classOf(n) === 'qbe-toolbar' || classOf(n) === 'qbe-setup');
+  if (children.length !== scorebar.length + boards.length + details.length + chrome.length) {
     problems.push('the stage has children the contract does not name');
   }
   if (boards.length !== 1) problems.push('expected exactly one .qbe-board, got ' + boards.length);
@@ -1157,6 +1226,49 @@ async function runRenderSuite() {
         : reads + ' geometry read(s) — one read interleaved with the writes reflows the whole board');
   }
 
+  // ---- 5b. a RESUMED board does not replay the whole board's reveal ---------------------------
+  // theme-contract §3/§8 (v1.4). `data-state` alone cannot tell "this cell just moved" from "this
+  // cell was BUILT already spent", and a resumed session is nothing but the second kind. Measured
+  // before the gate existed: booting a maxed 12x12 board with all 144 cells answered and
+  // animation "flip" started 288 animations (qbe-flip-card + qbe-flip-face) on the first painted
+  // frame — the entire board flipping itself over to announce that a page had loaded.
+  //
+  // Asserted on the marker rather than on document.getAnimations(): the marker is the contract the
+  // theme layer is written against, and it is checkable without a stylesheet attached to this
+  // harness. The CSS half — that every theme's cell animation selector actually requires the
+  // marker — is asserted in the theme suite.
+  if (big.ok) {
+    const resumedStage = harnessStage();
+    const resumedSession = { cellStates: {}, bonusCells: [] };
+    for (const column of big.value.content.board.columns) {
+      for (const cell of column.cells) resumedSession.cellStates[cell.key] = 'answered';
+    }
+    const resumedView = renderer.renderBoard({
+      bundle: big.value,
+      session: resumedSession,
+      mount: resumedStage,
+      handlers: { onCellAdvance() {} },
+    });
+    const built = [...resumedStage.querySelectorAll('.qbe-cell')];
+    const answered = built.filter((c) => c.getAttribute('data-state') === 'answered').length;
+    const armedAtBuild = built.filter((c) => c.hasAttribute('data-animate')).length;
+    record('render', 'resuming a fully played 12x12 board arms ZERO cell animations',
+      built.length === 144 && answered === 144 && armedAtBuild === 0,
+      answered + ' of ' + built.length + ' cells built in "answered"; ' + armedAtBuild
+        + ' carry data-animate (each one would start a card flip AND a face fade on frame one)');
+
+    // ...and the marker must still arrive when a cell really moves, or the gate would have deleted
+    // the animations rather than timed them.
+    resumedSession.cellStates['0:0'] = 'revealed';
+    renderer.updateBoard(resumedView, { bundle: big.value, session: resumedSession });
+    const moved = resumedView.cells.get('0:0');
+    const armedAfter = [...resumedStage.querySelectorAll('.qbe-cell[data-animate="true"]')];
+    record('render', 'a cell that moves at runtime gets data-animate="true", and only that cell',
+      moved.getAttribute('data-animate') === 'true' && armedAfter.length === 1,
+      'moved cell data-animate="' + moved.getAttribute('data-animate') + '"; '
+        + armedAfter.length + ' cell(s) armed board-wide after one updateBoard');
+  }
+
   // ---- 6. bingo: two states, and "revealed" is not one of them ---------------------------------
   const bingo = await fileBundle('games/demo-bingo.json');
   if (!bingo.ok) {
@@ -1446,9 +1558,47 @@ async function runRenderSecurityChecks() {
 // board rests on. It is the only place in the suite where theme CSS is loaded at all.
 // ---------------------------------------------------------------------------------------------
 
-const SHELL_BOOT_TIMEOUT_MS = 10000;
+// Raised from 10s to 20s when F6 landed, and not arbitrarily: a boot is now shell + reveal + the
+// pre-game screen + a click + a validated resume, and the whole matrix runs several of these in one
+// page. A 10s ceiling produced one false failure in four runs on a loaded machine — and a suite that
+// cries wolf is a suite people stop believing. The poll resolves the instant a themed board appears,
+// so a healthy run costs nothing for the larger ceiling; only a genuinely stuck boot pays it.
+const SHELL_BOOT_TIMEOUT_MS = 20000;
 
 /** Boot index.html in an iframe and resolve once the board is on screen with its CSS applied. */
+/**
+ * The `qbe.session.*` keys on the shelf right now.
+ *
+ * The shell suite boots the REAL app, and the real app saves a session the moment the host presses
+ * Start. That is the behaviour under test, so it must not be stubbed — but this page shares an
+ * origin with the app, so a test run would otherwise leave its own sessions sitting in a host's
+ * resume list. `dropNewSessions` removes exactly what the run added and touches nothing that was
+ * there before, which is the difference between cleaning up and clearing somebody's storage.
+ */
+function sessionKeysNow() {
+  const keys = new Set();
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (typeof key === 'string' && key.indexOf('qbe.session.') === 0) keys.add(key);
+    }
+  } catch (_err) {
+    /* storage unavailable: there is nothing to clean up either */
+  }
+  return keys;
+}
+
+function dropNewSessions(before) {
+  for (const key of sessionKeysNow()) {
+    if (before.has(key)) continue;
+    try {
+      localStorage.removeItem(key);
+    } catch (_err) {
+      /* nothing to do */
+    }
+  }
+}
+
 function bootShell(gamePath) {
   return new Promise((resolve) => {
     const frame = document.createElement('iframe');
@@ -1474,6 +1624,27 @@ function bootShell(gamePath) {
         doc = null;
       }
       const board = doc && doc.querySelector('.qbe-board');
+
+      // F6 PUT A SCREEN IN FRONT OF THE BOARD, so the shell no longer boots straight to one: a new
+      // game opens on team setup, and a browser that already holds a session for this game opens on
+      // the resume list. This suite is about the BOARD — its theme, its geometry, its density — so
+      // the poll walks through whichever screen it meets exactly as a host would, by clicking the
+      // real button. It does not reach into `state`: if the setup screen ever stops leading to a
+      // board, these assertions must fail rather than be routed around.
+      const setup = !board && doc ? doc.querySelector('.qbe-setup') : null;
+      if (setup) {
+        // RESUME IS PREFERRED OVER "Start a new game", and that is about not damaging the host's
+        // data rather than about coverage: this page shares an origin with the app, so "new" would
+        // overwrite whatever real session is saved under that game's hash with an empty one — a
+        // teacher who runs the suite between two classes would come back to a board with no teams
+        // and no scores on it. Resuming only bumps `updatedAt`. Either path reaches a board, which
+        // is all this suite measures.
+        const btn = setup.querySelector('.qbe-btn[data-action="resume"]')
+          || setup.querySelector('.qbe-btn[data-action="start"]')
+          || setup.querySelector('.qbe-btn[data-action="new"]');
+        if (btn) btn.click();
+      }
+
       const themed = board && doc.defaultView
         && doc.defaultView.getComputedStyle(board).getPropertyValue('display') !== 'block';
       if (board && themed) {
@@ -1490,13 +1661,137 @@ function bootShell(gamePath) {
   });
 }
 
+/**
+ * Resolve once a stylesheet whose href ends in `file` is loaded AND parsed in `doc`.
+ *
+ * WHY POLLING RATHER THAN READING styleSheets STRAIGHT AWAY. The board appearing is not the same
+ * event as the theme sheet being registered: Firefox will hand you a laid-out .qbe-board while
+ * document.styleSheets still has only the base layer in it, and the base-layer assertion then fails
+ * for a reason that has nothing to do with the file's content. `cssRules.length > 0` is the real
+ * signal — the sheet is not merely listed, it is parsed and applying. Same-origin, so readable.
+ */
+function waitForSheet(doc, file, timeoutMs = 5000) {
+  const ends = new RegExp(file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$');
+  const started = performance.now();
+  return new Promise((resolve) => {
+    const poll = () => {
+      for (const sheet of [...doc.styleSheets]) {
+        if (!sheet.href || !ends.test(sheet.href.split('?')[0])) continue;
+        let parsed = false;
+        try {
+          parsed = sheet.cssRules.length > 0;
+        } catch (_err) {
+          parsed = false;
+        }
+        if (parsed) { resolve(true); return; }
+      }
+      if (performance.now() - started > timeoutMs) { resolve(false); return; }
+      setTimeout(poll, 25);
+    };
+    poll();
+  });
+}
+
+/** The four geometry facts the whole projected board rests on, measured for one applied theme. */
+function assertShellGeometry(label, doc, win, board, frame) {
+  const boardStyle = win.getComputedStyle(board);
+  const tracks = boardStyle.getPropertyValue('grid-template-columns');
+  const columnCount = board.style.getPropertyValue('--qbe-column-count').trim();
+  const trackCount = tracks.trim().split(/\s+/).filter((t) => t !== '' && t !== 'none').length;
+  record('shell', `${label}: .qbe-board is a real grid with one track per column`,
+    boardStyle.getPropertyValue('display') === 'grid' && trackCount === Number(columnCount),
+    'display=' + boardStyle.getPropertyValue('display') + ', --qbe-column-count=' + columnCount
+    + ', grid-template-columns resolves to ' + trackCount + ' track(s)');
+
+  const detail = doc.querySelector('.qbe-detail');
+  const detailStyle = win.getComputedStyle(detail);
+  record('shell', `${label}: .qbe-detail is an overlay (positioned, above the board)`,
+    detailStyle.getPropertyValue('position') === 'absolute'
+    && Number(detailStyle.getPropertyValue('z-index')) > 0,
+    'position=' + detailStyle.getPropertyValue('position') + ', z-index='
+    + detailStyle.getPropertyValue('z-index')
+    + ' (static means the prompt lays out UNDER the board instead of over it)');
+
+  // The board has to be legible from the back of a room, so a cell must be a real target rather
+  // than a UA-sized button. 44px is the platform touch/hit minimum and is the floor the theme's
+  // --cell-min-height encodes; an unthemed cell measured 38x21.
+  const cell = doc.querySelector('.qbe-cell');
+  const rect = cell.getBoundingClientRect();
+  record('shell', `${label}: a cell is a projector-sized target, not a UA-sized button`,
+    rect.height >= 44 && rect.width >= 80,
+    'first cell measures ' + Math.round(rect.width) + 'x' + Math.round(rect.height) + ' px at a '
+    + frame.width + 'x' + frame.height + ' viewport');
+}
+
+/**
+ * Every REGISTERED theme, applied to a really-booted shell, measured.
+ *
+ * WHY ONE IFRAME AND A SWAPPED <link> RATHER THAN N BOOTS. The theme a game gets comes from its
+ * content file, and the repo ships three games naming two themes — so "boot a game per theme" can
+ * only ever cover the themes some game happens to select, which is precisely the narrowing this
+ * task exists to remove. Instead the shell is booted for real once, and then the SELECTED sheet is
+ * swapped on `<link id="qbe-theme">`, which is the identical DOM operation renderer.mountTheme()
+ * performs at boot — same element, same href shape, same cascade position under the base layer. The
+ * content-driven path (a game's `theme` name resolving through the manifest) is still covered by
+ * the two real boots above; this loop covers every registered sheet's CSS actually applying.
+ */
+async function runThemeGeometrySuite() {
+  const sessionsBefore = sessionKeysNow();
+  let registered;
+  try {
+    registered = await loadThemeManifest();
+  } catch (err) {
+    record('shell', 'every registered theme is booted and measured', false,
+      `could not read ${THEME_MANIFEST}: ${err && err.message}`);
+    return;
+  }
+
+  const booted = await bootShell('games/demo.json');
+  const { frame, doc, win, board } = booted;
+  try {
+    if (booted.timedOut || !board || !win) {
+      record('shell', 'every registered theme is booted and measured', false,
+        'the shell did not boot, so no theme could be measured');
+      return;
+    }
+    const link = doc.getElementById('qbe-theme');
+    if (!link) {
+      record('shell', 'every registered theme is booted and measured', false,
+        'no <link id="qbe-theme"> in the booted shell — mountTheme did not run');
+      return;
+    }
+
+    for (const { name, file } of registered) {
+      link.setAttribute('href', THEMES_DIR + file);
+      const loaded = await waitForSheet(doc, file);
+      const sheets = [...doc.styleSheets].map((s) => (s.href || '(inline)').split('?')[0]);
+      const baseIndex = sheets.findIndex((h) => /themes\/default\.css$/.test(h));
+      const selectedIndex = sheets.map((h, i) => ({ h, i }))
+        .filter(({ h }) => new RegExp('themes/' + file.replace('.', '\\.') + '$').test(h))
+        .map(({ i }) => i).pop();
+      record('shell', `theme "${name}": default.css is the base layer under themes/${file}`,
+        loaded && baseIndex !== -1 && selectedIndex !== undefined && baseIndex <= selectedIndex,
+        !loaded ? `themes/${file} never parsed into document.styleSheets`
+          : 'stylesheets in cascade order: ' + sheets.map((h) => h.replace(/^.*\//, '')).join(', '));
+
+      assertShellGeometry(`theme "${name}"`, doc, win, board, frame);
+    }
+  } finally {
+    frame.remove();
+    dropNewSessions(sessionsBefore);
+  }
+}
+
 async function runShellSuite() {
-  // One game per shipped theme, and the pairing matters: demo.json is the DEFAULT game (no ?game=)
-  // and selects `midnight`, the override-only sheet that cannot stand alone.
+  // The CONTENT-DRIVEN path: a game's `theme` name resolved through the manifest by the real
+  // validator and mounted by the real renderer. The pairing matters — demo.json is the DEFAULT game
+  // (no ?game=) and selects `midnight`, the override-only sheet that cannot stand alone. Per-theme
+  // CSS coverage is runThemeGeometrySuite()'s job, driven by the manifest rather than by this list.
   const cases = [
     { game: 'games/demo.json', theme: 'midnight' },
     { game: 'games/demo-bingo.json', theme: 'default' },
   ];
+  const sessionsBefore = sessionKeysNow();
 
   for (const { game, theme } of cases) {
     const booted = await bootShell(game);
@@ -1510,8 +1805,12 @@ async function runShellSuite() {
       }
 
       // The base layer really is loaded, and by the SHELL rather than by a theme. Checked by href so
-      // a future refactor that renames the link id still passes for the right reason.
-      const sheets = [...doc.styleSheets].map((sheet) => sheet.href || '(inline)');
+      // a future refactor that renames the link id still passes for the right reason. Both sheets
+      // are awaited first: a board can be on screen before Firefox has registered the theme sheet,
+      // which used to make this assertion flake red for a load-timing reason, not a content one.
+      await waitForSheet(doc, 'default.css');
+      await waitForSheet(doc, theme + '.css');
+      const sheets = [...doc.styleSheets].map((sheet) => (sheet.href || '(inline)').split('?')[0]);
       const hasBase = sheets.some((href) => /themes\/default\.css$/.test(href));
       const hasSelected = sheets.some((href) => new RegExp('themes/' + theme + '\\.css$').test(href));
       record('shell', `${game}: default.css is loaded as the base layer under themes/${theme}.css`,
@@ -1525,33 +1824,7 @@ async function runShellSuite() {
         'computed display on .qbe-stage is "' + stageDisplay + '" (reveal writes it inline from '
         + 'REVEAL_CONFIG.display; "block" collapses the board to the cell minimum)');
 
-      const boardStyle = win.getComputedStyle(board);
-      const tracks = boardStyle.getPropertyValue('grid-template-columns');
-      const columnCount = board.style.getPropertyValue('--qbe-column-count').trim();
-      const trackCount = tracks.trim().split(/\s+/).filter((t) => t !== '' && t !== 'none').length;
-      record('shell', `${game}: .qbe-board is a real grid with one track per column`,
-        boardStyle.getPropertyValue('display') === 'grid' && trackCount === Number(columnCount),
-        'display=' + boardStyle.getPropertyValue('display') + ', --qbe-column-count=' + columnCount
-        + ', grid-template-columns resolves to ' + trackCount + ' track(s)');
-
-      const detail = doc.querySelector('.qbe-detail');
-      const detailStyle = win.getComputedStyle(detail);
-      record('shell', `${game}: .qbe-detail is an overlay (positioned, above the board)`,
-        detailStyle.getPropertyValue('position') === 'absolute'
-        && Number(detailStyle.getPropertyValue('z-index')) > 0,
-        'position=' + detailStyle.getPropertyValue('position') + ', z-index='
-        + detailStyle.getPropertyValue('z-index')
-        + ' (static means the prompt lays out UNDER the board instead of over it)');
-
-      // The board has to be legible from the back of a room, so a cell must be a real target rather
-      // than a UA-sized button. 44px is the platform touch/hit minimum and is the floor the theme's
-      // --cell-min-height encodes; an unthemed cell measured 38x21.
-      const cell = doc.querySelector('.qbe-cell');
-      const rect = cell.getBoundingClientRect();
-      record('shell', `${game}: a cell is a projector-sized target, not a UA-sized button`,
-        rect.height >= 44 && rect.width >= 80,
-        'first cell measures ' + Math.round(rect.width) + 'x' + Math.round(rect.height) + ' px at a '
-        + frame.width + 'x' + frame.height + ' viewport');
+      assertShellGeometry(game, doc, win, board, frame);
 
       // theme-contract §3's one <html> attribute. Nothing else in the suite covers app.js's
       // watchReducedMotion, and the CSS side of spec §8 keys off exactly this.
@@ -1564,6 +1837,170 @@ async function runShellSuite() {
     } finally {
       frame.remove();
     }
+  }
+  dropNewSessions(sessionsBefore);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Theme suite — every REGISTERED theme audited as a file, plus the manifest/disk agreement
+//
+// WHY THIS EXISTS. themes/themes.json is the only door a stylesheet can come through (spec §6.4),
+// so it is also the only honest list of what has to be checked. Everything below enumerates it at
+// runtime. The five per-theme assertions are the five ways a theme file can be wrong in a way no
+// human eye reliably catches:
+//
+//   · it does not fetch, or is empty — registered but not actually there;
+//   · it reaches off-origin (@import, or url() with a scheme) — breaks spec §2.3 for the whole app;
+//   · it lost its SPDX header — an AGPL obligation, and every source file carries one;
+//   · it sets or reads a custom property default.css does not define — an invented token is INERT
+//     (theme-contract §6): it silently does nothing, and the author never learns why;
+//   · it targets a .qbe-* class the renderer does not emit — dead CSS, and in practice a typo.
+//
+// The class list and the token list are both derived from what the repo actually publishes — the
+// contract's own §2 DOM block and default.css's own declarations — so neither can rot into a stale
+// copy. Comments are stripped from every stylesheet BEFORE scanning: all four donated themes
+// correctly document "no @import" in their header comment, and a naive scan flags them for saying
+// the right thing. That exact bug once made this file flag itself.
+// ---------------------------------------------------------------------------------------------
+
+/** The .qbe-* classes the renderer promises to emit, parsed out of theme-contract §2's DOM block. */
+async function contractClasses() {
+  const res = await fetch('docs/plans/theme-contract.md?v=' + Date.now(), { cache: 'no-store' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const md = await res.text();
+  const section = (md.split('## 2. DOM contract')[1] || '').split('\n## ')[0];
+  const block = section.split('```')[1] || '';
+  return new Set((block.match(/\.qbe-[a-z0-9-]+/g) || []).map((c) => c.slice(1)));
+}
+
+async function runThemeSuite() {
+  let registered;
+  try {
+    registered = await loadThemeManifest();
+  } catch (err) {
+    record('themes', 'themes/themes.json enumerates the themes to audit', false,
+      `could not read the manifest, so NOTHING was audited: ${err && err.message}`);
+    return;
+  }
+  record('themes', 'themes/themes.json enumerates the themes to audit', registered.length > 0,
+    registered.length > 0
+      ? `${registered.length} registered: ${registered.map((t) => t.name).join(', ')}`
+      : 'the manifest registered NO themes — every per-theme assertion below would be vacuous');
+
+  // The token vocabulary and the class vocabulary, each read from the thing that defines it.
+  let definedTokens = null;
+  let emittedClasses = null;
+  try {
+    const res = await fetch(THEMES_DIR + 'default.css?v=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const css = stripCssComments(await res.text());
+    definedTokens = new Set((css.match(/(--[a-z][a-z0-9-]*)\s*:/g) || [])
+      .map((m) => m.replace(/\s*:$/, '')));
+    // Documented exception (theme-contract §2): a per-board NUMBER the renderer sets inline on
+    // .qbe-board. It is legitimately read by a theme and legitimately absent from default.css.
+    definedTokens.add('--qbe-column-count');
+  } catch (err) {
+    record('themes', 'themes/default.css publishes the token vocabulary', false,
+      `could not read default.css, so the token check went blind: ${err && err.message}`);
+  }
+  try {
+    emittedClasses = await contractClasses();
+    record('themes', 'theme-contract §2 publishes the class vocabulary the renderer emits',
+      emittedClasses.size > 0,
+      emittedClasses.size > 0 ? `${emittedClasses.size} classes parsed from the §2 DOM block`
+        : 'PARSED NO CLASSES — the §2 heading or code block changed, so this check went blind');
+  } catch (err) {
+    record('themes', 'theme-contract §2 publishes the class vocabulary the renderer emits', false,
+      `could not read the contract: ${err && err.message}`);
+  }
+
+  for (const { name, file } of registered) {
+    const path = THEMES_DIR + file;
+    let css = null;
+    let bytes = 0;
+    try {
+      const res = await fetch(path + '?v=' + Date.now(), { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const raw = await res.text();
+      bytes = raw.length;
+      record('themes', `theme "${name}" → ${path} fetches 200 and is non-empty`, bytes > 0,
+        bytes > 0 ? `${bytes} bytes` : 'the file is registered but EMPTY');
+      // SPDX is checked on the RAW text: the header is itself a comment, so stripping first would
+      // delete the very thing being asserted.
+      record('themes', `theme "${name}" carries the SPDX header`,
+        raw.indexOf('SPDX-License-Identifier: AGPL-3.0-or-later') !== -1,
+        raw.indexOf('SPDX-License-Identifier: AGPL-3.0-or-later') !== -1 ? 'AGPL-3.0-or-later'
+          : 'no SPDX-License-Identifier line — every source file in this repo carries one');
+      css = stripCssComments(raw);
+    } catch (err) {
+      record('themes', `theme "${name}" → ${path} fetches 200 and is non-empty`, false,
+        `registered in themes/themes.json but did not load: ${err && err.message}`);
+      record('themes', `theme "${name}" carries the SPDX header`, false, 'file did not load');
+    }
+
+    // Zero CDN in the theme layer (spec §2.3, theme-contract §5.6). data: URIs are ALLOWED — the
+    // marks are inline SVG, which is the whole reason a theme needs url() at all.
+    const cdnName = `theme "${name}" makes no external request (no @import, no http(s) url())`;
+    if (css === null) {
+      record('themes', cdnName, false, 'file did not load');
+    } else {
+      const imports = /@import/.test(css);
+      const remote = css.match(/url\(\s*['"]?\s*(?:https?:|\/\/)/gi) || [];
+      record('themes', cdnName, !imports && remote.length === 0,
+        !imports && remote.length === 0 ? 'self-contained (data: URIs are fine)'
+          : `${imports ? '@import present; ' : ''}${remote.length} remote url() reference(s)`);
+    }
+
+    const tokenName = `theme "${name}" invents no token — every custom property is defined in default.css`;
+    if (css === null || definedTokens === null) {
+      record('themes', tokenName, false, 'file or default.css did not load');
+    } else {
+      const used = [...new Set(css.match(/--[a-z][a-z0-9-]*/g) || [])].sort();
+      const invented = used.filter((t) => !definedTokens.has(t));
+      record('themes', tokenName, invented.length === 0,
+        invented.length === 0 ? `${used.length} custom propert${used.length === 1 ? 'y' : 'ies'}, all known`
+          : `INERT: ${invented.join(', ')} — set or read here, defined nowhere, so it does nothing`);
+    }
+
+    const className = `theme "${name}" targets only .qbe-* classes the renderer emits`;
+    if (css === null || emittedClasses === null) {
+      record('themes', className, false, 'file or the contract did not load');
+    } else {
+      const targeted = [...new Set((css.match(/\.qbe-[a-z0-9-]+/g) || []).map((c) => c.slice(1)))].sort();
+      const dead = targeted.filter((c) => !emittedClasses.has(c));
+      record('themes', className, dead.length === 0,
+        dead.length === 0 ? `${targeted.length} class(es) targeted, all in theme-contract §2`
+          : `DEAD CSS: .${dead.join(', .')} — no such element is ever rendered (usually a typo)`);
+    }
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // Manifest ↔ disk, in BOTH directions.
+  //
+  // A registered name pointing at a missing file is a game that dies at load; an unregistered .css
+  // sitting in themes/ can never load at all (spec §6.4) and is a trap for whoever wrote it — they
+  // will edit it for an hour and see nothing change. The forward direction is covered by the fetch
+  // above; the reverse needs a directory listing, which is exactly what the documented local run
+  // (`python3 -m http.server`) serves. If the listing is unavailable this assertion FAILS rather
+  // than quietly passing: the whole point of this suite is that a check may not narrow itself.
+  try {
+    const res = await fetch(THEMES_DIR + '?v=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const listing = await res.text();
+    const onDisk = [...new Set((listing.match(/href="[^"]*?([A-Za-z0-9_-]+\.css)"/g) || [])
+      .map((m) => m.replace(/^.*?([A-Za-z0-9_-]+\.css)"$/, '$1')))].sort();
+    const registeredFiles = new Set(registered.map((t) => t.file));
+    const orphans = onDisk.filter((f) => !registeredFiles.has(f));
+    record('themes', 'every .css in themes/ is registered in themes/themes.json',
+      onDisk.length > 0 && orphans.length === 0,
+      onDisk.length === 0
+        ? 'NO directory listing from themes/ — run the suite over `python3 -m http.server` as the '
+          + 'README documents, otherwise this direction cannot be checked at all'
+        : orphans.length === 0 ? `${onDisk.length} file(s) on disk, all registered`
+          : `UNREGISTERED: ${orphans.join(', ')} — spec §6.4 means it can never load`);
+  } catch (err) {
+    record('themes', 'every .css in themes/ is registered in themes/themes.json', false,
+      `could not list themes/: ${err && err.message}`);
   }
 }
 
@@ -1724,7 +2161,7 @@ async function runInvariantSuite() {
   // a dynamic import today; naming the whole module list here is what makes that stay true loudly
   // rather than quietly.
   for (const module of ['js/loader.js', 'js/validator.js', 'js/errors.js', 'js/schemas.js',
-    'js/renderer.js', 'js/app.js']) {
+    'js/renderer.js', 'js/state.js', 'js/app.js']) {
     const reached = seen.has(module) && sources.has(module);
     record('invariants', `the transitive source audit reaches ${module}`, reached,
       reached ? `followed in from an entry point; ${sources.get(module).length} chars scanned`
@@ -1802,28 +2239,9 @@ async function runInvariantSuite() {
       `could not compare: ${err && err.message}`);
   }
 
-  // -------------------------------------------------------------------------------------------
-  // Zero CDN, in the theme layer too (spec §2.3, theme-contract §5.6).
-  //
-  // Comments are stripped FIRST, because both shipped themes correctly document "no @import, no
-  // url() to another host" in a header comment — and a check that fires on its own documentation is
-  // a check somebody deletes.
-  for (const file of ['themes/default.css', 'themes/midnight.css']) {
-    try {
-      const res = await fetch(file + '?v=' + Date.now(), { cache: 'no-store' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const css = (await res.text()).replace(/\/\*[\s\S]*?\*\//g, '');
-      const imports = /@import/.test(css);
-      const remote = css.match(/url\(\s*['"]?\s*(?:https?:|\/\/)/gi) || [];
-      record('invariants', `${file} makes no external request (no @import, no http(s) url())`,
-        !imports && remote.length === 0,
-        !imports && remote.length === 0 ? 'self-contained'
-          : `${imports ? '@import present; ' : ''}${remote.length} remote url() reference(s)`);
-    } catch (err) {
-      record('invariants', `${file} makes no external request (no @import, no http(s) url())`, false,
-        `could not read: ${err && err.message}`);
-    }
-  }
+  // The zero-CDN sweep of the theme layer used to live here, hardcoded to default.css and
+  // midnight.css. It is now manifest-driven and lives in runThemeSuite() with the rest of the
+  // per-theme audit, so a theme cannot be registered without being swept.
 
   // The limits in the schema must match the numbers the spec and README promise.
   const limitChecks = [
@@ -1837,6 +2255,922 @@ async function runInvariantSuite() {
     record('invariants', `limit: ${label}`, actual === expected,
       actual === expected ? `${actual}` : `spec says ${expected}, schema says ${actual}`);
   }
+}
+
+// =============================================================================================
+// STATE SUITE (F6 + F10) — the session, the shelf, the scoring rules, the import gate
+// =============================================================================================
+//
+// WHY THIS SUITE EXISTS AT ALL, GIVEN THE MATRIX ALREADY VALIDATES STATE FILES
+//
+// The matrix proves that `validateState` judges a state DOCUMENT correctly. It says nothing about
+// the two things a host actually depends on: that a session written to this browser comes back
+// identical, and that a session which comes back WRONG never reaches the board. Both are round
+// trips through three modules, and neither can be seen from a single-document assertion.
+//
+// NOTHING HERE IS MOCKED. The sessions are built by `state.newSession`, persisted by `state.adopt`
+// into the real `localStorage`, re-read by `state.loadSession`, re-judged by
+// `validator.validateState` and re-installed by `state.adopt` — the exact sequence `app.js`
+// runs for a resume (module-contracts §10, `resumeSession`). There is no in-memory fake shelf: a
+// fake would have neither the quota, nor the string-only values, nor the "another tab wrote this"
+// property that make storage worth testing.
+//
+// WHICH MEANS THIS SUITE TOUCHES THE HOST'S OWN SAVED SESSIONS, and that is handled rather than
+// ignored. `withEmptyShelf` snapshots every `qbe.session.*` entry (key AND value), empties the
+// shelf so the retention-cap assertion has a deterministic starting point, and restores the
+// snapshot exactly in a `finally`. The suite runs the real pruning code over a real shelf; it just
+// gives the shelf back afterwards. Clearing without restoring would delete a teacher's game in
+// progress, which is precisely the data loss the F6 code exists to prevent.
+
+/** Canonical JSON: keys sorted at every depth, so "deep equality" is not "same key order". */
+function canonical(v) {
+  if (Array.isArray(v)) return '[' + v.map(canonical).join(',') + ']';
+  if (v && typeof v === 'object') {
+    return '{' + Object.keys(v).sort().map((k) => JSON.stringify(k) + ':' + canonical(v[k])).join(',') + '}';
+  }
+  return JSON.stringify(v === undefined ? null : v);
+}
+
+function deepEqual(a, b) {
+  return canonical(a) === canonical(b);
+}
+
+/** Every `qbe.session.*` entry, key AND value, so the shelf can be put back byte for byte. */
+function snapshotSessions() {
+  const snap = new Map();
+  for (const key of sessionKeysNow()) {
+    try {
+      snap.set(key, localStorage.getItem(key));
+    } catch (_err) {
+      /* unreadable: there is nothing to restore either */
+    }
+  }
+  return snap;
+}
+
+function clearSessions() {
+  for (const key of sessionKeysNow()) {
+    try {
+      localStorage.removeItem(key);
+    } catch (_err) {
+      /* nothing to do */
+    }
+  }
+}
+
+function restoreSessions(snap) {
+  clearSessions();
+  for (const [key, value] of snap) {
+    try {
+      localStorage.setItem(key, value);
+    } catch (_err) {
+      /* a full shelf cannot be restored; nothing better is available from here */
+    }
+  }
+}
+
+/** Run `fn` against an empty session shelf, then give the host's shelf back exactly as it was. */
+async function withEmptyShelf(fn) {
+  const snap = snapshotSessions();
+  clearSessions();
+  state.__resetForTests();
+  try {
+    return await fn();
+  } finally {
+    state.__resetForTests();
+    restoreSessions(snap);
+  }
+}
+
+/** Poll until `predicate()` is true. Resolves false on timeout; callers assert on the result. */
+function waitFor(predicate, timeoutMs = 6000) {
+  const started = performance.now();
+  return new Promise((resolve) => {
+    const poll = () => {
+      let hit = false;
+      try {
+        hit = !!predicate();
+      } catch (_err) {
+        hit = false;
+      }
+      if (hit) { resolve(true); return; }
+      if (performance.now() - started > timeoutMs) { resolve(false); return; }
+      setTimeout(poll, 25);
+    };
+    poll();
+  });
+}
+
+/**
+ * A session hash that cannot collide with a real game file's hash.
+ *
+ * Built by the REAL `state.hashContent`, so it is a genuine 64-hex SHA-256 that `newSession` and
+ * `adopt` accept, of a string no game file contains. Keying the test sessions this way is what lets
+ * most of this suite run without going anywhere near the entry a host's own game is saved under.
+ */
+async function synthHash(label) {
+  const out = await state.hashContent('quiz-board-engine test session :: ' + label);
+  return out.ok ? out.value : null;
+}
+
+/** A RawDocument for a state object, the shape `validator.validateState` expects. */
+function rawState(path, data) {
+  const text = JSON.stringify(data);
+  return { path, kind: KINDS.STATE, text, bytes: text.length, data };
+}
+
+/** The same, from TEXT — the only way to get `__proto__` in as a real own property. */
+function rawStateText(path, text) {
+  return { path, kind: KINDS.STATE, text, bytes: text.length, data: JSON.parse(text) };
+}
+
+/**
+ * The resume path, exactly as `app.js` runs it: raw document out of storage, validator, adopt.
+ *
+ * `state.loadSession` returns a RawDocument rather than a session precisely so this sequence is the
+ * only way back in (module-contracts §9 deviation, deliberate) — a stored entry is untrusted input.
+ */
+function reopenSession(bundle, gameHash) {
+  const loaded = state.loadSession(gameHash);
+  if (!loaded.ok) return { ok: false, where: 'loadSession', failures: loaded.failures };
+  const checked = validator.validateState({ raw: loaded.value, bundle });
+  if (!checked.ok) return { ok: false, where: 'validateState', failures: checked.failures };
+  const adopted = state.adopt(checked.value, { expectGameHash: gameHash, file: loaded.value.path });
+  if (!adopted.ok) return { ok: false, where: 'adopt', failures: adopted.failures };
+  return adopted;
+}
+
+function failureText(result) {
+  return (result.failures || []).map(errors.formatFailure).join(' | ');
+}
+
+// ---------------------------------------------------------------------------------------------
+// SHA-256, checked against digests this repo did not compute
+// ---------------------------------------------------------------------------------------------
+//
+// `hashContent` is the name of every saved session, so a wrong hash is a shelf that silently never
+// resumes. Comparing it against `crypto.subtle` again would only prove the call was made, so the
+// expectations here come from OUTSIDE this codebase:
+//
+//   · the two NIST FIPS 180-4 published test vectors for SHA-256 ("abc" and the empty string);
+//   · `shasum -a 256 games/demo.json`, run on the command line, which is also the number
+//     tests/fixtures/valid-state.json carries in its `gameHash`. That makes this assertion a
+//     three-way agreement: our hash, the OS tool's hash, and the checked-in fixture.
+const SHA256_VECTORS = [
+  ['abc', 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'],
+  ['', 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'],
+];
+const DEMO_JSON_SHA256 = '1a9da17e64b24b73af5779630c5f3beaf593094593bb0b17afe2f746d4b4f25e';
+
+async function runHashChecks(demoText) {
+  for (const [input, expected] of SHA256_VECTORS) {
+    const got = await state.hashContent(input);
+    const passed = got.ok && got.value === expected;
+    record('state', `hashContent matches the published SHA-256 vector for ${JSON.stringify(input)}`,
+      passed,
+      passed ? expected.slice(0, 16) + '… as published in FIPS 180-4'
+        : got.ok ? 'got ' + got.value : failureText(got));
+  }
+
+  const demoHash = await state.hashContent(demoText);
+  const matches = demoHash.ok && demoHash.value === DEMO_JSON_SHA256;
+  record('state', 'the games/demo.json session hash agrees with `shasum -a 256` and with valid-state.json',
+    matches,
+    matches ? 'hashContent, the OS tool and the fixture all say ' + DEMO_JSON_SHA256.slice(0, 16) + '…'
+      : demoHash.ok
+        ? 'hashContent says ' + demoHash.value + ', the command line and tests/fixtures/valid-state.json say ' + DEMO_JSON_SHA256
+        : failureText(demoHash));
+
+  // The hash is of the BYTES, not of the parsed object, and that is load-bearing rather than
+  // incidental: a hash of JSON.stringify(data) would change when our cleaning rules changed and
+  // orphan every saved session in the world. One insignificant whitespace edit proves which it is.
+  const spaced = await state.hashContent(demoText + '\n');
+  const differs = spaced.ok && demoHash.ok && spaced.value !== demoHash.value;
+  record('state', 'the hash follows the file BYTES, so a whitespace-only edit is a different game',
+    differs,
+    differs ? 'one appended newline produces a different session key'
+      : 'the same key came back for different bytes — sessions would resume onto an edited board');
+}
+
+// ---------------------------------------------------------------------------------------------
+// The suite
+// ---------------------------------------------------------------------------------------------
+
+async function runStateSuite() {
+  const demo = await fileBundle('games/demo.json');
+  const feud = await fileBundle('games/demo-feud.json');
+  const bingo = await fileBundle('games/demo-bingo.json');
+  for (const [label, bundle] of [['games/demo.json', demo], ['games/demo-feud.json', feud],
+    ['games/demo-bingo.json', bingo]]) {
+    if (!bundle.ok) {
+      record('state', `${label} validates for the state suite`, false,
+        bundle.failures.map(errors.formatFailure).join(' | '));
+      return;
+    }
+  }
+
+  const demoRaw = await loader.fetchContentBundle({ gamePath: 'games/demo.json' });
+  if (!demoRaw.ok) {
+    record('state', 'games/demo.json fetches for the hash assertions', false,
+      demoRaw.failures.map(errors.formatFailure).join(' | '));
+    return;
+  }
+  await runHashChecks(demoRaw.value.content.text);
+
+  await withEmptyShelf(async () => {
+    // ---- 1. the round trip ---------------------------------------------------------------------
+    const hash = await synthHash('round-trip');
+    const built = state.newSession({ bundle: demo.value, gameHash: hash, teams: ['Red Team', 'Blue Team'] });
+    const adopted = state.adopt(built);
+    if (!adopted.ok) {
+      record('state', 'a new session saves, reloads from localStorage and compares equal', false,
+        'adopt refused the freshly built session: ' + failureText(adopted));
+    } else {
+      state.setCellState('0:0', 'revealed');
+      state.adjustScore({ bundle: demo.value, teamIndex: 0, delta: 300 });
+      const live = state.current();
+
+      // Forget everything in memory. Only what is really on the shelf can answer the next line.
+      state.__resetForTests();
+      const back = reopenSession(demo.value, hash);
+      const equal = back.ok && deepEqual(live, back.value);
+      record('state', 'a played session saves, reloads from localStorage and compares deep-equal',
+        equal,
+        !back.ok ? `the reload failed at ${back.where}: ${failureText(back)}`
+          : equal ? 'loadSession → validateState → adopt returned an object identical to the one saved'
+            : 'the reloaded session differs: ' + canonical(live) + ' vs ' + canonical(back.value));
+
+      const frozen = back.ok && Object.isFrozen(back.value) && Object.isFrozen(back.value.teams[0]);
+      record('state', 'the live session is deep-frozen, so a subscriber cannot edit it', frozen,
+        frozen ? 'state.current() and its nested objects are frozen'
+          : 'a subscriber could mutate the session behind state.js\'s back');
+    }
+
+    // ---- 2. the retention cap (spec §4.4) ------------------------------------------------------
+    //
+    // Twelve sessions against a cap of ten, each with a DIFFERENT `updatedAt`, so "the oldest were
+    // pruned" is a checkable claim rather than "ten of something survived". The timestamps are set
+    // on the object before `adopt` (which keeps a string `updatedAt` as it found it) because
+    // `newSession` stamps `now` and twelve sessions built in one tick would all be the same age.
+    //
+    // The shelf is emptied again first, and that is a correction rather than a convenience: the
+    // round-trip session above is stamped with `now`, so it is the NEWEST entry on the shelf, and
+    // pruning 13 sessions to 10 correctly removed three of the twelve below. "Exactly ten remain and
+    // the oldest went" is only a checkable sentence when the twelve are the whole shelf.
+    clearSessions();
+    state.__resetForTests();
+    const capHashes = [];
+    for (let i = 0; i < 12; i++) {
+      const h = await synthHash('cap-' + i);
+      capHashes.push(h);
+      const s = state.newSession({ bundle: demo.value, gameHash: h, teams: ['Team ' + i] });
+      const stamp = '2026-08-16T' + String(i).padStart(2, '0') + ':00:00Z';
+      s.createdAt = stamp;
+      s.updatedAt = stamp;
+      const put = state.adopt(s);
+      if (!put.ok) {
+        record('state', '12 sessions can be written to the shelf', false,
+          'adopt failed on session ' + i + ': ' + failureText(put));
+        return;
+      }
+    }
+    const beforePrune = state.listSessions().length;
+    const removed = state.pruneToCap();
+    const after = state.listSessions();
+    const survivors = new Set(after.map((s) => s.gameHash));
+    const prunedOldest = !survivors.has(capHashes[0]) && !survivors.has(capHashes[1])
+      && capHashes.slice(2).every((h) => survivors.has(h));
+    record('state', `the shelf caps at LIMITS.maxSessions (${LIMITS.maxSessions}) and prunes the OLDEST`,
+      beforePrune === 12 && removed === 2 && after.length === LIMITS.maxSessions && prunedOldest,
+      `12 written, pruneToCap() removed ${removed}, ${after.length} remain; `
+      + (prunedOldest ? 'the two oldest updatedAt values are the two that went'
+        : 'WRONG SESSIONS PRUNED — survivors: ' + [...survivors].map((h) => h.slice(0, 8)).join(',')));
+
+    record('state', 'listSessions() orders the shelf newest-updatedAt first',
+      after.length > 1 && after.every((s, i) => i === 0 || after[i - 1].updatedAt >= s.updatedAt),
+      after.map((s) => s.updatedAt).join(' > '));
+
+    // A pruned session is GONE, not merely hidden from the list: the resume screen offering a row
+    // whose entry has been removed is the failure mode `listSessions` is projected to avoid.
+    const goneLoad = state.loadSession(capHashes[0]);
+    record('state', 'a pruned session is really removed from localStorage', goneLoad.ok === false,
+      goneLoad.ok ? 'the entry is still readable after being pruned'
+        : 'loadSession reports: ' + failureText(goneLoad));
+
+    // ---- 3. scoring rules (spec §4.2) ----------------------------------------------------------
+    state.__resetForTests();
+    const scoreHash = await synthHash('scoring-jeopardy');
+    state.adopt(state.newSession({ bundle: demo.value, gameHash: scoreHash, teams: ['Red', 'Blue'] }));
+    for (const delta of [300, 200, -100]) state.adjustScore({ bundle: demo.value, teamIndex: 0, delta });
+    const accumulated = state.current().teams[0].score;
+    const untouched = state.current().teams[1].score;
+    record('state', 'scoring accumulates adds and subtracts on the team that was clicked',
+      accumulated === 400 && untouched === 0,
+      `+300 +200 −100 → ${accumulated} on team 0, team 1 still ${untouched}`);
+
+    state.adjustScore({ bundle: demo.value, teamIndex: 0, delta: -1000 });
+    const negative = state.current().teams[0].score;
+    record('state', 'jeopardy allows a negative total (allowNegative: true)', negative === -600,
+      `400 − 1000 → ${negative}`);
+
+    // The clamp is not cosmetic: a score outside ±1,000,000 is a state its OWN schema rejects, so an
+    // unclamped run of clicks would produce a session that cannot be reloaded.
+    for (let i = 0; i < 3; i++) state.adjustScore({ bundle: demo.value, teamIndex: 0, delta: 900000 });
+    const clampedHigh = state.current().teams[0].score;
+    const stillValid = validator.validateState({ raw: rawState('import:(clamp).json', state.current()) });
+    record('state', 'a score cannot be clicked past the range its own schema allows',
+      clampedHigh === 1000000 && stillValid.ok,
+      `three +900000 clicks → ${clampedHigh}; the resulting session re-validates: ${stillValid.ok}`);
+
+    state.__resetForTests();
+    const feudHash = await synthHash('scoring-feud');
+    state.adopt(state.newSession({ bundle: feud.value, gameHash: feudHash, teams: ['Solo'] }));
+    state.adjustScore({ bundle: feud.value, teamIndex: 0, delta: 100 });
+    const deducted = state.adjustScore({ bundle: feud.value, teamIndex: 0, delta: -300 });
+    const floored = state.current().teams[0].score;
+    record('state', 'allowNegative:false FLOORS at zero rather than refusing the deduction',
+      deducted.ok === true && floored === 0,
+      `100 then −300 → ${floored}, and the call still returned ok (a refused click would leave the `
+      + 'board disagreeing with the room)');
+
+    state.__resetForTests();
+    const bingoHash = await synthHash('scoring-bingo');
+    state.adopt(state.newSession({ bundle: bingo.value, gameHash: bingoHash, teams: ['Ignored'] }));
+    const noop = state.adjustScore({ bundle: bingo.value, teamIndex: 0, delta: 500 });
+    record('state', 'scoring.model "none" makes adjustScore a no-op, not a failure',
+      noop.ok === true && state.current().teams[0].score === 0,
+      `bingo: +500 left the score at ${state.current().teams[0].score}`);
+
+    // ---- 4. cell state survives a reload -------------------------------------------------------
+    state.__resetForTests();
+    const playHash = await synthHash('three-cells');
+    state.adopt(state.newSession({ bundle: demo.value, gameHash: playHash, teams: ['Red'] }));
+    const played = { '0:0': 'answered', '1:2': 'revealed', '4:4': 'answered' };
+    for (const key of Object.keys(played)) state.setCellState(key, played[key]);
+
+    state.__resetForTests();
+    const resumed = reopenSession(demo.value, playHash);
+    if (!resumed.ok) {
+      record('state', 'three played cells reload and the board restores exactly', false,
+        `the reload failed at ${resumed.where}: ${failureText(resumed)}`);
+    } else {
+      const stage = harnessStage();
+      const view = renderer.renderBoard({
+        bundle: demo.value, session: resumed.value, mount: stage, handlers: {},
+      });
+      const wrong = [];
+      for (const key of demo.value.resolved.cellKeys) {
+        const expected = played[key] || 'hidden';
+        const actual = view.cells.get(key).getAttribute('data-state');
+        if (actual !== expected) wrong.push(key + ': expected ' + expected + ', drew ' + actual);
+      }
+      record('state', 'three played cells reload and the board restores exactly',
+        wrong.length === 0 && deepEqual(resumed.value.cellStates, played),
+        wrong.length === 0
+          ? 'the restored session drew 0:0 answered, 1:2 revealed, 4:4 answered and the other 22 hidden'
+          : wrong.join('; '));
+      stage.remove();
+    }
+
+    // ---- 5. export → import, through the real code ---------------------------------------------
+    const payload = state.exportPayload();
+    const exported = state.current();
+    if (!payload) {
+      record('state', 'exportPayload() produces JSON that re-imports cleanly', false,
+        'there was no live session to export');
+    } else {
+      let parsed = null;
+      let parseError = null;
+      try {
+        parsed = JSON.parse(payload.json);
+      } catch (err) {
+        parseError = err && err.message;
+      }
+      const checked = parsed
+        ? validator.validateState({ raw: rawState('import:' + payload.filename, parsed), bundle: demo.value })
+        : { ok: false, failures: [] };
+      state.__resetForTests();
+      const reimported = checked.ok
+        ? state.adopt(checked.value, { expectGameHash: playHash, file: 'import:' + payload.filename })
+        : { ok: false, failures: checked.failures };
+      const identical = reimported.ok && deepEqual(exported, reimported.value);
+      record('state', 'exportPayload() produces JSON that re-imports cleanly and identically',
+        identical,
+        parseError ? 'the exported string is not JSON: ' + parseError
+          : !checked.ok ? 'the validator refused our own export: ' + failureText(checked)
+            : !reimported.ok ? 'adopt refused our own export: ' + failureText(reimported)
+              : identical ? payload.json.length + ' bytes of pretty-printed JSON round-tripped byte-identically'
+                : 'the re-imported session differs from the exported one');
+
+      const named = /^quiz-board-[a-z0-9-]+-\d{8}-\d{4}\.json$/.test(payload.filename);
+      record('state', 'the export filename is quiz-board-<slug>-<YYYYMMDD-HHMM>.json with a safe slug',
+        named, payload.filename);
+    }
+
+    // ---- 6. a malformed state file, through the pipeline and through the real app ---------------
+    await runMalformedImportChecks(demo.value);
+
+    // ---- 7. untrusted-import security --------------------------------------------------------
+    await runStateSecurityChecks(demo.value);
+  });
+
+  // The DOM half of the scoring rule, measured on a real boot rather than inferred. Outside the
+  // empty-shelf window on purpose: `bootShell` prefers Resume, and letting it see the host's real
+  // shelf is the same courtesy the rest of the shell suite already extends.
+  await runScorebarPresenceChecks();
+}
+
+/**
+ * A malformed state file must land on the ERROR SCREEN, never on a board (spec §4.4, §5, §6.6).
+ *
+ * Two halves, because either one alone can pass for the wrong reason:
+ *   · the PIPELINE half proves the validator names the fault (and that `adopt` is never reached);
+ *   · the APP half proves `app.js` actually routes it — a real boot, the real hidden file input, a
+ *     real File dropped into it, and the board checked afterwards for any trace of the payload.
+ */
+async function runMalformedImportChecks(bundle) {
+  let text = null;
+  try {
+    const res = await fetch('tests/fixtures/malformed-state.json?v=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    text = await res.text();
+  } catch (err) {
+    record('state', 'a malformed imported session is refused with a real failure', false,
+      'could not read tests/fixtures/malformed-state.json: ' + (err && err.message));
+    return;
+  }
+
+  const raw = rawStateText('import:malformed-state.json', text);
+  const checked = validator.validateState({ raw, bundle });
+  const first = checked.ok ? null : checked.failures[0];
+  const named = !checked.ok && checked.failures.length === 1 && first.path === 'teams[0].score'
+    && first.hint === 'wrong-type' && first.stage === 'structural'
+    && first.file === 'import:malformed-state.json' && !!first.expected && !!first.found;
+  record('state', 'a malformed imported session is refused, naming the field and the file',
+    named,
+    checked.ok ? 'THE VALIDATOR ACCEPTED IT — a corrupted export would reach the board'
+      : named ? errors.formatFailure(first)
+        : 'wrong report: ' + checked.failures.map(errors.formatFailure).join(' | '));
+
+  // The screen a host would actually see. Rendered through the real error screen, into a detached
+  // box, so the row below can also be READ by the reviewer at the bottom of this page.
+  if (!checked.ok) {
+    const box = el('div');
+    let shown = '';
+    try {
+      errors.renderErrorScreen(checked.failures, box);
+      shown = box.textContent;
+    } catch (err) {
+      shown = '';
+      record('state', 'the refusal renders as a real error screen', false,
+        'renderErrorScreen threw: ' + (err && err.message));
+    }
+    if (shown) {
+      const complete = shown.indexOf('teams[0].score') !== -1
+        && shown.indexOf('import:malformed-state.json') !== -1
+        && box.querySelectorAll('.qbe-card').length === 1;
+      record('state', 'the refusal renders as a real error screen naming the file and the field',
+        complete,
+        complete ? shown.length + ' characters, one problem card, file and path both on screen'
+          : 'the screen omitted the file or the path');
+    }
+  }
+
+  // ---- the app half ---------------------------------------------------------------------------
+  const booted = await bootShell('games/demo.json');
+  const { frame, doc, win } = booted;
+  try {
+    if (booted.timedOut || !doc || !win || !booted.board) {
+      record('state', 'importing a malformed file into the running app lands on the error screen', false,
+        'the shell did not boot, so the import path could not be driven');
+      return;
+    }
+    const input = doc.querySelector('.qbe-file');
+    if (!input || typeof win.DataTransfer !== 'function') {
+      record('state', 'importing a malformed file into the running app lands on the error screen', false,
+        !input ? 'no input.qbe-file in the booted toolbar — renderToolbar did not draw the import control'
+          : 'this engine has no DataTransfer, so a File cannot be handed to the real input');
+      return;
+    }
+
+    const cell = doc.querySelector('.qbe-cell[data-cell="0:0"]');
+    const stateBefore = cell ? cell.getAttribute('data-state') : '(no cell)';
+
+    // A real File in the FRAME's realm, handed to the real hidden input, announced with a real
+    // change event: from `renderToolbar`'s point of view this is indistinguishable from a host
+    // picking the file out of their Downloads folder.
+    const file = new win.File([text], 'malformed-state.json', { type: 'application/json' });
+    const dt = new win.DataTransfer();
+    dt.items.add(file);
+    input.files = dt.files;
+    input.dispatchEvent(new win.Event('change', { bubbles: true }));
+
+    const mount = doc.getElementById('qbe-error');
+    const appeared = await waitFor(() => mount && mount.textContent.length > 0, 6000);
+    const reveal = doc.querySelector('.reveal');
+    const screenText = mount ? mount.textContent : '';
+    const routed = appeared
+      && screenText.indexOf('teams[0].score') !== -1
+      && screenText.indexOf('import:malformed-state.json') !== -1
+      && !!reveal && reveal.hasAttribute('hidden');
+    record('state', 'importing a malformed file into the running app lands on the error screen',
+      routed,
+      !appeared ? 'no error screen appeared within 6 s of the change event'
+        : routed ? 'the report names import:malformed-state.json / teams[0].score and .reveal is hidden'
+          : 'error screen text: ' + screenText.slice(0, 160));
+
+    // NEVER ON A BOARD. The fixture carries `0:0: answered` and a 400-point team; if any of it had
+    // been applied, the board behind the (hidden) report would show it.
+    const stateAfter = cell ? cell.getAttribute('data-state') : '(no cell)';
+    const scores = [...doc.querySelectorAll('.qbe-team-score')].map((n) => n.textContent);
+    const untouched = stateAfter === stateBefore && scores.indexOf('400') === -1;
+    record('state', 'a refused import applies NOTHING — no partial restore onto the live board',
+      untouched,
+      untouched ? `cell 0:0 is still "${stateAfter}" and no team shows the file's 400 points`
+        : `cell 0:0 went ${stateBefore} → ${stateAfter}; team scores on the board: ${scores.join(',') || '(none)'}`);
+  } finally {
+    frame.remove();
+  }
+}
+
+/**
+ * `scoring.model: "none"` renders NO score bar — asserted on a real boot, with a positive control.
+ *
+ * Without the jeopardy half this would be the weakest kind of green: "the element is absent" passes
+ * just as well when the element is never drawn for anybody.
+ */
+async function runScorebarPresenceChecks() {
+  const sessionsBefore = sessionKeysNow();
+  const cases = [
+    { game: 'games/demo-bingo.json', expected: 0, why: 'bingo scoring.model is "none"' },
+    { game: 'games/demo.json', expected: 1, why: 'jeopardy scoring.model is "accumulate"' },
+  ];
+  try {
+    for (const { game, expected, why } of cases) {
+      const booted = await bootShell(game);
+      const { frame, doc } = booted;
+      try {
+        if (booted.timedOut || !doc || !booted.board) {
+          record('state', `${game}: score bar presence follows the game type`, false,
+            'the shell did not boot');
+          continue;
+        }
+        const bars = doc.querySelectorAll('.qbe-scorebar').length;
+        const toolbars = doc.querySelectorAll('.qbe-toolbar').length;
+        const teamsButton = doc.querySelectorAll('.qbe-toolbar .qbe-btn[data-action="teams"]').length;
+        record('state', `${game}: ${expected === 0 ? 'NO' : 'exactly one'} .qbe-scorebar in the DOM (${why})`,
+          bars === expected && toolbars === 1 && teamsButton === expected,
+          `${bars} score bar(s), ${toolbars} toolbar(s), ${teamsButton} Teams… button(s) — export/import `
+          + 'is offered either way, because a card a host cannot export is data loss');
+      } finally {
+        frame.remove();
+      }
+    }
+  } finally {
+    dropNewSessions(sessionsBefore);
+  }
+}
+
+// =============================================================================================
+// SECURITY — an imported session is untrusted input (spec §4.4 / §6.6, CLAUDE.md)
+// =============================================================================================
+//
+// Recorded into the `security` group, next to the loader's path traversal and the renderer's XSS
+// assertions, because that is where a reviewer looks for this class of question. An exported session
+// is a file a host mails to a colleague and a colleague opens: it is exactly as trustworthy as a
+// downloaded attachment, which is to say not at all.
+
+const HOSTILE_TITLE = '<img src=x onerror="alert(1)"><script>alert(2)</script>';
+
+async function runStateSecurityChecks(bundle) {
+  const hash = await synthHash('security');
+  const stamp = '2026-08-16T20:00:00Z';
+
+  /** A state file as TEXT, so `__proto__` arrives as a real own property (JSON.parse keeps it). */
+  const stateText = (cellStates, title) =>
+    '{"schemaVersion":1,"gameHash":"' + hash + '","gameTitle":' + JSON.stringify(title || 'Security probe')
+    + ',"createdAt":"' + stamp + '","updatedAt":"' + stamp + '","teams":[],"cellStates":'
+    + cellStates + ',"bonusCells":[]}';
+
+  const protoBefore = Object.keys(Object.prototype).length;
+
+  const REJECT = [
+    ['a __proto__ key in cellStates', '{"__proto__":"answered","0:0":"answered"}', 'bad-key-format'],
+    ['a __proto__ key carrying an object', '{"__proto__":{"polluted":"yes"}}', 'bad-key-format'],
+    ['a constructor key in cellStates', '{"constructor":"answered"}', 'bad-key-format'],
+    ['a prototype key in cellStates', '{"prototype":"answered"}', 'bad-key-format'],
+    ['an out-of-bounds cell key', '{"9:9":"answered"}', 'out-of-range'],
+    ['a cell key outside the key grammar', '{"0:0:0":"answered"}', 'bad-key-format'],
+    // "marked" is a real lifecycle state — just not one jeopardy uses. The renderer would have no
+    // way to draw it, so it is refused at the contract stage rather than drawn as something else.
+    ['a state outside this game type\'s cellLifecycle', '{"0:0":"marked"}', 'unknown-value'],
+    ['a state outside the canonical lifecycle set', '{"0:0":"cheated"}', 'unknown-value'],
+  ];
+
+  for (const [label, cellStates, hint] of REJECT) {
+    const raw = rawStateText('import:hostile-state.json', stateText(cellStates));
+    const checked = validator.validateState({ raw, bundle });
+    const passed = !checked.ok && checked.failures.some((f) => f.hint === hint);
+    record('security', `an imported session with ${label} is refused`, passed,
+      checked.ok ? 'ACCEPTED — this reaches state.adopt() and then the board'
+        : passed ? errors.formatFailure(checked.failures[0])
+          : `refused, but with hint "${checked.failures[0].hint}" where "${hint}" was expected: `
+            + errors.formatFailure(checked.failures[0]));
+  }
+
+  // DEFENCE IN DEPTH. The rows above prove the gate holds; this one proves that even if a future
+  // caller forgot the gate, adopting a proto-laden object does not pollute anything — `adopt` clones
+  // through JSON and walks with Object.keys, so a "__proto__" key stays an ordinary own property.
+  const forced = state.adopt(JSON.parse(stateText('{"0:0":"answered"}', 'Proto probe')));
+  const polluted = ({}).polluted !== undefined || ({}).answered !== undefined
+    || Object.keys(Object.prototype).length !== protoBefore;
+  record('security', 'Object.prototype is untouched by every hostile session above', !polluted,
+    !polluted ? `Object.prototype still has ${protoBefore} enumerable own key(s); {}.polluted is undefined`
+      : 'PROTOTYPE POLLUTED — a plain object now carries keys from an imported file');
+  record('security', 'adopting a session is a clone, never a merge into a shared object',
+    forced.ok && forced.value !== null && Object.getPrototypeOf(forced.value) === Object.prototype,
+    forced.ok ? 'the installed session is a plain object with the ordinary prototype'
+      : failureText(forced));
+
+  // ---- a hostile gameTitle is DATA, and reaches the DOM as text --------------------------------
+  //
+  // The title is the one string in a state file that is displayed rather than matched: it is drawn
+  // on the resume screen, from a session a host may have received by email. It is legal JSON and a
+  // legal string, so the answer is not "refuse it" — it is "render it as text and add no nodes".
+  const titled = validator.validateState({
+    raw: rawStateText('import:hostile-title.json', stateText('{"0:0":"answered"}', HOSTILE_TITLE)),
+    bundle,
+  });
+  record('security', 'a session whose gameTitle contains markup is valid DATA (not a validation error)',
+    titled.ok && titled.value.gameTitle === HOSTILE_TITLE,
+    titled.ok ? 'accepted verbatim, angle brackets included — the question is how it is DRAWN'
+      : 'refused: ' + failureText(titled));
+
+  const stage = harnessStage();
+  renderer.renderResumeScreen({
+    sessions: [{ gameHash: hash, gameTitle: HOSTILE_TITLE, updatedAt: stamp, teamCount: 2 }],
+    gameHash: hash,
+    mount: stage,
+    handlers: {},
+  });
+  const titleNode = stage.querySelector('.qbe-session-title');
+  const verbatim = !!titleNode && titleNode.textContent === HOSTILE_TITLE;
+  const injected = stage.querySelectorAll('script, img, svg, iframe, object, embed, a, link, style, form, input');
+  record('security', 'a hostile gameTitle renders as TEXT on the resume screen and adds zero nodes',
+    verbatim && injected.length === 0,
+    verbatim && injected.length === 0
+      ? 'the row title compares === to the payload, and no script/img/svg node exists in the screen'
+      : !verbatim ? 'the title was altered or missing: ' + JSON.stringify(titleNode && titleNode.textContent)
+        : 'FOUND ' + [...injected].map((n) => n.tagName).join(',') + ' — this is a live XSS');
+  stage.remove();
+}
+
+// =============================================================================================
+// BONUS SUITE (F7, spec §8) — the draw, its eligibility rules, and its uniformity
+// =============================================================================================
+//
+// WHY UNIFORMITY IS ASSERTED WITH A DISTRIBUTION AND NOT WITH A CODE READING
+//
+// A biased picker still picks. `Math.floor(Math.random() * n)` picks, `getRandomValues[0] % n`
+// picks, and a board played with either looks exactly like a board played with a fair draw — the
+// unfairness is only visible across many sessions, which is to say across a term of a teacher's
+// classes and never inside one test that draws once. Modulo bias is also the specific defect
+// `cryptoRandomInt` was written to avoid (state.js §4), so it is the specific defect that has to be
+// measurable here. The tolerances below are set at roughly six standard deviations, so a fair draw
+// effectively cannot fail them and a systematically skewed one cannot pass.
+
+/**
+ * A 3x4 jeopardy board with a KNOWN eligibility census:
+ *   · eight plainly randomizable cells (0:0-0:3, 1:0-1:3) — the pool everything below measures;
+ *   · 2:0 flagged randomizable AND lockValue, which the validator's census must drop (spec §4.1:
+ *     a locked cell's value is never altered by randomization);
+ *   · 2:1-2:3 not randomizable at all.
+ * A fixture file would be a worse choice: this content exists to be a controlled pool, and a file in
+ * games/ is also a thing a person can open and mistake for demo content.
+ */
+function bonusPoolContent() {
+  const columns = [];
+  for (let c = 0; c < 3; c++) {
+    const cells = [];
+    for (let r = 0; r < 4; r++) {
+      const cell = {
+        prompt: 'Bonus pool prompt ' + c + '-' + r,
+        answer: 'What is ' + c + '-' + r + '?',
+      };
+      if (c < 2) cell.flags = { randomizable: true, lockValue: false, preMarked: false };
+      else if (r === 0) cell.flags = { randomizable: true, lockValue: true, preMarked: false };
+      else cell.flags = { randomizable: false, lockValue: false, preMarked: false };
+      cells.push(cell);
+    }
+    columns.push({ label: 'Pool ' + c, valueLadder: [100, 200, 300, 400], cells });
+  }
+  return {
+    schemaVersion: 1, title: 'Bonus pool', gameType: 'jeopardy',
+    theme: 'default', animation: 'fade', board: { columns },
+  };
+}
+
+const POOL_KEYS = ['0:0', '0:1', '0:2', '0:3', '1:0', '1:1', '1:2', '1:3'];
+const LOCKED_KEY = '2:0';
+
+/** Tally how often each key comes back over `runs` draws of `count`. */
+function tally(draw, runs) {
+  const counts = new Map();
+  const shapes = [];
+  for (let i = 0; i < runs; i++) {
+    const picked = draw();
+    shapes.push(picked);
+    for (const key of picked) counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return { counts, shapes };
+}
+
+/**
+ * The uniformity verdict for one tally: every eligible key appeared, and none appeared more than
+ * `tolerance` away from the expected share. Returns a problem string, or null when it is fair.
+ */
+function uniformityProblem(counts, keys, expected, tolerance) {
+  const missing = keys.filter((k) => !counts.has(k));
+  if (missing.length > 0) return 'never picked at all: ' + missing.join(',');
+  const low = Math.floor(expected * (1 - tolerance));
+  const high = Math.ceil(expected * (1 + tolerance));
+  const skewed = keys.filter((k) => counts.get(k) < low || counts.get(k) > high);
+  if (skewed.length > 0) {
+    return 'outside [' + low + ',' + high + '] (expected ' + Math.round(expected) + ' each): '
+      + skewed.map((k) => k + '=' + counts.get(k)).join(', ');
+  }
+  return null;
+}
+
+async function runBonusSuite() {
+  const pool = await synthBundle('bonus-pool', bonusPoolContent(), 'jeopardy');
+  if (!pool.ok) {
+    record('bonus', 'the bonus-pool board validates', false,
+      pool.failures.map(errors.formatFailure).join(' | '));
+    return;
+  }
+  const bundle = pool.value;
+
+  // The census this whole suite rests on. If the validator ever stopped excluding the locked cell,
+  // every assertion below would still pass while the feature was broken — so the census is asserted
+  // FIRST, against the flags the content file carries.
+  const census = bundle.resolved.randomizableKeys;
+  record('bonus', 'the validator\'s randomizable census is `randomizable && !lockValue`',
+    census.join(',') === POOL_KEYS.join(',') && bundle.resolved.lockedValueKeys.join(',') === LOCKED_KEY,
+    `candidates: ${census.join(',')}; locked: ${bundle.resolved.lockedValueKeys.join(',')} `
+    + `(2:0 is flagged randomizable AND lockValue, and must be absent from the pool)`);
+
+  // ---- 1. count, membership, distinctness -----------------------------------------------------
+  const draws = [];
+  for (let i = 0; i < 500; i++) draws.push(state.pickBonusCells({ bundle, count: 3 }));
+
+  const rightCount = draws.every((d) => d.length === 3);
+  const distinct = draws.every((d) => new Set(d).size === 3);
+  const inPool = draws.every((d) => d.every((k) => POOL_KEYS.indexOf(k) !== -1));
+  const boardOrder = draws.every((d) => d.every((k, i) => i === 0
+    || POOL_KEYS.indexOf(d[i - 1]) < POOL_KEYS.indexOf(k)));
+  record('bonus', 'a draw returns exactly `count` DISTINCT cells, in board order', rightCount && distinct && boardOrder,
+    rightCount && distinct && boardOrder
+      ? '500 draws of 3: every one had three different keys, sorted into board order (so two exports '
+        + 'of one session are byte-identical)'
+      : `right count: ${rightCount}, distinct: ${distinct}, board order: ${boardOrder}`);
+
+  record('bonus', 'every pick comes from a cell flagged randomizable:true — never any other cell', inPool,
+    inPool ? '1500 picks, all inside the 8-cell randomizable census'
+      : 'a pick came from outside the census: ' + JSON.stringify(draws.find((d) => d.some((k) => POOL_KEYS.indexOf(k) === -1))));
+
+  // ---- 2. the lockValue rule (spec §4.1) ------------------------------------------------------
+  //
+  // Asserted twice, deliberately. Once over many draws at the maximum possible count — where a
+  // picker that merely *preferred* other cells would eventually leak — and once at the point where
+  // value is actually computed, because that is where a future mechanic would be tempted to bypass
+  // the rule the draw enforces.
+  const maxDraws = [];
+  for (let i = 0; i < 300; i++) maxDraws.push(state.pickBonusCells({ bundle, count: 99 }));
+  const everLocked = maxDraws.some((d) => d.indexOf(LOCKED_KEY) !== -1);
+  const clamped = maxDraws.every((d) => d.length === POOL_KEYS.length);
+  record('bonus', 'a lockValue:true cell is NEVER picked, even when the draw asks for every cell',
+    !everLocked && clamped,
+    !everLocked && clamped
+      ? `300 draws asking for 99 cells each returned all ${POOL_KEYS.length} candidates and never ${LOCKED_KEY}`
+      : everLocked ? `${LOCKED_KEY} was picked — spec §4.1 says its value is never altered`
+        : 'count was not clamped to the candidate list');
+
+  const bonusSession = { cellStates: {}, bonusCells: ['0:1', LOCKED_KEY] };
+  const multiplied = state.cellAward({ bundle, session: bonusSession, cellKey: '0:1' });
+  const lockedAward = state.cellAward({ bundle, session: bonusSession, cellKey: LOCKED_KEY });
+  const plainAward = state.cellAward({ bundle, session: bonusSession, cellKey: '1:1' });
+  record('bonus', 'the multiplier applies to a bonus cell and never to a lockValue cell',
+    multiplied === 400 && lockedAward === 100 && plainAward === 200,
+    `bonus 0:1 (base 200) → ${multiplied}; locked ${LOCKED_KEY} (base 100) forced into bonusCells → `
+    + `${lockedAward}; non-bonus 1:1 (base 200) → ${plainAward}`);
+
+  // ---- 3. UNIFORMITY --------------------------------------------------------------------------
+  const single = tally(() => state.pickBonusCells({ bundle, count: 1 }), 4000);
+  const singleProblem = uniformityProblem(single.counts, POOL_KEYS, 4000 / 8, 0.25);
+  record('bonus', 'UNIFORMITY: 4000 single-cell draws land on all 8 candidates, none wildly more often',
+    singleProblem === null,
+    singleProblem === null
+      ? POOL_KEYS.map((k) => k + '=' + single.counts.get(k)).join(' ') + ' (expected 500 each; the '
+        + '±25% band is about six standard deviations, so a fair draw cannot fail this and a biased '
+        + 'one cannot pass)'
+      : singleProblem);
+
+  const triple = tally(() => state.pickBonusCells({ bundle, count: 3 }), 2000);
+  const tripleProblem = uniformityProblem(triple.counts, POOL_KEYS, (2000 * 3) / 8, 0.2);
+  record('bonus', 'UNIFORMITY: 2000 three-cell draws spread evenly across the pool too',
+    tripleProblem === null,
+    tripleProblem === null
+      ? POOL_KEYS.map((k) => k + '=' + triple.counts.get(k)).join(' ') + ' (expected 750 each)'
+      : tripleProblem);
+
+  // The generator itself, at a NON-POWER-OF-TWO modulus. This is where modulo bias actually lives:
+  // 2^32 % 3 != 0, so `getRandomValues() % 3` favours two residues over the third. The rejection
+  // sampling in `cryptoRandomInt` is the reason this comes out flat.
+  const residues = new Map();
+  for (let i = 0; i < 6000; i++) {
+    const r = state.cryptoRandomInt(3);
+    residues.set(r, (residues.get(r) || 0) + 1);
+  }
+  const residueProblem = uniformityProblem(residues, [0, 1, 2], 2000, 0.15);
+  const inRange = [...residues.keys()].every((k) => Number.isInteger(k) && k >= 0 && k < 3);
+  record('bonus', 'cryptoRandomInt(3) is flat at a modulus 2^32 does not divide (the modulo-bias case)',
+    residueProblem === null && inRange,
+    residueProblem === null
+      ? '6000 draws: ' + [0, 1, 2].map((k) => k + '=' + residues.get(k)).join(' ') + ' (expected 2000 each)'
+      : residueProblem);
+
+  // NEGATIVE CONTROL. A uniformity check that cannot fail is worse than none, because it reads as
+  // coverage. The seam is an integer generator precisely so a rigged one can be substituted here.
+  const rigged = tally(() => state.pickBonusCells({ bundle, count: 1, randomInt: () => 0 }), 800);
+  const riggedProblem = uniformityProblem(rigged.counts, POOL_KEYS, 100, 0.25);
+  record('bonus', 'NEGATIVE CONTROL: the uniformity check rejects a deliberately biased generator',
+    riggedProblem !== null,
+    riggedProblem !== null ? 'a randomInt that always returns 0 was caught: ' + riggedProblem
+      : 'the check PASSED a generator that picks the same cell every time — it proves nothing');
+
+  // ---- 4. resume keeps the picks; a new session reshuffles (spec §8) ---------------------------
+  await withEmptyShelf(async () => {
+    const hash = await synthHash('bonus-resume');
+    const first = state.newSession({ bundle, gameHash: hash, teams: ['Red'] });
+    const adopted = state.adopt(first);
+    if (!adopted.ok) {
+      record('bonus', 'resuming a session keeps the SAME bonus cells', false,
+        'adopt refused the session: ' + failureText(adopted));
+    } else {
+      const drawn = state.current().bonusCells.slice();
+      state.__resetForTests();
+      const back = reopenSession(bundle, hash);
+      const same = back.ok && deepEqual(back.value.bonusCells, drawn);
+      record('bonus', 'resuming a session keeps the SAME bonus cells (no redraw on reload)', same,
+        !back.ok ? `the reload failed at ${back.where}: ${failureText(back)}`
+          : same ? `drew ${drawn.join(',')} and resumed onto ${back.value.bonusCells.join(',')}`
+            : `drew ${drawn.join(',')} but resumed onto ${back.value.bonusCells.join(',')} — the room `
+              + 'would see the bonus move between halves of one game');
+
+      // The other half of the same rule: a session handed a stored list must not draw at all.
+      const passed = state.newSession({ bundle, gameHash: hash, teams: [], bonusCells: ['1:3'] });
+      record('bonus', 'newSession uses a SUPPLIED bonus list verbatim (the resume path)',
+        passed.bonusCells.join(',') === '1:3',
+        'bonusCells: ' + passed.bonusCells.join(','));
+    }
+
+    // A NEW session reshuffles. Over 60 fresh sessions on an 8-cell pool, one repeated pick is
+    // ordinary and 60 identical picks is a picker that draws once and remembers.
+    const picks = new Set();
+    for (let i = 0; i < 60; i++) {
+      picks.add(state.newSession({ bundle, gameHash: hash, teams: [] }).bonusCells.join(','));
+    }
+    record('bonus', 'starting a NEW session reshuffles rather than reusing the last draw',
+      picks.size > 1,
+      picks.size > 1 ? `60 new sessions produced ${picks.size} different bonus selections`
+        : 'every new session drew ' + [...picks][0] + ' — the draw is not happening per session');
+  });
+
+  // ---- 5. data-bonus in the rendered DOM ------------------------------------------------------
+  const chosen = state.pickBonusCells({ bundle, count: 3 });
+  const stage = harnessStage();
+  const session = { cellStates: {}, bonusCells: chosen };
+  const view = renderer.renderBoard({ bundle, session, mount: stage, handlers: {} });
+  const marked = [...stage.querySelectorAll('.qbe-cell[data-bonus="true"]')]
+    .map((n) => n.getAttribute('data-cell')).sort();
+  const values = [...stage.querySelectorAll('.qbe-cell[data-bonus]')]
+    .map((n) => n.getAttribute('data-bonus'));
+  record('bonus', 'data-bonus="true" appears on EXACTLY the chosen cells and nowhere else',
+    marked.join(',') === chosen.slice().sort().join(',') && values.every((v) => v === 'true'),
+    `chose ${chosen.join(',')}; data-bonus is on ${marked.join(',') || '(none)'} `
+    + `out of ${bundle.resolved.cellKeys.length} cells`);
+
+  // And it FOLLOWS the session on a repaint, rather than being a first-paint accident: this is the
+  // path an import takes (a file whose bonusCells differ from the ones on screen).
+  const swapped = { cellStates: {}, bonusCells: ['1:3'] };
+  renderer.updateBoard(view, { bundle, session: swapped });
+  const afterSwap = [...stage.querySelectorAll('.qbe-cell[data-bonus]')]
+    .map((n) => n.getAttribute('data-cell'));
+  record('bonus', 'a repaint moves data-bonus with the session (the import path)',
+    afterSwap.join(',') === '1:3',
+    'after updateBoard with bonusCells ["1:3"], data-bonus is on ' + (afterSwap.join(',') || '(none)'));
+  stage.remove();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1937,6 +3271,16 @@ export async function run(mount) {
   // After the render suite (which needs no CSS) and before the invariants: this one boots the real
   // shell in an iframe, so it is the only place theme CSS is loaded and computed geometry is checked.
   await runShellSuite();
+  // Every REGISTERED theme, applied to a real boot and measured — manifest-driven, so a sixth theme
+  // is covered the moment it is registered.
+  await runThemeGeometrySuite();
+  // F6/F7/F10. After the shell suites because these boot the shell too and the boots are cheaper
+  // once the browser has the app's modules cached; before the invariant suite, which only reads
+  // source text. Both suites hand the session shelf back exactly as they found it (withEmptyShelf).
+  await runStateSuite();
+  await runBonusSuite();
+  // The file-level audit of the same manifest: fetchability, zero-CDN, SPDX, tokens, classes.
+  await runThemeSuite();
   await runInvariantSuite();
 
   mount.textContent = '';

@@ -9,11 +9,16 @@
  * default.css:
  *
  *   1. A THEME IS AN OVERRIDE SHEET. There is no layout in this file. No grid,
- *      no flex, no positioning, no keyframes. It sets 32 of the 40 contract
- *      tokens and adds eight small class overrides, and that is the entire
+ *      no flex, no positioning, no keyframes. It sets 36 of the 45 contract
+ *      tokens and adds five small class overrides, and that is the entire
  *      distance between "warm classroom paper" and what you see here.
  *
- *   2. UNSET TOKENS FALL BACK. Eight tokens are deliberately left alone — see
+ *      (It was eight overrides against contract v1.1. Three of them —
+ *      the spent rim, the revealed value's colour, and the Close label —
+ *      became tokens in v1.2 precisely because every theme was writing them,
+ *      which is what the reporting duty in theme-contract §6 is for.)
+ *
+ *   2. UNSET TOKENS FALL BACK. Nine tokens are deliberately left alone — see
  *      the "INHERITED ON PURPOSE" block at the bottom for the list and the
  *      reasoning. They resolve to default.css's values.
  *
@@ -93,6 +98,14 @@
      family is what keeps this from looking like default. */
   --cell-revealed-bg: #253559;
   --cell-revealed-text: #f3f6ff;     /* 11.22:1 on --cell-revealed-bg (AAA ✓) */
+  /* The revealed VALUE only, not the ring. default.css paints both with
+     --cell-revealed-accent, which here falls back to --accent = magenta at
+     3.71:1 on the revealed panel — legal for the ring (a non-text boundary)
+     and the ring is doing exactly what magenta means in this theme, "the host
+     is on this cell". But this is the number the room is reading, and cyan
+     gets it to 7.93:1. Contrast maths, not taste. Was a class override until
+     contract v1.2. */
+  --cell-revealed-value-color: #57e2ff;  /* 7.93:1 on --cell-revealed-bg (large ✓, body ✓) */
 
   /* answered: the panel is switched off. Darker than the ground, so it reads as
      a hole rather than a card — spent, at a glance, from the back of the room,
@@ -100,6 +113,13 @@
      button findable, and the dot texture is the second non-hue cue. */
   --cell-answered-bg: #0a0e18;       /* 1.03:1 vs --board-bg — indistinguishable as an object, which is the point */
   --cell-answered-text: #8b96b2;     /* 6.52:1 on --cell-answered-bg (AA body ✓) */
+  /* The rim is what keeps a switched-off panel clickable — a cell the host
+     cannot see is a cell they cannot recover (theme-contract §5.7). --cell-border
+     is one shorthand for all states and its lit blue would be wrong here: the
+     panel is DARKER than the ground, so default's warm rim would be invisible
+     and the lit rim would contradict "switched off". Was a class override
+     until contract v1.2. */
+  --cell-answered-border: 2px dashed #5c6e96;  /* 3.79:1 vs --cell-answered-bg, 3.91:1 vs --board-bg (non-text 3:1 ✓) */
 
   /* marked: magenta's territory. Deep plum panel, hot magenta stamp. */
   --cell-marked-bg: #33103a;
@@ -133,6 +153,12 @@
      visible enough to compete with the prompt for attention. */
   --detail-scrim: rgba(4, 6, 12, 0.9);
   --answer-color: #57e2ff;           /* 11.90:1 on --detail-bg (AA ✓) */
+  /* The Close label sits on the SCRIM. default.css expresses it as --board-bg,
+     which is correct on a light-ground theme and invisible here — near-black on
+     a near-black scrim. The relationship inverted with the ground; this theme
+     found it first. Was a class override until contract v1.2. */
+  --detail-close-color: var(--board-fg);   /* 16.79:1 on the flattened scrim (--detail-scrim over --board-bg) (AAA ✓) */
+  --detail-close-border: 2px solid var(--board-fg);
 
   /* --- Score bar -------------------------------------------------------- */
 
@@ -153,11 +179,12 @@
 }
 
 /* ==========================================================================
-   CLASS OVERRIDES — eight of them, and no more
-   Six carry real design decisions and are numbered; the last two, below them,
+   CLASS OVERRIDES — five of them, and no more
+   Three carry real design decisions and are numbered; the last two, below them,
    are one-line tints. Each exists because a token alone genuinely could not
-   express it. If a ninth appears, that is a signal the token set is short something, and the
-   right move is to report it (theme-contract §6), not to keep adding rules.
+   express it. If a sixth appears, that is a signal the token set is short something, and the
+   right move is to report it (theme-contract §6), not to keep adding rules —
+   which is exactly how v1.2's five new tokens arrived.
    ========================================================================== */
 
 /* 1. Column labels: a broadcast caption, not a filled tab. Uppercase, tracked
@@ -173,25 +200,7 @@
   font-weight: 600;
 }
 
-/* 2. The revealed value takes cyan, not --accent. default.css colours it with
-      --accent, which here is magenta at 3.71:1 on --cell-revealed-bg — legal
-      for large text, but this is the number the room is reading, and cyan gets
-      it to 7.93:1. Contrast maths, not taste. */
-.qbe-cell[data-state="revealed"] .qbe-cell-value {
-  color: #57e2ff;                    /* 7.93:1 on --cell-revealed-bg (large ✓, body ✓) */
-}
-
-/* 3. The spent-cell rim. --cell-border is one shorthand for all states, and the
-      answered rim needs a different colour: the panel is darker than the ground
-      here, so default's warm dashed rim would be invisible. This is the rule
-      that keeps a switched-off panel clickable — a cell the host cannot see is
-      a cell they cannot recover (theme-contract §5.7). */
-.qbe-cell[data-state="answered"] {
-  border-color: #5c6e96;             /* 3.79:1 vs --cell-answered-bg, 3.91:1 vs --board-bg (non-text 3:1 ✓) */
-  box-shadow: none;                  /* the light goes out; restated because --cell-shadow is one token for all states */
-}
-
-/* 4. A different texture language. default hatches with diagonal stripes; a
+/* 2. A different texture language. default hatches with diagonal stripes; a
       broadcast panel goes dead as a dot grid, like an unlit LED matrix. Same
       job — a non-hue cue that survives colour vision deficiency and a bad
       projector — different vocabulary. Not tokenised, and shouldn't be:
@@ -202,7 +211,7 @@
     6px 6px;
 }
 
-/* 5. A different bingo stamp. The glyph is a mask, so the colour still comes
+/* 3. A different bingo stamp. The glyph is a mask, so the colour still comes
       from --cell-mark-glyph-color; only the shape changes. A filled diamond
       rather than default's drawn X: heavier, flatter, more like a graphic
       overlay than a hand mark, which is the register this theme is in. */
@@ -211,18 +220,7 @@
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 6 94 50 50 94 6 50Z' fill='%23000'/%3E%3C/svg%3E");
 }
 
-/* 6. The overlay's secondary button. default.css sets its label to
-      var(--board-bg) because that theme's ground is light paper against a dark
-      scrim. Here --board-bg is near-black on a near-black scrim: inherited
-      unchanged, the Close label would be invisible. A token could not fix this
-      — the *relationship* is what inverted. This is the one place where reusing
-      default's structural CSS costs something, and it is worth writing down. */
-.qbe-detail-close {
-  color: var(--board-fg);            /* 16.79:1 on the flattened scrim (--detail-scrim over --board-bg) (AAA ✓) */
-  border-color: var(--board-fg);
-}
-
-/* 7 and 8: one-line tints. Counted in the eight above — they are small, not
+/* 4 and 5: one-line tints. Counted in the five above — they are small, not
    invisible. default tinted these with its amber, and amber is not in this
    palette. */
 .qbe-team[data-active="true"] {
@@ -242,8 +240,12 @@
 }
 
 /* ==========================================================================
-   INHERITED ON PURPOSE — the eight tokens this file does not set
+   INHERITED ON PURPOSE — the nine tokens this file does not set
    ==========================================================================
+   --cell-revealed-accent|  The RING's colour. Set --cell-revealed-value-color
+                         |  instead, so the number goes cyan and the ring stays
+                         |  magenta — "the host is on this cell". Narrowing the
+                         |  token was the point of splitting it.
    --board-pad           |
    --cell-min-height     |  Geometry that encodes "legible and hittable from
    --value-size          |  the back of a room". These are ergonomics, not
@@ -271,7 +273,7 @@
    because removed means removed, not shortened.
 
    Also inherited: the whole of default.css's layout, focus handling, forced-
-   colors block, and the three animations. That is 40 tokens minus 32 set here,
+   colors block, and the three animations. That is 45 tokens minus 36 set here,
    plus every structural rule — which is the honest measure of how far a theme
    can travel without touching layout at all.
    ========================================================================== */
