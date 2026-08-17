@@ -509,15 +509,28 @@ export function announce(text: string) -> void            // ARIA live region fo
   creates or updates a single `<link id="qbe-theme">` at `themes/<file>`, never cache-busted
   (plan Q14). It does not accept a theme *name*; resolution is not the renderer's job.
 - `handlers` is how the renderer reports intent without importing `state`:
-  `{ onCellActivate(cellKey), onCellAdvance(cellKey), onCellClose(), onScoreAdjust(teamIndex, delta), onTeamsSubmit(names), onResume(gameHash), onDiscard(gameHash), onExport(), onImport(file) }`.
+  `{ onCellActivate(cellKey), onCellAdvance(cellKey, nextState), onCellClose(), onScoreAdjust(teamIndex, delta), onTeamsSubmit(names), onResume(gameHash), onDiscard(gameHash), onExport(), onImport(file) }`.
+  `onCellAdvance`'s second argument is the lifecycle state the cell is moving INTO. The renderer has
+  already derived it to label the next button, and deriving it again in the caller is the same
+  derivation twice — which is how a board comes to disagree with the saved session.
   All optional; a missing handler makes that affordance inert, never throws.
 - **One delegated listener** on the board root, not one per cell (A4 performance lens). Cells are
   real `<button>` elements so keyboard and screen-reader support come from the platform
-  (CLAUDE.md accessibility rule); `data-cell-key` carries identity.
+  (CLAUDE.md accessibility rule); **`data-cell`** carries identity — that is the attribute
+  theme-contract §2/§3 publishes and the one the renderer emits. An earlier draft of this section
+  said `data-cell-key`; the contract is the authority and the attribute is `data-cell`.
 - `renderBoard` builds into a `DocumentFragment` and appends once — one layout pass for a 12×12
   board, not 144.
-- `BoardView = { root: HTMLElement, cells: Map<string, HTMLButtonElement> }`. `updateBoard` diffs
-  by cell key and touches only changed nodes; it never rebuilds the board.
+- `BoardView = { root: HTMLElement, cells: Map<string, HTMLButtonElement> }` — the published
+  minimum. The renderer also hangs private handles off the same object (`stage`, `records`,
+  `renderedStates`, `detail`, `bundle`, `handlers`, `open`, `escapeListener`); `cells` is a
+  projection of `records`, so `cells.get(k) === records.get(k).button` always holds. `updateBoard`
+  diffs by cell key and touches only changed nodes; it never rebuilds the board.
+- Also exported today, beyond the list above: `REVEAL_CONFIG`, `openCell(view, cellKey)`,
+  `closeCell(view)`, `nextLifecycleState(lifecycle, current)`, `cellStateFor(bundle, session,
+  cellKey)`. The last two are lifecycle vocabulary the state layer needs in F6; nothing in `app.js`
+  calls them. `announce` is listed above as an eventual export and does not exist yet — the live
+  region it wrote into was removed in Phase 2 rather than shipped dead (see js/renderer.js §6).
 - Animations `flip` / `zoom` / `fade` are CSS classes gated on `prefersReducedMotion()`.
 - Reveal handles slide mechanics only. The board is our DOM inside one slide. The markdown plugin
   is never imported — it is not in the repo (delta D4).

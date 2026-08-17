@@ -1,8 +1,15 @@
 # Handoff — Quiz Board Engine theming
 
 **To:** Claude Design
-**From:** Marty (maintainer) · prepared 2026-08-17
+**From:** Marty (maintainer) · prepared 2026-08-17 · **contract v1.1**
 **Deliverable requested:** visual direction plus one or more drop-in CSS themes.
+
+> **Contract version: v1.1.** The renderer is built and the two reference themes exist, so
+> everything below describes DOM that actually ships rather than DOM that is planned. Three
+> things were added after the first draft of this handoff, all additive — nothing renamed or
+> removed: the `.qbe-cell-text` element, the `--cell-text-size` token, and the written rule that
+> `themes/default.css` is always loaded underneath your theme. They are folded into §3, §4 and §8
+> below.
 
 ---
 
@@ -87,7 +94,8 @@ source of truth, so `[data-state="answered"]` is your selector.
         .qbe-column
           h2.qbe-column-label              omitted when the column has no label
           button.qbe-cell[data-state][data-cell][data-bonus][data-locked]
-            .qbe-cell-value                point value; empty for bingo
+            .qbe-cell-value                the point value; ABSENT when the cell has none
+            .qbe-cell-text                 face text; present ONLY when there is no value
             .qbe-cell-mark                 mark surface for bingo; usually empty
       .qbe-detail[hidden][data-phase]      opened-cell overlay
         .qbe-detail-prompt
@@ -99,6 +107,16 @@ source of truth, so `[data-state="answered"]` is your selector.
 
 **Every cell is a real `<button>`.** Focus behavior and screen-reader semantics come from the
 platform. You may restyle `:focus-visible`; you may not remove it.
+
+**`.qbe-cell-value` and `.qbe-cell-text` are mutually exclusive.** A cell shows a point value (a
+Jeopardy cell, a Feud row) *or* face text (a bingo square) — never both. A Jeopardy cell's prompt
+is the *question* and is never printed on the face; it appears only in `.qbe-detail`. So a bingo
+card is 25 cells of text with no numbers anywhere, and you need to style both cases.
+
+**`.qbe-stage`'s `display` is not yours.** Reveal.js writes it as an inline style, so a `display`
+rule you put on that element is inert — it cannot win against an inline style. You can freely
+style its `flex-direction`, `gap`, `padding`, and all its children; just don't try to turn the
+stage itself into a grid. (`.qbe-board` *is* yours, and is where the grid lives.)
 
 ### State attributes
 
@@ -130,9 +148,18 @@ custom property on `.qbe-board` if you need it for arithmetic.
 
 ## 4. Token reference — the full contract
 
-Set any subset. Unset tokens fall back to `default.css`. **A theme that changes only colors is a
-completely valid theme.** Full detail with roles is in `docs/plans/theme-contract.md`, included
-alongside this handoff.
+Set any subset. **A theme that changes only colors is a completely valid theme.** Full detail with
+roles is in `docs/plans/theme-contract.md`, included alongside this handoff.
+
+**How the fallback actually works — this matters for how you write your file.** `index.html` links
+`themes/default.css` first, always, and then links the selected theme on top of it. So
+`default.css` is not merely a set of defaults you replace: it is the **structural layer** — the
+grid, the cell box, the overlay, focus styling, and all three animations — and your theme is an
+**override sheet stacked over it**, never a replacement for it.
+
+Practically: you do not need to restate layout, and you should not. Set tokens, override the
+handful of classes you actually want to change, and inherit the rest. `midnight.css` deliberately
+overrides only a subset to demonstrate this; read it before you start.
 
 **Surface:** `--board-bg`◆ `--board-fg` `--board-gap` `--board-pad`
 
@@ -141,8 +168,11 @@ alongside this handoff.
 `--cell-answered-text` `--cell-marked-bg` `--cell-marked-text` `--cell-mark-glyph-color`
 `--cell-bonus-outline` `--cell-min-height`
 
-**Type:** `--font-body` `--font-display` `--value-size` `--value-color` `--column-label-bg`
-`--column-label-text` `--column-label-size`
+**Type:** `--font-body` `--font-display` `--value-size` `--value-color` `--cell-text-size`
+`--column-label-bg` `--column-label-text` `--column-label-size`
+
+(`--cell-text-size` sizes `.qbe-cell-text` — a bingo term, not three digits, so it wants a lower
+cap than `--value-size`.)
 
 **Detail overlay:** `--detail-bg` `--detail-text` `--detail-scrim` `--prompt-size` `--answer-color`
 
@@ -200,10 +230,14 @@ Naming: pick real names. `default` and `midnight` are taken.
 
 ## 7. Bundle with this handoff
 
-- `docs/plans/theme-contract.md` — the normative contract, longer and more precise than §3–§4 here
-- `themes/default.css` — the baseline reference implementation with every token defaulted
-- `themes/midnight.css` — a second implementation, to show the intended amount of variation
-- `games/demo.json` — a real 5×5 Jeopardy board, if you want representative content lengths
+- `docs/plans/theme-contract.md` — **v1.1**, the normative contract; longer and more precise than
+  §3–§4 here, and the authority if anything disagrees
+- `themes/default.css` — the base layer: every token defaulted, plus all the structure and the
+  three animations. Read this one first; it is written to teach the system
+- `themes/midnight.css` — an override sheet that changes only a subset, to show how little a theme
+  has to restate
+- `games/demo.json` — a real 5×5 Jeopardy board, for representative content lengths
+- `games/demo-bingo.json` — a bingo card, so you can see the `.qbe-cell-text` case with no numbers
 
 To see it running: clone the repo, `python3 -m http.server 8000` from the root, open
 `http://localhost:8000/`. It needs an HTTP origin — `file://` blocks ES modules and JSON fetches,

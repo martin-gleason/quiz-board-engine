@@ -1,6 +1,18 @@
-# Theme & display contract — v1
+# Theme & display contract — v1.1
 
 **Status:** NORMATIVE for F3/F4/F5. Derived from frozen spec §4.3, §6.4, §8.
+
+> **AMENDED 2026-08-17 — re-read §2, §4 and §7 if you built against v1.**
+> Three changes came out of the Phase 2 adversarial review. All three are ADDITIVE — nothing
+> published in v1 was renamed or removed — but a theme written against v1 should be re-checked:
+> 1. **New element `.qbe-cell-text`** (§2): the face text of a cell that has no point value, i.e.
+>    every bingo square. Without it a bingo card was 25 blank rectangles.
+> 2. **New token `--cell-text-size`** (§4) for that element.
+> 3. **`themes/default.css` is stated to be the always-loaded base layer** (§4, §7), and
+>    **`.qbe-stage`'s `display` is stated to be owned by the renderer** (§2). Both were true in
+>    practice and unwritten, and both silences caused real defects: the shell was not loading the
+>    base layer at all, and the renderer was pinning the stage to `display:block`, which no theme
+>    rule could outrank.
 **Audience:** the renderer implementation, theme authors, and anyone reviewing either.
 
 A theme is **one plain CSS file** listed in `themes/themes.json`. It sets custom properties and
@@ -37,7 +49,8 @@ Emitted by `renderer.js` via `createElement`/`textContent` only. Indentation sho
         .qbe-column
           h2.qbe-column-label              omitted when the column has no label
           button.qbe-cell[data-state][data-cell][data-bonus][data-locked]
-            .qbe-cell-value                the point value, or empty for bingo
+            .qbe-cell-value                the point value; absent when the cell has none
+            .qbe-cell-text                 face text; present ONLY when the cell has no value
             .qbe-cell-mark                 the mark surface (bingo); always present, usually empty
       .qbe-detail[hidden][data-phase]      the opened-cell overlay
         .qbe-detail-prompt
@@ -55,6 +68,13 @@ Emitted by `renderer.js` via `createElement`/`textContent` only. Indentation sho
 - `.qbe-board` always exists, even for `ranked-list`; layout differences are expressed by
   `data-layout`, not by different element names.
 - Text content is never empty-but-meaningful: if a value is absent, the element is absent.
+- **`.qbe-cell-text` and `.qbe-cell-value` are mutually exclusive.** A cell has a point value (a
+  jeopardy cell, a feud row) or it has face text (a bingo square), never both. A jeopardy cell's
+  `prompt` is the *question* and is never printed on the face — it appears only in `.qbe-detail`.
+- **`.qbe-stage`'s `display` belongs to the renderer, not to a theme.** reveal.js writes it as an
+  inline style from `REVEAL_CONFIG.display` (`flex`), so a theme's `display` on that element is
+  inert. Style the stage's `flex-direction`, `gap`, `padding` and children freely; do not expect to
+  change it into a grid.
 
 **Not guaranteed** — do not depend on it: element order beyond what is shown, whitespace text
 nodes, `:nth-child` positions of cells (columns are ragged in jeopardy), or anything inside
@@ -81,6 +101,13 @@ it is visible to the room.
 
 Every token has a default in `themes/default.css`. A theme may override any subset; unset tokens
 fall back. **A theme that sets only colors is a valid theme.**
+
+**How the fallback actually arrives** (added in v1.1, because the promise above is only true if it is
+written down): `index.html` links `themes/default.css` as a static `<link id="qbe-theme-base">`
+*before* the `<link id="qbe-theme">` slot the renderer fills with the selected theme. So
+`default.css` is ALWAYS loaded — it is the token fallback layer *and* the structural layer (grid,
+cell, overlay, focus, the three animations) — and every other theme is an override sheet stacked on
+top of it, never a replacement for it. See §7.
 
 ### Surface
 
@@ -116,6 +143,7 @@ fall back. **A theme that sets only colors is a valid theme.**
 | `--font-display` | values and column labels |
 | `--value-size` | point-value font size (use `clamp()`; boards vary 1–12 columns) |
 | `--value-color` | point-value color |
+| `--cell-text-size` | `.qbe-cell-text` font size — a whole term, not 3 digits, so cap it lower than `--value-size` |
 | `--column-label-bg` / `--column-label-text` / `--column-label-size` | column header |
 
 ### Detail overlay
@@ -180,6 +208,14 @@ still be hostile in ways CSS review catches and code cannot — hiding content, 
 absurd sizes. Themes ship reviewed, not merely validated.
 
 ## 7. Loading
+
+Two `<link>` elements, in this order:
+
+1. `<link id="qbe-theme-base" rel="stylesheet" href="themes/default.css">` — static in `index.html`.
+   The base layer, always present, never selected by data. Not a manifest lookup: an author-written
+   constant in the shell, exactly like the vendored reveal stylesheets.
+2. `<link id="qbe-theme">` — created by `renderer.mountTheme()` after the validator has resolved the
+   content file's theme NAME against the manifest. This is the selected theme, and it overrides (1).
 
 `themes/themes.json` maps a name to a **bare filename** resolved under `/themes/`. The schema pins
 values to `^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\.css$` — no paths, no URLs, no traversal. Only manifest

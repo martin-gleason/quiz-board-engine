@@ -99,6 +99,26 @@
     padding: .75rem 1rem;
     overflow-x: auto;
   }
+  /*
+    The render suite's board harness (F3). The boards it asserts against have to be IN the document,
+    not detached: two assertions are about document.activeElement, and a detached subtree cannot take
+    focus at all. So it is present, focusable, and invisible — zero opacity rather than
+    `display:none` or `visibility:hidden`, both of which would make every cell unfocusable and turn
+    the focus-restoration assertions into false passes. `pointer-events:none` keeps it from eating
+    clicks meant for the report underneath it, and it is deliberately unstyled otherwise: no theme
+    CSS is loaded here, so what the renderer emitted is asserted, never how it looks.
+  */
+  .qbe-harness {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1200px;
+    height: 800px;
+    opacity: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+
   /* No tab-size override here. Tabs do NOT misalign the caret — errors.js copies them verbatim into
      the caret pad, so both lines hit the same tab stops at any tab-size — and a rule here could not
      win anyway: it has the same specificity as errors.js's own `.qbe-error pre`, which is injected

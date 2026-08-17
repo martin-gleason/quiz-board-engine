@@ -1,0 +1,993 @@
+/*
+ * Quiz Board Engine — theme "default"
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * ============================================================================
+ * WHAT THIS FILE IS
+ * ============================================================================
+ * Two jobs, deliberately in one file:
+ *
+ *   1. THE FALLBACK LAYER. Every token in docs/plans/theme-contract.md §4 is
+ *      given a value here, on :root. Any token another theme omits resolves to
+ *      the value below, so no token may ever be missing from this file.
+ *
+ *   2. THE STRUCTURAL LAYER. Every class and state in theme-contract.md §2/§3
+ *      is laid out here — grid, cell, score bar, overlay, focus, the three
+ *      animations. Other themes are expected to restyle, not to re-lay-out.
+ *
+ * BECAUSE OF (2), THIS FILE MUST ALWAYS BE LOADED — and now it is: index.html
+ * carries <link id="qbe-theme-base" rel="stylesheet" href="themes/default.css">
+ * ahead of the <link id="qbe-theme"> slot the renderer fills with the selected
+ * theme (theme-contract §7). That link is load-bearing, not decoration: with it
+ * removed, selecting `midnight` loads midnight.css *instead of* this file and
+ * the board has no grid, no cell sizing and no overlay at all. Do not delete it
+ * on the grounds that "the theme provides the styling".
+ *
+ * Direction: warm paper ground, deep ink type, cells as chunky letterpress
+ * cards. Chosen because the primary venue is a classroom projector, where a
+ * fully dark board bleeds and blooms; a light ground with dark cards keeps the
+ * cards themselves as the high-contrast objects on screen.
+ *
+ * Contrast: every text-on-background pair below carries its COMPUTED WCAG 2.1
+ * ratio in a comment. They are calculated from the sRGB relative-luminance
+ * formula, not eyeballed. AA needs 4.5:1 for body text, 3:1 for large text
+ * (point values, prompt) and for the boundaries of controls.
+ *
+ * Constraints honored: no @import, no url() to another host, no web font. The
+ * only url() in the file is an inline data: SVG for the bingo mark, which is
+ * the sanctioned technique (theme-contract §6, handoff §2).
+ */
+
+/* ==========================================================================
+   1. TOKENS — the whole contract, defaulted
+   Grouped and ordered exactly as theme-contract.md §4 lists them, so the two
+   documents can be diffed by eye.
+   ========================================================================== */
+
+:root {
+  /* --- Surface ---------------------------------------------------------- */
+
+  /* Warm off-white. Not #fff: pure white on a projector is the brightest
+     thing in a dark room and washes the cards out next to it. */
+  --board-bg: #f4efe6;
+  /* Near-black with a warm cast, so it belongs to the paper.
+     15.16:1 on --board-bg  (AA body 4.5 ✓, AAA ✓) */
+  --board-fg: #1c1a17;
+  /* Gutter. Relative to viewport width so a 12-column board tightens up on
+     its own; floored so cells never fuse into one slab. */
+  --board-gap: clamp(0.25rem, 0.7vw, 0.85rem);
+  --board-pad: clamp(0.75rem, 2vw, 2rem);
+
+  /* --- Cells ------------------------------------------------------------ */
+
+  /* Deep slate blue. The card is the dark object on the light ground — the
+     inversion of most web UI, and the reason the board reads at 30 feet. */
+  --cell-bg: #1f3a5f;                 /* 10.03:1 vs --board-bg — the cards are unmistakably objects */
+  --cell-text: #f7f3ec;               /* 10.38:1 on --cell-bg  (AA body ✓, AAA ✓) */
+  /* 2px, not 1px: hairlines are the first thing a cheap projector eats. */
+  --cell-border: 2px solid #16293f;   /* 12.88:1 vs --board-bg — the cell edge is locatable, which matters because the cell is a button */
+  --cell-radius: 0.5rem;
+  /* A hard offset plus a soft drop: reads as a physical card, and the hard
+     edge survives compression on a screen share where the blur does not. */
+  --cell-shadow: 0 2px 0 #16293f, 0 6px 14px rgba(28, 26, 23, 0.18);
+  --cell-hover-bg: #2c5182;           /* --cell-text on it: 7.28:1 (AA ✓) */
+
+  /* revealed = opened, still in play. Goes to paper white so an open cell is
+     the brightest thing on the board — the host's eye should land on it. */
+  --cell-revealed-bg: #fffdf8;
+  --cell-revealed-text: #1c1a17;      /* 17.08:1 on --cell-revealed-bg (AAA ✓) */
+
+  /* answered = spent. THREE redundant cues, none of them hue (theme-contract
+     §5.3; ~8% of men have a colour vision deficiency):
+       (a) lightness — the card drops from 10.03:1-against-ground to 1.29:1,
+           i.e. it sinks into the paper instead of sitting on it;
+       (b) texture   — a diagonal hatch (see §4, .qbe-cell::before);
+       (c) shape     — the shadow is removed, so the card is flat, not raised,
+           and the value is struck through.
+     The colour is a desaturated tint of the ground rather than a grey, so it
+     still belongs to the palette. */
+  --cell-answered-bg: #dcd4c4;        /* 1.29:1 vs --board-bg — deliberately near-invisible as an *object* */
+  --cell-answered-text: #4a443a;      /* 6.54:1 on --cell-answered-bg (AA body ✓) — dim, but never illegible */
+
+  /* marked = a claimed bingo square. Deep green: the only place hue carries
+     meaning, and it is backed by the stamped glyph, so hue is never alone. */
+  --cell-marked-bg: #0f5c4a;
+  --cell-marked-text: #eaf7f1;        /* 7.20:1 on --cell-marked-bg (AA ✓) */
+  --cell-mark-glyph-color: #ffd45e;   /* 5.60:1 on --cell-marked-bg (non-text 3:1 ✓) */
+
+  /* bonus is visible to the room, so it must invite, not spoil: a bright rim,
+     no extra words, no icon that implies "more points here". */
+  --cell-bonus-outline: 3px solid #ffd45e;  /* 8.11:1 vs --cell-bg (non-text 3:1 ✓) */
+
+  /* Floor only — cells normally stretch to fill the board (see §3). This stops
+     a 12×12 board from collapsing into unclickable slivers. */
+  --cell-min-height: 2.75rem;
+
+  /* --- Typography ------------------------------------------------------- */
+
+  /* System stacks only. A remote font would break both the offline guarantee
+     and the supply-chain guarantee (spec §2.3). */
+  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+  /* A sturdy transitional serif for numbers: Georgia's figures are wide with
+     thick stems, which is what survives a washed-out projector. Thin display
+     faces are exactly the wrong choice for this product. */
+  --font-display: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino,
+    "Times New Roman", serif;
+  /* Upper bound on the point value. The *fitted* size actually used is derived
+     from this and --qbe-column-count in §3 — a theme retunes the cap here and
+     the density maths keeps working. */
+  --value-size: clamp(1rem, 2.2vw, 2.75rem);
+  --value-color: #ffd45e;             /* 8.11:1 on --cell-bg (large text 3:1 ✓, and clears body 4.5 too) */
+  /* Face text for a cell with no point value — a bingo square's term. Capped
+     well below --value-size because this is a WORD ("Jupiter's Great Red Spot"),
+     not three digits, and it has to wrap inside the card rather than overflow
+     it. The fitted size actually used is derived from this in §3. */
+  --cell-text-size: clamp(0.85rem, 1.5vw, 1.6rem);
+
+  --column-label-bg: #1c1a17;
+  --column-label-text: #f4efe6;       /* 15.16:1 on --column-label-bg (AAA ✓) */
+  --column-label-size: clamp(0.7rem, 1.05vw, 1.3rem);
+
+  /* --- Detail overlay --------------------------------------------------- */
+
+  --detail-bg: #fffdf8;
+  --detail-text: #1c1a17;             /* 17.08:1 on --detail-bg (AAA ✓) */
+  /* Opaque enough that the board behind cannot compete with the prompt, sheer
+     enough that the host keeps their spatial place on the board. */
+  --detail-scrim: rgba(28, 26, 23, 0.78);
+  /* The back-of-the-room number (theme-contract §5.2). This is the single
+     most-read text in the product; the floor is 1.5rem on purpose. Do not
+     shrink it for elegance. */
+  --prompt-size: clamp(1.5rem, 4.2vw, 4rem);
+  --answer-color: #0f5c4a;            /* 7.80:1 on --detail-bg (AA body ✓) */
+
+  /* --- Score bar -------------------------------------------------------- */
+
+  --score-bg: #1c1a17;
+  --score-text: #f4efe6;              /* 15.16:1 on --score-bg (AAA ✓) */
+  /* Amber, NOT --accent: the accent measures only 2.83:1 against --score-bg,
+     which fails the 3:1 floor for a non-text indicator. This is the kind of
+     pair that only shows up if you actually compute it. */
+  --team-active-outline: 3px solid #ffd45e;  /* 12.26:1 vs --score-bg (non-text ✓) */
+
+  /* --- Accent, focus, motion -------------------------------------------- */
+
+  --accent: #a8401f;                  /* 5.36:1 vs --board-bg (non-text ✓); 6.04:1 as text on --detail-bg */
+  --accent-contrast: #fffdf8;         /* 6.04:1 on --accent (AA body ✓) */
+  /* Only the outline shorthand is tokenised; outline-offset is set in §7 and
+     is load-bearing — see the comment there before changing this. */
+  --focus-ring: 3px solid #a8401f;
+  /* One duration for every animation, so `flip` and `zoom` cannot drift apart.
+     Set to 0s to disable motion without touching a keyframe. */
+  --anim-duration: 420ms;
+  --anim-easing: cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+/* ==========================================================================
+   2. STAGE
+   .reveal is the vendored root. We set only its colour and background — the
+   two properties reveal's own themes set — and never touch its internals.
+   ========================================================================== */
+
+html,
+body,
+.reveal {
+  background: var(--board-bg);
+  color: var(--board-fg);
+}
+
+/* The whole game is one slide. Qualified with .reveal .slides so it outranks
+   reveal.css's own `.reveal .slides section` declarations without !important.
+   No overflow:hidden and no position:fixed here — theme-contract §5.7. */
+.reveal .slides section.qbe-stage {
+  /* Kept, but NOT load-bearing on the real app: reveal.js writes
+     `display: flex` inline on the showing slide from REVEAL_CONFIG.display, and
+     an inline declaration beats this one. It used to write `block`, which is why
+     the board collapsed to 287px of a 964px stage — the fix was in the renderer's
+     config, not here. This declaration covers the case where a fixture page
+     renders the board without reveal running (theme-contract §2). */
+  display: flex;
+  flex-direction: column;
+  gap: var(--board-gap);
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: var(--board-pad);
+  font-family: var(--font-body);
+  text-align: left;
+  /* Containing block for the .qbe-detail overlay. Absolute-inside-relative,
+     not fixed: reveal transforms .slides, and a fixed child of a transformed
+     ancestor positions inconsistently across engines. */
+  position: relative;
+}
+
+/* ==========================================================================
+   3. BOARD, COLUMNS, DENSITY
+   The board is 1–12 columns × 1–12 ragged cells, emergent from JSON. Both ends
+   must look intentional: 9 cells must not read as three broken slabs, and 144
+   cells must still show a legible point value.
+   ========================================================================== */
+
+.qbe-board {
+  display: grid;
+  /* --qbe-column-count arrives as an inline custom property on this element.
+     minmax(0, 1fr) rather than 1fr so a long column label cannot force the
+     grid wider than the screen. */
+  grid-template-columns: repeat(var(--qbe-column-count, 5), minmax(0, 1fr));
+  gap: var(--board-gap);
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 0;
+  /* If 12 rows at the minimum height genuinely will not fit, the BOARD
+     scrolls — never the page body (theme-contract §5.8). */
+  overflow: auto;
+
+  /* Density maths lives HERE, not in the :root token, and that placement is
+     the subtle part. A var() inside a custom property is resolved on the
+     element where the property is declared — so writing this expression on
+     :root would freeze --qbe-column-count at its fallback. It has to be
+     declared on the element that actually carries the count. */
+  /* THE FLOORS AND THE DIVISOR ARE LEGIBILITY NUMBERS, not padding. They were
+     retuned after measuring a real 12-column board at 1200x964: the old
+     ÷4.5 divisor budgeted 4.5 characters of width for a 3-digit value and drove
+     the value to 13.3px and the label to its 9.92px floor — a 10px category name
+     inside a 69px cell, unreadable from twenty feet. ÷3.2 matches the string
+     actually drawn, and the floors are now the smallest sizes that survive a
+     1024x768 classroom projector rather than the smallest that fit. */
+  --qbe-value-fitted: clamp(
+    1.15rem,
+    calc(60vw / var(--qbe-column-count, 5) / 3.2),
+    var(--value-size)
+  );
+  --qbe-label-fitted: clamp(
+    0.8rem,
+    calc(34vw / var(--qbe-column-count, 5) / 3.2),
+    var(--column-label-size)
+  );
+  /* Face text gets a wider character budget (÷8) because it is a term, not a
+     number, and it is allowed to wrap onto two or three lines inside the card. */
+  --qbe-text-fitted: clamp(
+    0.75rem,
+    calc(46vw / var(--qbe-column-count, 5) / 8),
+    var(--cell-text-size)
+  );
+  /* Cell padding has to shrink with density too, or a 12-wide board is all
+     padding and no number. */
+  --qbe-cell-pad: clamp(0.15rem, calc(14vw / var(--qbe-column-count, 5) / 6), 1rem);
+}
+
+.qbe-column {
+  /* Flex, not a nested grid, and the reason is ragged columns. The label takes
+     its natural height and the cells divide whatever is left EQUALLY:
+       · every column is the same height, so the board stays a rectangle;
+       · a ragged column (3 cells where its neighbour has 5) gets three taller
+         cells rather than three normal cells and a hole. Ragged columns are
+         legal in jeopardy, so they must look composed, not broken.
+     A nested grid with `grid-auto-rows: 1fr` would also need a separate rule
+     for the label track, and would still need :has() to know whether a label
+     exists — flex gets there with no conditional at all. */
+  display: flex;
+  flex-direction: column;
+  gap: var(--board-gap);
+  min-width: 0;
+}
+
+/* A column label is omitted entirely when absent, so this never styles an
+   empty box (theme-contract §2: "if a value is absent, the element is absent"). */
+.qbe-column-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0.4em 0.3em;
+  border-radius: var(--cell-radius);
+  background: var(--column-label-bg);
+  color: var(--column-label-text);
+  font-family: var(--font-display);
+  font-size: var(--qbe-label-fitted, var(--column-label-size));
+  font-weight: 700;
+  line-height: 1.15;
+  text-align: center;
+  /* Category names are long and boards are narrow. Wrap and hyphenate rather
+     than clip: a clipped category is a category the room cannot read. */
+  overflow-wrap: anywhere;
+  hyphens: auto;
+  /* Natural height: the label must not claim a share of the cell space. */
+  flex: 0 0 auto;
+  /* Two lines' worth, reserved whether the label needs them or not. Each column
+     is an independent flex column, so a label that wrapped to two lines while
+     its neighbour fitted on one pushed that column's whole cell stack down —
+     measured as a 12px skew on a 12-column board, which made the top edge of the
+     board visibly ragged. Reserving the second line levels every column without
+     a shared grid track. (A label long enough for THREE lines still skews; the
+     honest fix for that is a shorter category name.) */
+  min-height: calc(2 * 1.15em + 0.85em);
+}
+
+/* Feud-style ranked list: one full-width column of rows. Same DOM, same
+   classes — only data-layout differs (theme-contract §2). */
+.qbe-board[data-layout="ranked-list"] {
+  grid-template-columns: minmax(0, 1fr);
+  /* width, not max-width. The board is a stretched flex item of the stage, and
+     `margin-inline: auto` on a stretched flex item makes it shrink to its
+     content instead of centring at full width — the list collapsed to about
+     200px. Giving it an explicit width restores the intent. */
+  width: min(100%, 60rem);
+  margin-inline: auto;
+  --qbe-value-fitted: var(--value-size);
+  --qbe-label-fitted: var(--column-label-size);
+}
+
+.qbe-board[data-layout="ranked-list"] .qbe-cell {
+  flex-direction: row;
+  justify-content: space-between;
+  gap: 1em;
+  padding-inline: 1em;
+  text-align: left;
+}
+
+/* ==========================================================================
+   4. CELLS AND STATES
+   Cell state lives in data-state, never a class (theme-contract §2).
+   ========================================================================== */
+
+.qbe-cell {
+  /* It is a real <button>; reset the UA chrome but keep the semantics. */
+  appearance: none;
+  -webkit-appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15em;
+  box-sizing: border-box;
+  min-width: 0;
+  /* Cells divide the column's remaining height equally (basis 0), but never
+     shrink below the legibility floor. When 12 cells × the floor genuinely
+     will not fit, the board — not the page — scrolls. */
+  flex: 1 1 0;
+  min-height: var(--cell-min-height);
+  padding: var(--qbe-cell-pad, 0.35rem);
+  border: var(--cell-border);
+  border-radius: var(--cell-radius);
+  background: var(--cell-bg);
+  color: var(--cell-text);
+  box-shadow: var(--cell-shadow);
+  font-family: var(--font-body);
+  cursor: pointer;
+  /* The pseudo-elements in this section are positioned against the cell. */
+  position: relative;
+  /* Cells are the animated surface; give the compositor advance notice without
+     promoting 144 layers permanently (no will-change). */
+  transform-origin: 50% 50%;
+}
+
+/* Texture layer: shared by every state that needs a non-hue cue. Empty
+   content, pointer-events:none, so it can never intercept a click. */
+.qbe-cell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: none;
+}
+
+/* Bonus corner wedge: a second, static cue beside --cell-bonus-outline, so the
+   bonus survives being printed, screenshotted, or seen by someone who cannot
+   separate the rim colour from the card. Drawn with a gradient rather than
+   `content: "★"`, because generated text can end up in the button's
+   accessible name in some screen readers. */
+.qbe-cell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: none;
+}
+
+.qbe-cell-value {
+  font-family: var(--font-display);
+  font-size: var(--qbe-value-fitted, var(--value-size));
+  font-weight: 700;
+  line-height: 1;
+  color: var(--value-color);
+  /* Tabular figures so a column of 100/200/300 lines up; lining figures so
+     Georgia does not serve old-style numerals that read as lowercase. */
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* The face text of a cell with no point value — a bingo square's term
+   (theme-contract §2, added in v1.1). Present ONLY on such a cell, so this rule
+   never styles an empty box, and it is a WORD rather than a number: it wraps,
+   it takes the body face, and it is deliberately not tabular. Before this
+   element existed a bingo card rendered 25 blank rectangles — the term lived
+   only in the accessible name, so a screen-reader user could play a board the
+   room could not. */
+.qbe-cell-text {
+  font-family: var(--font-body);
+  font-size: var(--qbe-text-fitted, var(--cell-text-size));
+  font-weight: 600;
+  line-height: 1.15;
+  text-align: center;
+  /* Long single words (a chemical name, a constellation) break rather than
+     spill out of the card. */
+  overflow-wrap: anywhere;
+  hyphens: auto;
+}
+
+/* --- hidden: the resting, in-play state --------------------------------- */
+/* No rules needed — the .qbe-cell base *is* the hidden state. Stated
+   explicitly so a theme author does not go looking for the missing block. */
+
+/* --- hover / active ----------------------------------------------------- */
+
+.qbe-cell[data-state="hidden"]:hover,
+.qbe-cell[data-state="hidden"]:focus-visible {
+  background: var(--cell-hover-bg);
+}
+
+.qbe-cell:active {
+  /* Press feedback is a 1px settle, not a scale: scaling 144 cells on
+     :active costs a repaint and reads as a wobble on a projector. */
+  transform: translateY(1px);
+  box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+}
+
+/* --- revealed: opened, still in play ------------------------------------ */
+
+.qbe-cell[data-state="revealed"] {
+  background: var(--cell-revealed-bg);
+  color: var(--cell-revealed-text);
+  /* A solid accent inset. This is the STATIC half of the state change: with
+     motion removed the cell must still be obviously different (spec §8), and
+     an inset ring is visible whether or not anything animated. */
+  box-shadow: inset 0 0 0 4px var(--accent), var(--cell-shadow);
+}
+
+.qbe-cell[data-state="revealed"] .qbe-cell-value {
+  /* Amber-on-white is 1.39:1 — unusable. The value takes the accent on a
+     light card instead: 6.04:1. */
+  color: var(--accent);
+}
+
+/* --- answered: spent --------------------------------------------------- */
+
+.qbe-cell[data-state="answered"] {
+  background: var(--cell-answered-bg);
+  color: var(--cell-answered-text);
+  /* Flat, not raised. Losing the shadow is a cue that costs no colour. */
+  box-shadow: none;
+  /* The rim is what keeps a spent cell FINDABLE. The fill is 1.29:1 against
+     the ground on purpose, so without a rim the button would effectively
+     vanish — and a host cannot recover a cell they cannot see
+     (theme-contract §5.7). */
+  border-color: #6f675a;             /* 4.87:1 vs --board-bg, 3.79:1 vs --cell-answered-bg (non-text 3:1 ✓) */
+  border-style: dashed;
+}
+
+/* Cue (b): diagonal hatch. Pure geometry — a repeating-linear-gradient, no
+   image, no request. Scaled in px rather than em so the stripe stays the same
+   physical width whether the cell is huge or tiny. */
+.qbe-cell[data-state="answered"]::before {
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(122, 114, 100, 0.55) 0 2px,
+    rgba(122, 114, 100, 0) 2px 9px
+  );
+}
+
+.qbe-cell[data-state="answered"] .qbe-cell-value {
+  color: var(--cell-answered-text);   /* 6.54:1 on --cell-answered-bg (AA ✓) */
+  /* Cue (c): struck through. Shape, not colour. */
+  text-decoration: line-through;
+  text-decoration-thickness: 0.09em;
+  font-weight: 600;
+}
+
+/* --- marked: a claimed bingo square ------------------------------------ */
+
+.qbe-cell[data-state="marked"] {
+  background: var(--cell-marked-bg);
+  color: var(--cell-marked-text);
+  border-color: var(--cell-mark-glyph-color);
+}
+
+/* The bingo mark. --cell-mark-glyph-color must be able to recolour it, and a
+   colour cannot be interpolated into a url() string — so the SVG is used as a
+   MASK and the colour comes from background-color. That is the whole trick,
+   and it is why this is a mask-image and not a background-image.
+   -webkit-mask-image is kept for older Safari. */
+.qbe-cell-mark {
+  display: block;
+  /* The element is always present and usually empty (theme-contract §2), so it
+     must occupy NOTHING until the cell is marked. Zero-size rather than
+     display:none, because §5.7 forbids display:none on structural elements —
+     and because an empty box that still reserved 4.5rem of height pushed the
+     point value out of the top of the cell on a dense board. That was a real
+     bug, found at 12×12, not a hypothetical. */
+  width: 0;
+  height: 0;
+  opacity: 0;
+  background-color: var(--cell-mark-glyph-color);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M24 24L76 76M76 24L24 76' fill='none' stroke='%23000' stroke-width='15' stroke-linecap='round'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M24 24L76 76M76 24L24 76' fill='none' stroke='%23000' stroke-width='15' stroke-linecap='round'/%3E%3C/svg%3E");
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+.qbe-cell[data-state="marked"] .qbe-cell-mark {
+  width: min(62%, 4.5rem);
+  height: auto;
+  aspect-ratio: 1;
+  opacity: 1;
+}
+
+/* A pre-marked or claimed square keeps its value slot, but the mark is the
+   message; the number steps back rather than disappearing. */
+.qbe-cell[data-state="marked"] .qbe-cell-value {
+  color: var(--cell-marked-text);
+  font-size: calc(var(--qbe-value-fitted, var(--value-size)) * 0.7);
+}
+
+/* --- data-bonus -------------------------------------------------------- */
+
+.qbe-cell[data-bonus="true"] {
+  outline: var(--cell-bonus-outline);
+  outline-offset: calc(-1 * var(--board-gap) / 2);
+}
+
+.qbe-cell[data-bonus="true"]::after {
+  /* The wedge: a 1.4rem triangle in the top-left corner.
+     Painted in --value-color, deliberately. --cell-bonus-outline is a border
+     shorthand, so its colour cannot be pulled out of it to match — but a bonus
+     alters the cell's VALUE, so the value's colour is the honest choice, and it
+     lands on the same hue as the outline in both shipped themes without either
+     theme needing an extra rule. */
+  background: linear-gradient(
+    135deg,
+    var(--value-color) 0 1.4rem,
+    rgba(0, 0, 0, 0) 1.4rem
+  );
+}
+
+/* --- data-locked ------------------------------------------------------- */
+
+/* Deliberately near-silent. A locked value is information for the host, not a
+   feature of the game, and the board already carries four states plus bonus.
+   A single dot in the corner is enough to answer "why did that not change?".
+ *
+ * Drawn as a background-image, and that choice is the interesting part: the
+ * obvious implementation is an inset box-shadow, but box-shadow is already
+ * carrying --cell-shadow AND the revealed state's 4px accent ring. Because
+ * [data-locked] and [data-state] have identical specificity, a locked+revealed
+ * cell silently lost its ring to whichever rule came last. Found on a 3×3
+ * board. The lesson generalises: with state in attributes rather than classes,
+ * two orthogonal attributes must not compete for the same property. */
+.qbe-cell[data-locked="true"] {
+  background-image: radial-gradient(
+    circle at calc(100% - 0.45rem) calc(100% - 0.45rem),
+    currentColor 0 0.14rem,
+    rgba(0, 0, 0, 0) 0.14rem
+  );
+}
+
+/* ==========================================================================
+   5. SCORE BAR
+   Present only when scoring.model !== "none"; absent otherwise, so no
+   empty-bar case exists.
+   ========================================================================== */
+
+.qbe-scorebar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--board-gap);
+  align-items: stretch;
+  padding: 0.5rem;
+  border-radius: var(--cell-radius);
+  background: var(--score-bg);
+  color: var(--score-text);
+  flex: 0 0 auto;
+}
+
+.qbe-team {
+  display: flex;
+  flex: 1 1 8rem;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15em;
+  min-width: 0;
+  padding: 0.35em 0.6em;
+  border-radius: calc(var(--cell-radius) * 0.75);
+}
+
+.qbe-team-name {
+  font-size: clamp(0.75rem, 1.1vw, 1.25rem);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.qbe-team-score {
+  font-family: var(--font-display);
+  font-size: clamp(1.1rem, 2vw, 2.5rem);
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* Whose turn it is. Outline plus an inner tint: two cues, because this is read
+   at a glance mid-sentence. */
+.qbe-team[data-active="true"] {
+  outline: var(--team-active-outline);
+  outline-offset: -3px;
+  background: rgba(255, 212, 94, 0.14);
+}
+
+/* ==========================================================================
+   6. DETAIL OVERLAY
+   ========================================================================== */
+
+/* The overlay surface itself. It sets `display: flex`, which is why the
+   `[hidden]` rule below it exists — see the note there. */
+.qbe-detail {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(1rem, 3vh, 2.5rem);
+  box-sizing: border-box;
+  padding: clamp(1rem, 5vw, 4rem);
+  background: var(--detail-scrim);
+  /* Long prompts scroll inside the overlay, never the page (§5.8). */
+  overflow: auto;
+}
+
+/* CRITICAL, and this is the rule the note is about: the renderer hides the
+   overlay with the `hidden` ATTRIBUTE, and the `display: flex` above would
+   defeat it. So this rule must stay, and must stay AFTER that one — same
+   specificity, so document order decides. Same story for .qbe-detail-answer
+   below. index.html also carries a global `[hidden] { display: none !important }`
+   (it has to, because reveal.css sets display on its own descendants); these two
+   rules are the theme layer's own belt-and-braces, so a theme that is loaded
+   without the shell — a fixture page, a design sandbox — still hides the
+   overlay. Two mechanisms, both deliberate. */
+.qbe-detail[hidden] {
+  display: none;
+}
+
+.qbe-detail-prompt,
+.qbe-detail-answer {
+  box-sizing: border-box;
+  width: min(100%, 55ch);
+  margin: 0;
+  padding: clamp(0.75rem, 2vw, 1.75rem);
+  border-radius: var(--cell-radius);
+  background: var(--detail-bg);
+  color: var(--detail-text);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.qbe-detail-prompt {
+  font-family: var(--font-body);
+  font-size: var(--prompt-size);
+  font-weight: 600;
+  line-height: 1.2;
+  /* Balanced wrapping so the last line is never one orphan word on a
+     projector. Ignored gracefully where unsupported. */
+  text-wrap: balance;
+}
+
+.qbe-detail-answer {
+  color: var(--answer-color);
+  font-family: var(--font-display);
+  font-size: calc(var(--prompt-size) * 0.8);
+  font-weight: 700;
+  line-height: 1.25;
+  /* A left rule in the answer colour: the answer is visibly a different kind
+     of thing from the prompt even before you read it. */
+  border-left: 0.35rem solid var(--answer-color);
+}
+
+.qbe-detail-answer[hidden] {
+  display: none;
+}
+
+.qbe-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+.qbe-detail-next,
+.qbe-detail-close {
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 0.6em 1.4em;
+  border: 2px solid var(--accent);
+  border-radius: var(--cell-radius);
+  background: var(--accent);
+  color: var(--accent-contrast);       /* 6.04:1 on --accent (AA ✓) */
+  font-family: var(--font-body);
+  font-size: clamp(0.95rem, 1.4vw, 1.4rem);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Close is the secondary action, so it is the outline variant. Its label sits
+   on the scrim, which is dark, so the label takes the light paper colour. */
+.qbe-detail-close {
+  background: rgba(0, 0, 0, 0);
+  color: var(--board-bg);              /* 7.81:1 on the flattened scrim (#4c4945 = --detail-scrim composited over --board-bg) (AA ✓) */
+  border-color: var(--board-bg);
+}
+
+/* ==========================================================================
+   7. FOCUS
+   Never removed, only restyled (theme-contract §5.4).
+   ========================================================================== */
+
+.qbe-cell:focus-visible,
+.qbe-detail-next:focus-visible,
+.qbe-detail-close:focus-visible {
+  outline: var(--focus-ring);
+  /* The offset is LOAD-BEARING, not decoration. --accent measures 5.36:1
+     against --board-bg but only 1.87:1 against --cell-bg. Pushing the ring
+     out into the gutter means it is always drawn on the board ground, where it
+     passes 3:1, instead of on the card, where it would fail. A theme changing
+     --accent should re-check it against --board-bg, not against the cell. */
+  outline-offset: 3px;
+  /* Belt and braces for a focused cell that is *also* data-bonus: bonus uses
+     outline too, so the focus ring is doubled with a shadow rather than
+     silently losing the fight. */
+  z-index: 1;
+}
+
+/* ==========================================================================
+   8. ANIMATIONS (F5)
+   Three shipped: flip, zoom, fade. Selected by data-animation on .qbe-stage,
+   triggered by data-state changing on .qbe-cell.
+
+   HOW THE TRIGGER WORKS: when data-state changes, a rule that was not matching
+   starts matching, and the `animation` property is newly applied — so the
+   keyframes run once. No JS class toggling, no transitionend. Cells rest at
+   data-state="hidden", which has NO animation, so a 144-cell board does not
+   flutter on first paint.
+
+   Every keyframe below is timed by --anim-duration and eased by --anim-easing,
+   so a theme retunes all three by setting two tokens. --anim-duration: 0s
+   disables motion outright without touching a keyframe.
+   ========================================================================== */
+
+/* --- flip: a card turning over ----------------------------------------- */
+/*
+ * A real two-face flip needs a back face element, and a theme cannot add DOM.
+ * So the card makes two quarter-turns through edge-on: it rotates away to
+ * -90deg (invisible), the value crossfades in behind the edge, and it rotates
+ * back from +90deg. Optically this is a card being turned over; structurally
+ * it is one keyframe set on one element.
+ *
+ * perspective() is inside the transform rather than on an ancestor: engines
+ * disagree about perspective inherited through a grid item, and this keeps the
+ * foreshortening identical in Chrome, Firefox, and Safari.
+ * backface-visibility:hidden guarantees no ghost of the reversed face at the
+ * midpoint on any engine.
+ */
+@keyframes qbe-flip-card {
+  0% { transform: perspective(900px) rotateY(0deg); }
+  49% { transform: perspective(900px) rotateY(-90deg); }
+  51% { transform: perspective(900px) rotateY(90deg); }
+  100% { transform: perspective(900px) rotateY(0deg); }
+}
+
+@keyframes qbe-flip-face {
+  0%, 50% { opacity: 0; }
+  51%, 100% { opacity: 1; }
+}
+
+.qbe-stage[data-animation="flip"] .qbe-cell {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform-style: preserve-3d;
+}
+
+.qbe-stage[data-animation="flip"] .qbe-cell[data-state="revealed"],
+.qbe-stage[data-animation="flip"] .qbe-cell[data-state="answered"],
+.qbe-stage[data-animation="flip"] .qbe-cell[data-state="marked"] {
+  animation: qbe-flip-card var(--anim-duration) var(--anim-easing) 1;
+}
+
+.qbe-stage[data-animation="flip"] .qbe-cell[data-state="revealed"] .qbe-cell-value,
+.qbe-stage[data-animation="flip"] .qbe-cell[data-state="answered"] .qbe-cell-value,
+.qbe-stage[data-animation="flip"] .qbe-cell[data-state="marked"] .qbe-cell-value,
+.qbe-stage[data-animation="flip"] .qbe-cell[data-state="marked"] .qbe-cell-mark {
+  animation: qbe-flip-face var(--anim-duration) var(--anim-easing) 1;
+}
+
+/* --- zoom: the cell swells out of the board ---------------------------- */
+/*
+ * Scale up from the cell's own centre, overshooting slightly at 62% so it
+ * lands with weight instead of easing to a stop. transform-origin is the cell
+ * centre (set on .qbe-cell) so the growth is anchored to the thing the host
+ * just clicked — which is the whole point: it answers "which one did I hit?"
+ * from the back of the room.
+ */
+@keyframes qbe-zoom-card {
+  0% { transform: scale(0.7); }
+  62% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+@keyframes qbe-zoom-face {
+  0% { opacity: 0; transform: scale(0.85); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.qbe-stage[data-animation="zoom"] .qbe-cell[data-state="revealed"],
+.qbe-stage[data-animation="zoom"] .qbe-cell[data-state="answered"],
+.qbe-stage[data-animation="zoom"] .qbe-cell[data-state="marked"] {
+  animation: qbe-zoom-card var(--anim-duration) var(--anim-easing) 1;
+  /* Lift above neighbours during the overshoot so the swell is not clipped by
+     the next card's shadow. */
+  z-index: 2;
+}
+
+.qbe-stage[data-animation="zoom"] .qbe-cell[data-state="revealed"] .qbe-cell-value,
+.qbe-stage[data-animation="zoom"] .qbe-cell[data-state="answered"] .qbe-cell-value,
+.qbe-stage[data-animation="zoom"] .qbe-cell[data-state="marked"] .qbe-cell-mark {
+  animation: qbe-zoom-face var(--anim-duration) var(--anim-easing) 1;
+}
+
+/* --- fade: an opacity crossfade ---------------------------------------- */
+/*
+ * The quiet one, and the honest crossfade of the three: the SURFACE colours
+ * are transitioned (old fill genuinely interpolates into the new fill, which
+ * is what "crossfade" means) while the incoming value/mark fades up over the
+ * same duration. Nothing moves, nothing scales — the right choice for a host
+ * who finds flip and zoom distracting, and the safest on a low-refresh
+ * projector where large transforms judder.
+ */
+@keyframes qbe-fade-face {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.qbe-stage[data-animation="fade"] .qbe-cell {
+  transition:
+    background-color var(--anim-duration) var(--anim-easing),
+    border-color var(--anim-duration) var(--anim-easing),
+    box-shadow var(--anim-duration) var(--anim-easing),
+    color var(--anim-duration) var(--anim-easing);
+}
+
+.qbe-stage[data-animation="fade"] .qbe-cell[data-state="revealed"] .qbe-cell-value,
+.qbe-stage[data-animation="fade"] .qbe-cell[data-state="answered"] .qbe-cell-value,
+.qbe-stage[data-animation="fade"] .qbe-cell[data-state="marked"] .qbe-cell-mark {
+  animation: qbe-fade-face var(--anim-duration) var(--anim-easing) 1;
+}
+
+/* --- the overlay, per animation ---------------------------------------- */
+/*
+ * The overlay cannot know where the clicked cell was (that would need JS), so
+ * each animation expresses its own character in the abstract: flip turns the
+ * panel in, zoom swells it from the middle, fade dissolves the scrim.
+ */
+@keyframes qbe-detail-flip {
+  from { opacity: 0; transform: perspective(1400px) rotateX(-14deg) scale(0.94); }
+  to { opacity: 1; transform: perspective(1400px) rotateX(0deg) scale(1); }
+}
+
+@keyframes qbe-detail-zoom {
+  from { opacity: 0; transform: scale(0.86); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.qbe-stage[data-animation="flip"] .qbe-detail:not([hidden]) {
+  animation: qbe-detail-flip var(--anim-duration) var(--anim-easing) 1;
+}
+
+.qbe-stage[data-animation="zoom"] .qbe-detail:not([hidden]) {
+  animation: qbe-detail-zoom var(--anim-duration) var(--anim-easing) 1;
+}
+
+.qbe-stage[data-animation="fade"] .qbe-detail:not([hidden]) {
+  animation: qbe-fade-face var(--anim-duration) var(--anim-easing) 1;
+}
+
+/* The prompt→answer step is its own reveal and gets the same treatment in all
+   three modes: it is a text change, and moving text is harder to read. */
+.qbe-detail[data-phase="answer"] .qbe-detail-answer:not([hidden]) {
+  animation: qbe-fade-face var(--anim-duration) var(--anim-easing) 1;
+}
+
+/* ==========================================================================
+   9. REDUCED MOTION
+   Belt AND braces, on purpose:
+     · the media query covers the theme being parsed before any JS runs, and
+       the case where JS is broken or slow;
+     · html[data-reduced-motion="true"] covers the OS setting changing while
+       the game is live, which the renderer observes and mirrors onto <html>.
+   Either one alone leaves a real hole.
+
+   REMOVED, not shortened (spec §8, theme-contract §8). And the state change
+   stays perceivable without motion, because every state is carried by static
+   properties too: revealed has a 4px inset accent ring, answered is a flat
+   dashed hatched card with a struck value, marked shows the stamped glyph.
+   Nothing in this file communicates only by moving.
+
+   !important is used here and nowhere else. It is the only way a single rule
+   can beat the `animation` shorthand on every selector above without
+   duplicating all of them, and reduced motion is an accessibility floor, not a
+   style preference — it should win.
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-delay: 0s !important;
+    animation-duration: 0s !important;
+    animation-iteration-count: 1 !important;
+    animation-name: none !important;
+    transition-delay: 0s !important;
+    transition-duration: 0s !important;
+    transition-property: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+html[data-reduced-motion="true"] *,
+html[data-reduced-motion="true"] *::before,
+html[data-reduced-motion="true"] *::after {
+  animation-delay: 0s !important;
+  animation-duration: 0s !important;
+  animation-iteration-count: 1 !important;
+  animation-name: none !important;
+  transition-delay: 0s !important;
+  transition-duration: 0s !important;
+  transition-property: none !important;
+  scroll-behavior: auto !important;
+}
+
+/* :active's 1px settle is motion too. Removing it keeps the press feedback
+   purely tonal, which is still perceivable. */
+@media (prefers-reduced-motion: reduce) {
+  .qbe-cell:active { transform: none; }
+}
+
+html[data-reduced-motion="true"] .qbe-cell:active {
+  transform: none;
+}
+
+/* ==========================================================================
+   10. HIGH-CONTRAST / FORCED COLORS
+   Not required by the contract, but a projected board is exactly where someone
+   turns forced colours on. Keep the structural cues that survive: borders and
+   the hatch, both of which forced-colors respects.
+   ========================================================================== */
+
+@media (forced-colors: active) {
+  .qbe-cell {
+    border: 2px solid CanvasText;
+  }
+
+  .qbe-cell[data-state="answered"] {
+    border-style: dashed;
+  }
+
+  .qbe-cell-mark {
+    background-color: CanvasText;
+  }
+}

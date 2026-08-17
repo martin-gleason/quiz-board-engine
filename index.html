@@ -1,38 +1,104 @@
 <!doctype html>
 <!--
-  Quiz Board Engine — placeholder shell.
+  Quiz Board Engine — application shell.
   SPDX-License-Identifier: AGPL-3.0-or-later
-  Replaced by the real app in F3. Exists now so GitHub Pages has something to serve
-  and Gate 0 (the Pages URL loads over HTTPS) can be verified.
+
+  This file is a DOCUMENT, not a program. It holds no logic: it links the vendored stylesheets,
+  provides the skeleton reveal.js requires plus the one slide the game lives in, and imports
+  js/app.js, which boots itself because <html> carries data-qbe-autoboot.
+
+  Running locally? The app needs an HTTP origin — file:// blocks ES module imports and JSON fetches
+  (plan Q10 / delta D7). Run `python3 -m http.server 8000` and open http://localhost:8000/.
+
+  Every path here is RELATIVE. The app ships on a GitHub Pages project subpath
+  (https://<user>.github.io/quiz-board-engine/, plan Q3), where a root-absolute "/vendor/…" 404s.
 -->
-<html lang="en">
+<html lang="en" data-qbe-autoboot>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Quiz Board Engine</title>
+
+<!--
+  Vendored reveal.js 5.2.1 (delta D4). Zero CDN: these are files in this repo, with their SHA-256
+  hashes recorded in vendor/README.md. Linked here rather than injected by JS so they apply before
+  first paint; js/app.js re-checks they exist (by id) and creates nothing when they do.
+-->
+<link id="qbe-vendor-reset" rel="stylesheet" href="vendor/reveal.js/reset.css">
+<link id="qbe-vendor-reveal" rel="stylesheet" href="vendor/reveal.js/reveal.css">
+
+<!--
+  THE BASE THEME LAYER (theme-contract §7). themes/default.css is TWO things: the fallback layer
+  that gives every token in theme-contract §4 a value, and the structural layer that lays out the
+  grid, the cells, the overlay, focus and the three animations. A theme such as midnight.css sets
+  colours and overrides a handful of classes and relies on this file being underneath it — so this
+  link is static and comes BEFORE the mount point below, which the renderer fills with the selected
+  theme. Without it, selecting `midnight` loaded midnight.css *instead of* default.css and the board
+  had no grid, no cell sizing and no overlay at all: two of the three shipped games, including the
+  one that loads with no ?game= parameter, rendered as bare UA buttons on white.
+
+  Spec §6.4 is untouched: this href is an author-written constant in the shell, exactly like the two
+  vendor links above, and no string out of a content file becomes a URL anywhere on this path.
+-->
+<link id="qbe-theme-base" rel="stylesheet" href="themes/default.css">
+
+<!--
+  The theme <link id="qbe-theme"> is created by renderer.mountTheme() once validation has resolved
+  the content file's theme NAME against themes/themes.json. The SELECTED theme is deliberately
+  absent from this file: only a manifest VALUE ever becomes that href (spec §6.4), and it may not be
+  guessed before the manifest has been read. That rule is about the *selection*, not about the base
+  layer above, which is a fixed part of the shell.
+-->
+
+<!--
+  Shell CSS. Author-written, no data of any kind interpolated into it, and deliberately tiny: every
+  visual decision about the board belongs to the theme layer (theme-contract §4). This covers only
+  what a theme cannot: the document filling the viewport, and [hidden] winning against reveal.css's
+  own display rules.
+-->
 <style>
-  :root { color-scheme: light dark; }
-  body {
-    font: 16px/1.6 system-ui, sans-serif;
-    max-width: 42rem;
-    margin: 4rem auto;
-    padding: 0 1.5rem;
-  }
-  code { background: rgba(128,128,128,.2); padding: .1em .35em; border-radius: 3px; }
+  html, body { height: 100%; margin: 0; }
+  /* reveal.css sets `display:block` on elements inside .reveal, which would otherwise defeat the
+     [hidden] attribute the renderer uses for the detail overlay and the answer line. */
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
-  <h1>Quiz Board Engine</h1>
-  <p>
-    A zero-cost, zero-build, zero-CDN static web app that turns plain JSON files into
-    playable quiz board games — Jeopardy, trivia bingo, and Family&nbsp;Feud-style ranked
-    reveals — rendered through a vendored copy of Reveal.js.
-  </p>
-  <p><strong>Status:</strong> under construction. The board renderer lands in F3.</p>
-  <p>
-    Running locally? The app needs an HTTP origin — <code>file://</code> blocks ES module
-    and JSON fetches. Use <code>python3 -m http.server 8000</code>.
-  </p>
-  <p>Licensed under the <a href="LICENSE">GNU AGPL v3 or later</a>.</p>
+
+<!--
+  The error screen's mount point (spec §7). It sits OUTSIDE .reveal on purpose: on a validation
+  failure nothing is drawn and reveal is never initialised (spec §5, "no partial render, ever"), so
+  the report must not depend on a deck that was never started. renderErrorScreen() fills it.
+-->
+<div id="qbe-error"></div>
+
+<!--
+  NO LIVE REGION HERE, deliberately. This file used to carry a hidden <p id="qbe-announcer"> and
+  renderer.js an `announce()` to fill it — and nothing in the repo ever called it. Cell state
+  changes are announced by the platform instead: closeCell() returns focus to the cell whose
+  aria-label already carries its new state, which is one announcement rather than two competing
+  ones. The region and its function come back in F6 if scoring needs them, and not before: an absent
+  feature is honest, a fake one is a lie with a schedule (see js/app.js).
+-->
+
+<!--
+  The reveal.js skeleton (theme-contract §2). One slide, `section.qbe-stage`, empty until the
+  renderer fills it — it is the only slide there will ever be: the board is our DOM inside it, and
+  reveal handles slide mechanics only (spec §6.2). renderBoard() appends main.qbe-board and
+  .qbe-detail here and sets data-animation on this section.
+-->
+<div class="reveal">
+  <div class="slides">
+    <section class="qbe-stage"></section>
+  </div>
+</div>
+
+<!--
+  The whole program: one import. app.js boots itself because <html> carries data-qbe-autoboot.
+  An `import` statement rather than `src=` so that the test runner's transitive source audit can
+  follow the app's import graph out of this file (tests/runner.js, ENTRY_SOURCES).
+-->
+<script type="module">import './js/app.js';</script>
+
 </body>
 </html>

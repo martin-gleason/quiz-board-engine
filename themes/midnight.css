@@ -1,0 +1,277 @@
+/*
+ * Quiz Board Engine — theme "midnight"
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * ============================================================================
+ * WHAT THIS FILE IS
+ * ============================================================================
+ * The second reference implementation, and the proof of two claims made in
+ * default.css:
+ *
+ *   1. A THEME IS AN OVERRIDE SHEET. There is no layout in this file. No grid,
+ *      no flex, no positioning, no keyframes. It sets 32 of the 40 contract
+ *      tokens and adds eight small class overrides, and that is the entire
+ *      distance between "warm classroom paper" and what you see here.
+ *
+ *   2. UNSET TOKENS FALL BACK. Eight tokens are deliberately left alone — see
+ *      the "INHERITED ON PURPOSE" block at the bottom for the list and the
+ *      reasoning. They resolve to default.css's values.
+ *
+ * Because of (1), default.css must be loaded ahead of this file. The renderer
+ * mounts one <link id="qbe-theme">; index.html carries default.css as a static
+ * <link id="qbe-theme-base"> before it (theme-contract §7). Loaded alone, this
+ * file would produce an unstyled board — and for a while it was, because the
+ * shell was missing that link: the demo game selects this theme, so the default
+ * board shipped Phase 2 as bare UA buttons on white. The base link is not
+ * optional.
+ *
+ * ============================================================================
+ * THE DIRECTION — a broadcast control room, not "default with the lights off"
+ * ============================================================================
+ * default.css is paper: warm ground, dark cards sitting on top of it, rounded
+ * corners, a serif with thick stems, generous gutters. Inverting that palette
+ * would have given a grey board with pale cards, which is a different colour
+ * scheme, not a different design.
+ *
+ * This is a different design. The organising idea is a live broadcast graphics
+ * package: an almost-black cool ground that a projector reads as *nothing*, and
+ * cells that are emissive panels lit from inside — bright cyan numerals, a lit
+ * rim, an inner top highlight like glass. Corners are 2px instead of 8px and
+ * gutters are tighter, so the board reads as one continuous instrument panel
+ * rather than a scatter of cards. The display face is condensed and uppercase.
+ * Hue does the opposite job from default: instead of one accent, there is a
+ * cyan/magenta pair — cyan is *available*, magenta is *you*, i.e. anything the
+ * host is currently acting on. Motion is quicker (300ms vs 420ms) because a
+ * broadcast package cuts rather than settles.
+ *
+ * The `answered` treatment is where the two themes diverge most, and it is the
+ * clearest illustration of the rule in theme-contract §5.3. On paper, a spent
+ * cell FADES INTO the ground. Here it goes DARKER than the ground and loses its
+ * light entirely — the panel is switched off. Same non-hue principle (lightness
+ * + texture + shape), opposite direction, because the ground is at the opposite
+ * end of the scale.
+ *
+ * Every text-on-background pair carries its COMPUTED WCAG 2.1 ratio. AA is
+ * 4.5:1 body / 3:1 large text and control boundaries. No @import, no url() to
+ * another host, no web font — one inline data: SVG for the bingo mark.
+ */
+
+:root {
+  /* --- Surface ---------------------------------------------------------- */
+
+  /* Not #000. A hair of blue keeps the black from looking like a dead signal,
+     and gives the panel rims something to sit against. */
+  --board-bg: #060911;
+  --board-fg: #e4eaf7;               /* 16.50:1 on --board-bg (AAA ✓) */
+  /* Tighter than default's gutter: the board should read as one instrument
+     panel with seams, not as separate cards on a surface. */
+  --board-gap: clamp(0.18rem, 0.5vw, 0.55rem);
+
+  /* --- Cells ------------------------------------------------------------ */
+
+  --cell-bg: #141c30;                /* only 1.17:1 vs --board-bg — see --cell-border, which is what actually separates them */
+  --cell-text: #dbe3f6;             /* 13.19:1 on --cell-bg (AAA ✓) */
+  /* THE LOAD-BEARING TOKEN of this theme. The panel fill is nearly the same
+     luminance as the ground (1.17:1), so the lit rim is the only thing making
+     each cell a distinct object — and each cell is a button, so its boundary
+     owes the 3:1 non-text minimum. Lowering this colour breaks the theme in a
+     way that changing any fill would not. */
+  --cell-border: 2px solid #4a6094;  /* 3.22:1 vs --board-bg (non-text 3:1 ✓) */
+  /* Near-square. The single biggest shape difference from default. */
+  --cell-radius: 2px;
+  /* Three layers doing three jobs: a cyan bloom (the panel is lit), a deep
+     drop (it floats over the ground), and a 1px inner top highlight (glass).
+     No offset-hard-edge layer — default's letterpress trick would fight the
+     emissive read. */
+  --cell-shadow:
+    0 0 14px rgba(87, 226, 255, 0.1),
+    0 6px 18px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(170, 205, 255, 0.14);
+  --cell-hover-bg: #22304f;          /* --cell-text on it: 10.18:1 (AA ✓) */
+
+  /* revealed: the panel is turned UP, not turned white. Staying in the blue
+     family is what keeps this from looking like default. */
+  --cell-revealed-bg: #253559;
+  --cell-revealed-text: #f3f6ff;     /* 11.22:1 on --cell-revealed-bg (AAA ✓) */
+
+  /* answered: the panel is switched off. Darker than the ground, so it reads as
+     a hole rather than a card — spent, at a glance, from the back of the room,
+     with no hue involved at all. The rim (overridden below) is what keeps the
+     button findable, and the dot texture is the second non-hue cue. */
+  --cell-answered-bg: #0a0e18;       /* 1.03:1 vs --board-bg — indistinguishable as an object, which is the point */
+  --cell-answered-text: #8b96b2;     /* 6.52:1 on --cell-answered-bg (AA body ✓) */
+
+  /* marked: magenta's territory. Deep plum panel, hot magenta stamp. */
+  --cell-marked-bg: #33103a;
+  --cell-marked-text: #fbebfa;       /* 14.39:1 on --cell-marked-bg (AAA ✓) */
+  --cell-mark-glyph-color: #ff74dc;  /* 6.88:1 on --cell-marked-bg (non-text 3:1 ✓) */
+
+  /* bonus: cyan, i.e. "this one is available and interesting" — an invitation.
+     Magenta would have read as "the host is on this cell", which is a lie. */
+  --cell-bonus-outline: 3px solid #57e2ff;  /* 11.08:1 vs --cell-bg (non-text ✓) */
+
+  /* --- Typography ------------------------------------------------------- */
+
+  /* Condensed grotesque, system-resident only. Condensed is a real functional
+     gain here and not a style tic: at 12 columns a narrow face fits four
+     digits where Georgia fits three. Falls back to the platform UI sans, which
+     is never absent. */
+  --font-display: "Avenir Next Condensed", "Arial Narrow", "Helvetica Neue",
+    system-ui, sans-serif;
+  --value-color: #57e2ff;            /* 11.08:1 on --cell-bg (large text 3:1 ✓, clears body 4.5 too) */
+
+  /* Labels lose their filled bar entirely — see the class override below.
+     The token still has to be a real colour for anything that reads it. */
+  --column-label-bg: rgba(0, 0, 0, 0);
+  --column-label-text: #9db2e0;      /* 9.36:1 on --board-bg (AA ✓) */
+
+  /* --- Detail overlay --------------------------------------------------- */
+
+  --detail-bg: #0e1526;
+  --detail-text: #eaf0ff;            /* 15.95:1 on --detail-bg (AAA ✓) */
+  /* Denser than default's scrim: on a dark theme a sheer scrim leaves the board
+     visible enough to compete with the prompt for attention. */
+  --detail-scrim: rgba(4, 6, 12, 0.9);
+  --answer-color: #57e2ff;           /* 11.90:1 on --detail-bg (AA ✓) */
+
+  /* --- Score bar -------------------------------------------------------- */
+
+  --score-bg: #0d1322;
+  --score-text: #dde5f7;             /* 14.67:1 on --score-bg (AAA ✓) */
+  /* Magenta is legal here (5.67:1); default had to use amber because its own
+     accent measured 2.83:1 on its score bar. Same token, opposite answer —
+     which is exactly why the ratio gets computed per theme instead of assumed. */
+  --team-active-outline: 3px solid #ff3e9d;  /* 5.67:1 vs --score-bg (non-text ✓) */
+
+  /* --- Accent, focus, motion -------------------------------------------- */
+
+  --accent: #ff3e9d;                 /* 6.09:1 vs --board-bg (non-text ✓) */
+  --accent-contrast: #10030a;        /* 6.18:1 on --accent (AA body ✓) — dark ink on magenta, where default used near-white on burnt orange */
+  --focus-ring: 3px solid #ff3e9d;   /* drawn in the gutter at outline-offset:3px, so it is measured against --board-bg: 6.09:1 ✓ */
+  /* Faster. The only motion token this theme touches — see the inherited list. */
+  --anim-duration: 300ms;
+}
+
+/* ==========================================================================
+   CLASS OVERRIDES — eight of them, and no more
+   Six carry real design decisions and are numbered; the last two, below them,
+   are one-line tints. Each exists because a token alone genuinely could not
+   express it. If a ninth appears, that is a signal the token set is short something, and the
+   right move is to report it (theme-contract §6), not to keep adding rules.
+   ========================================================================== */
+
+/* 1. Column labels: a broadcast caption, not a filled tab. Uppercase, tracked
+      out, hairline-free, sitting on the ground with a magenta rule under it.
+      Not expressible as a token: --column-label-bg can go transparent, but
+      text-transform, letter-spacing and the border are not tokenised. */
+.qbe-column-label {
+  padding: 0.35em 0.2em 0.45em;
+  border-bottom: 2px solid var(--accent);
+  border-radius: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+/* 2. The revealed value takes cyan, not --accent. default.css colours it with
+      --accent, which here is magenta at 3.71:1 on --cell-revealed-bg — legal
+      for large text, but this is the number the room is reading, and cyan gets
+      it to 7.93:1. Contrast maths, not taste. */
+.qbe-cell[data-state="revealed"] .qbe-cell-value {
+  color: #57e2ff;                    /* 7.93:1 on --cell-revealed-bg (large ✓, body ✓) */
+}
+
+/* 3. The spent-cell rim. --cell-border is one shorthand for all states, and the
+      answered rim needs a different colour: the panel is darker than the ground
+      here, so default's warm dashed rim would be invisible. This is the rule
+      that keeps a switched-off panel clickable — a cell the host cannot see is
+      a cell they cannot recover (theme-contract §5.7). */
+.qbe-cell[data-state="answered"] {
+  border-color: #5c6e96;             /* 3.79:1 vs --cell-answered-bg, 3.91:1 vs --board-bg (non-text 3:1 ✓) */
+  box-shadow: none;                  /* the light goes out; restated because --cell-shadow is one token for all states */
+}
+
+/* 4. A different texture language. default hatches with diagonal stripes; a
+      broadcast panel goes dead as a dot grid, like an unlit LED matrix. Same
+      job — a non-hue cue that survives colour vision deficiency and a bad
+      projector — different vocabulary. Not tokenised, and shouldn't be:
+      texture is exactly the kind of thing a theme should own outright. */
+.qbe-cell[data-state="answered"]::before {
+  background:
+    radial-gradient(rgba(140, 160, 205, 0.3) 0.9px, rgba(0, 0, 0, 0) 1px) 0 0 /
+    6px 6px;
+}
+
+/* 5. A different bingo stamp. The glyph is a mask, so the colour still comes
+      from --cell-mark-glyph-color; only the shape changes. A filled diamond
+      rather than default's drawn X: heavier, flatter, more like a graphic
+      overlay than a hand mark, which is the register this theme is in. */
+.qbe-cell-mark {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 6 94 50 50 94 6 50Z' fill='%23000'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 6 94 50 50 94 6 50Z' fill='%23000'/%3E%3C/svg%3E");
+}
+
+/* 6. The overlay's secondary button. default.css sets its label to
+      var(--board-bg) because that theme's ground is light paper against a dark
+      scrim. Here --board-bg is near-black on a near-black scrim: inherited
+      unchanged, the Close label would be invisible. A token could not fix this
+      — the *relationship* is what inverted. This is the one place where reusing
+      default's structural CSS costs something, and it is worth writing down. */
+.qbe-detail-close {
+  color: var(--board-fg);            /* 16.79:1 on the flattened scrim (--detail-scrim over --board-bg) (AAA ✓) */
+  border-color: var(--board-fg);
+}
+
+/* 7 and 8: one-line tints. Counted in the eight above — they are small, not
+   invisible. default tinted these with its amber, and amber is not in this
+   palette. */
+.qbe-team[data-active="true"] {
+  background: rgba(255, 62, 157, 0.14);
+}
+
+/* The locked dot, in cyan rather than currentColor. Stays a background-image
+   for the reason default.css documents: box-shadow is already spoken for by
+   --cell-shadow and the revealed ring, and [data-locked] must never compete
+   with [data-state] for a property. */
+.qbe-cell[data-locked="true"] {
+  background-image: radial-gradient(
+    circle at calc(100% - 0.45rem) calc(100% - 0.45rem),
+    #57e2ff 0 0.14rem,
+    rgba(0, 0, 0, 0) 0.14rem
+  );
+}
+
+/* ==========================================================================
+   INHERITED ON PURPOSE — the eight tokens this file does not set
+   ==========================================================================
+   --board-pad           |
+   --cell-min-height     |  Geometry that encodes "legible and hittable from
+   --value-size          |  the back of a room". These are ergonomics, not
+   --column-label-size   |  style: the numbers were derived from the 1–12
+   --cell-text-size      |  column range and the projector viewing distance,
+   --prompt-size         |
+                         |  and they are equally correct in a dark palette.
+                         |  --prompt-size especially: theme-contract §5.2 calls
+                         |  it the back-of-the-room number, and a theme that
+                         |  "improves" it is almost always shrinking it.
+   --font-body           |  The platform UI face. Body copy in a game board is
+                         |  short, functional, and read at speed; there is no
+                         |  brand to express in it. The display face carries
+                         |  the whole typographic personality instead.
+   --anim-easing         |  Only the DURATION is retuned (420ms → 300ms). The
+                         |  easing curve is the *feel* of the engine and is
+                         |  shared deliberately, so flip/zoom/fade behave
+                         |  identically across themes and only the tempo moves.
+   ==========================================================================
+   REDUCED MOTION is inherited wholesale and that is deliberate too. default.css
+   removes animation and transition under BOTH (prefers-reduced-motion: reduce)
+   and html[data-reduced-motion="true"], via universal selectors — so it already
+   covers everything in this file. This theme adds no motion of its own; if it
+   ever did, theme-contract §5.5 requires it to guard the new motion under both,
+   because removed means removed, not shortened.
+
+   Also inherited: the whole of default.css's layout, focus handling, forced-
+   colors block, and the three animations. That is 40 tokens minus 32 set here,
+   plus every structural rule — which is the honest measure of how far a theme
+   can travel without touching layout at all.
+   ========================================================================== */
