@@ -56,6 +56,10 @@ export const DEFAULT_MAX_BYTES = 262144;
 // ("x.json\u0000.png"); no legitimate game filename contains any of these.
 const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/;
 
+// SUBDIRECTORIES UNDER games/ ARE ALLOWED, deliberately: `?game=games/2026/spring/history.json`
+// resolves. It is safe by construction — '.' is not in the segment character class, so no segment
+// can be '..' or carry a second extension — and a teacher with forty games wants folders. Stated
+// here and in module-contracts §4.1 because a regex is not documentation.
 const GAME_PATH_ALLOWLIST = /^games\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.json$/;
 
 const PARAM_FILE = '(URL parameter)';
@@ -73,7 +77,7 @@ function rejectParam(found) {
         path: '?game',
         expected: PARAM_EXPECTED,
         found,
-        hint: 'unresolved-reference',
+        hint: 'bad-game-param',
       }),
     ],
   };

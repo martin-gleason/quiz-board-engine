@@ -25,10 +25,20 @@
 <style>
   :root {
     color-scheme: light dark;
+    /* Light-scheme values: 5.08:1 and 5.36:1 on white, both WCAG 2.1 AA. */
     --ok: #1a7f37;
     --bad: #cf222e;
     --rule: rgba(128, 128, 128, .3);
     --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  /* The page paints on Canvas, which is near-black in dark mode, where the light-scheme greens and
+     reds drop to ~3.2:1 — below AA, on the load-bearing PASS/FAIL word and every row mark. Nothing
+     here is conveyed by colour alone (runner.js prints the glyphs), but contrast still has to pass. */
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ok: #4ec97b;
+      --bad: #ff8f85;
+    }
   }
   body {
     font: 15px/1.5 system-ui, sans-serif;
@@ -89,12 +99,14 @@
     padding: .75rem 1rem;
     overflow-x: auto;
   }
+  /* No tab-size override here. Tabs do NOT misalign the caret — errors.js copies them verbatim into
+     the caret pad, so both lines hit the same tab stops at any tab-size — and a rule here could not
+     win anyway: it has the same specificity as errors.js's own `.qbe-error pre`, which is injected
+     into <head> at render time and therefore later in document order. */
   .errorscreen pre {
     font-family: var(--mono);
     font-size: .85em;
     overflow-x: auto;
-    /* Tabs would misalign the caret; the scanner reports columns in characters. */
-    tab-size: 1;
   }
 </style>
 </head>

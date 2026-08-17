@@ -62,6 +62,10 @@ export const HINT_CLASSES = Object.freeze([
   'bad-name-format', // identifier-ish string failed pattern
   'unsupported-schema-version', // §4.1: refuse, never best-effort
   'unresolved-reference', // gameType / theme / animation not found
+  // A rejected `?game=` value. Its own class because the reader's problem is in the address bar,
+  // and the unresolved-reference copy is entirely about gameType / theme / animation — three fields
+  // the person following a bad link never touched.
+  'bad-game-param',
   'file-too-large', // §5 1 MB cap
   'fetch-failed', // 404 or network failure IS a validation failure (§5)
   'ragged-grid', // gridConstraints.uniformRows violated
@@ -105,6 +109,11 @@ export const CELL_FIELD_WHITELIST = Object.freeze(['prompt', 'answer', 'value'])
 
 // ---------------------------------------------------------------------------
 // Resource limits (spec §5) — one source of truth, imported by loader + validator + README
+//
+// THIS IS THE v1 LIMIT SET, and v1's forever. Every v1 node below interpolates these numbers into
+// its `expected` phrase, so editing one here rewrites the contract of files authored years ago —
+// which is exactly what version keying exists to prevent (module-contracts §3.2). A v2 that needs
+// different numbers gets its own `LIMITS_V2`.
 // ---------------------------------------------------------------------------
 export const LIMITS = Object.freeze({
   contentFileBytes: 1048576, // 1 MB, measured on the raw response text before parse

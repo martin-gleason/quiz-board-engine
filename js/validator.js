@@ -116,9 +116,9 @@ function walkNode(node, value, segments, ctx) {
     case 'map':
       return walkMap(node, value, segments, ctx);
     case 'subset':
-      return walkSubset(node, value, segments, ctx, false);
+      return walkSubset(node, value, segments, ctx, { ordered: false });
     case 'orderedSubset':
-      return walkSubset(node, value, segments, ctx, true);
+      return walkSubset(node, value, segments, ctx, { ordered: true });
     default:
       throw new Error('validator: unknown schema node kind "' + String(node && node.kind) + '" at ' + pathFromSegments(segments));
   }
@@ -171,16 +171,11 @@ function walkObject(node, value, segments, ctx) {
     if (cleaned !== undefined) clean[k] = cleaned;
   }
 
-  // stripUnknown is true on every v1 node. The `false` branch exists so a future schema can opt
-  // out explicitly rather than by accident; NOTE_KEY is dropped either way, because "_note" is the
-  // comment mechanism and a comment must never reach the renderer.
-  if (node.stripUnknown === false) {
-    for (const k of Object.keys(value)) {
-      if (k === NOTE_KEY || has(node.fields, k) || has(clean, k)) continue;
-      clean[k] = value[k];
-    }
-  }
-
+  // EVERY v1 NODE STRIPS UNKNOWN KEYS, and there is no opt-out branch here on purpose. There used
+  // to be one, for a hypothetical future `stripUnknown: false`, and it copied `value[k]` straight
+  // out of `raw.data` — quietly breaking validateDocument's own guarantee that the cleaned object
+  // shares no reference with the parsed source. A future schema that genuinely needs pass-through
+  // has to implement its own copying, deliberately, at that point.
   return clean;
 }
 
@@ -194,6 +189,12 @@ function walkArray(node, value, segments, ctx) {
   }
   if (typeof node.maxItems === 'number' && value.length > node.maxItems) {
     fail(ctx, segments, node.expected, 'a list of ' + value.length + ' items', 'too-many-items');
+    // AND STOP. Walking the members after the count has already failed is how a 40 KB file turns
+    // into 20,000 failures and 220,000 DOM nodes (measured): `"columns":[0,0,0,…]` reports
+    // too-many-items once and then wrong-type per element. The count is fatal on its own, the list
+    // has to be shortened whatever else is in it, and per-item detail adds nothing anyone can act
+    // on. Note this is deliberately NOT done for minItems — a too-short list is short.
+    return undefined;
   }
   const clean = [];
   for (let i = 0; i < value.length; i++) {
@@ -292,6 +293,10 @@ function walkMap(node, value, segments, ctx) {
   const keys = Object.keys(value).filter((k) => k !== NOTE_KEY);
   if (typeof node.maxEntries === 'number' && keys.length > node.maxEntries) {
     fail(ctx, segments, node.expected, 'an object with ' + keys.length + ' entries (the limit is ' + node.maxEntries + ')', 'too-many-items');
+    // AND STOP, for the reason given in walkArray. This one matters more: `cellStates` comes from a
+    // STATE file, which is untrusted input (spec §4.4), and 200,000 bad keys measured at 200,006
+    // failures carrying 29 MB of message text.
+    return undefined;
   }
   const clean = {};
   for (const k of keys) {
@@ -311,7 +316,7 @@ function walkMap(node, value, segments, ctx) {
   return clean;
 }
 
-function walkSubset(node, value, segments, ctx, ordered) {
+function walkSubset(node, value, segments, ctx, { ordered }) {
   if (!Array.isArray(value)) {
     fail(ctx, segments, node.expected, describeValue(value), 'wrong-type');
     return undefined;
@@ -323,7 +328,9 @@ function walkSubset(node, value, segments, ctx, ordered) {
   }
   if (typeof node.maxItems === 'number' && value.length > node.maxItems) {
     fail(ctx, segments, node.expected, 'a list of ' + value.length + ' items', 'too-many-items');
-    ok = false;
+    // AND STOP, as in walkArray: `of` is never more than four values, so an over-long subset is
+    // over-long by an unbounded amount and every extra entry would report itself.
+    return undefined;
   }
 
   const seen = new Set();
@@ -356,8 +363,12 @@ function walkSubset(node, value, segments, ctx, ordered) {
 /**
  * Exported for the test runner (module-contracts §6): walk one node and get the failures back.
  * `ctx` needs { file, kind, stage } — the failures array is created here.
+ *
+ * NAMED FOR WHAT IT RETURNS. It was called `walk`, one letter from the internal `walkNode`, which
+ * returns the CLEANED VALUE and pushes failures into ctx — the opposite contract. A caller who read
+ * `walk(...)` and expected a cleaned object would get an array of failures instead.
  */
-export function walk(node, value, segments, ctx) {
+export function collectFailures(node, value, segments, ctx) {
   const inner = { file: ctx.file, kind: ctx.kind, stage: ctx.stage || 'structural', failures: [] };
   walkNode(node, value, Array.isArray(segments) ? segments.slice() : [], inner);
   return inner.failures;
@@ -481,56 +492,10 @@ function contractFail(file, kind, path, expected, found, hint, out) {
 }
 
 /**
- * @param {{content:RawDocument, gametype:RawDocument|null, themes:RawDocument}} rawBundle
- * @returns {{ok:true,value:CleanedBundle} | {ok:false,failures:ValidationFailure[]}}
+ * The three whole-document cross-references: gameTypeIdMatches, themeExists, animationExists.
+ * Split out of validateBundle so its top-level sequence stays readable on one screen.
  */
-export function validateBundle(rawBundle) {
-  const structural = [];
-
-  const contentResult = validateDocument({ kind: KINDS.CONTENT, raw: rawBundle.content });
-  if (!contentResult.ok) structural.push(...contentResult.failures);
-
-  let gametypeResult = null;
-  if (rawBundle.gametype) {
-    gametypeResult = validateDocument({ kind: KINDS.GAMETYPE, raw: rawBundle.gametype });
-    if (!gametypeResult.ok) structural.push(...gametypeResult.failures);
-  }
-
-  const themesResult = validateDocument({ kind: KINDS.THEMES, raw: rawBundle.themes });
-  if (!themesResult.ok) structural.push(...themesResult.failures);
-
-  // Concatenated in content -> gametype -> themes order so the error screen groups by file in the
-  // order a person would open them.
-  if (structural.length > 0) return { ok: false, failures: structural };
-
-  const content = contentResult.value;
-  const themes = themesResult.value;
-
-  if (!gametypeResult) {
-    // The loader only omits the game-type document when the content file's `gameType` was unusable
-    // — which the structural stage above would already have reported. Reaching here means our own
-    // sequencing is wrong, so we say so plainly rather than crashing on `null`.
-    return {
-      ok: false,
-      failures: [
-        failure({
-          file: rawBundle.content.path,
-          kind: KINDS.CONTENT,
-          stage: 'contract',
-          path: 'gameType',
-          expected: 'a game type whose file in gametypes/ could be loaded',
-          found: describeValue(content.gameType),
-          hint: 'unresolved-reference',
-        }),
-      ],
-    };
-  }
-  const gametype = gametypeResult.value;
-
-  const contentFile = rawBundle.content.path;
-  const gametypeFile = rawBundle.gametype.path;
-  const out = [];
-
+function checkCrossReferences({ content, gametype, themes, contentFile, gametypeFile }, out) {
   // --- CROSS_CHECKS.gameTypeIdMatches -----------------------------------------------------
   // Reported against the GAME-TYPE file, because that is the file whose `id` is wrong when the
   // filename and the id disagree — the usual cause is copying a config and forgetting to rename.
@@ -574,11 +539,19 @@ export function validateBundle(rawBundle) {
       out,
     );
   }
+}
 
-  // --- The single pass over cells ----------------------------------------------------------
-  // requiredCellFields, uniformRows, ladderCoverage, the resolved value, the cell key, and all
-  // five census lists the renderer and the bonus picker need — one traversal, 144 iterations at
-  // the maximum board size.
+/**
+ * The single pass over cells.
+ *
+ * requiredCellFields, uniformRows, ladderCoverage, the resolved value, the cell key, and all four
+ * census lists the renderer and the bonus picker need — one traversal, 144 iterations at the maximum
+ * board size. It MUTATES cells (adding `key`/`column`/`row` and the resolved `value`) and drops each
+ * column's `valueLadder`, which is safe because `content` is the freshly built cleaned object.
+ *
+ * @returns {{cellKeys, randomizableKeys, lockedValueKeys, preMarkedKeys, maxRowCount, uniform}}
+ */
+function walkCells({ content, gametype, contentFile }, out) {
   const requiredFields = gametype.requiredCellFields;
   const needsValue = requiredFields.indexOf('value') !== -1;
   const uniformRequired = gametype.gridConstraints.uniformRows === true;
@@ -687,6 +660,63 @@ export function validateBundle(rawBundle) {
     delete col.valueLadder;
   }
 
+  return { cellKeys, randomizableKeys, lockedValueKeys, preMarkedKeys, maxRowCount, uniform };
+}
+
+/**
+ * @param {{content:RawDocument, gametype:RawDocument|null, themes:RawDocument}} rawBundle
+ * @returns {{ok:true,value:CleanedBundle} | {ok:false,failures:ValidationFailure[]}}
+ */
+export function validateBundle(rawBundle) {
+  const structural = [];
+
+  const contentResult = validateDocument({ kind: KINDS.CONTENT, raw: rawBundle.content });
+  if (!contentResult.ok) structural.push(...contentResult.failures);
+
+  let gametypeResult = null;
+  if (rawBundle.gametype) {
+    gametypeResult = validateDocument({ kind: KINDS.GAMETYPE, raw: rawBundle.gametype });
+    if (!gametypeResult.ok) structural.push(...gametypeResult.failures);
+  }
+
+  const themesResult = validateDocument({ kind: KINDS.THEMES, raw: rawBundle.themes });
+  if (!themesResult.ok) structural.push(...themesResult.failures);
+
+  // Concatenated in content -> gametype -> themes order so the error screen groups by file in the
+  // order a person would open them.
+  if (structural.length > 0) return { ok: false, failures: structural };
+
+  const content = contentResult.value;
+  const themes = themesResult.value;
+
+  if (!gametypeResult) {
+    // The loader only omits the game-type document when the content file's `gameType` was unusable
+    // — which the structural stage above would already have reported. Reaching here means our own
+    // sequencing is wrong, so we say so plainly rather than crashing on `null`.
+    return {
+      ok: false,
+      failures: [
+        failure({
+          file: rawBundle.content.path,
+          kind: KINDS.CONTENT,
+          stage: 'contract',
+          path: 'gameType',
+          expected: 'a game type whose file in gametypes/ could be loaded',
+          found: describeValue(content.gameType),
+          hint: 'unresolved-reference',
+        }),
+      ],
+    };
+  }
+  const gametype = gametypeResult.value;
+
+  const contentFile = rawBundle.content.path;
+  const gametypeFile = rawBundle.gametype.path;
+  const out = [];
+
+  checkCrossReferences({ content, gametype, themes, contentFile, gametypeFile }, out);
+  const census = walkCells({ content, gametype, contentFile }, out);
+
   if (out.length > 0) return { ok: false, failures: out };
 
   const lifecycle = gametype.cellLifecycle;
@@ -699,13 +729,13 @@ export function validateBundle(rawBundle) {
       // already pattern-checked as a bare .css filename by the schema.
       themeFile: themes.themes[content.theme],
       animation: content.animation,
-      columnCount: columns.length,
-      maxRowCount,
-      uniform,
-      cellKeys,
-      randomizableKeys,
-      lockedValueKeys,
-      preMarkedKeys,
+      columnCount: content.board.columns.length,
+      maxRowCount: census.maxRowCount,
+      uniform: census.uniform,
+      cellKeys: census.cellKeys,
+      randomizableKeys: census.randomizableKeys,
+      lockedValueKeys: census.lockedValueKeys,
+      preMarkedKeys: census.preMarkedKeys,
       terminalState: lifecycle[lifecycle.length - 1],
       initialState: lifecycle[0],
     },

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Drive Firefox over the Marionette protocol to read window.__TEST_RESULTS__.
 
 Firefox's --screenshot fires at the load event, which is before our async test matrix

@@ -184,6 +184,10 @@ const ACCEPT = [
   // result is always games/<name>.json, so the value cannot address anything outside the games
   // directory. It is accepted because ?game=demo.json is the shape a person actually types.
   ['bare filename normalized into games/', 'demo.json', 'games/demo.json'],
+  // Subdirectories under games/ ARE allowed, and that is a decision rather than an accident, so it
+  // gets an assertion: a teacher with forty games wants folders, and it is safe by construction
+  // because '.' is not in the allowlist's segment character class, so no segment can be '..'.
+  ['subdirectory under games/', 'games/2026/spring/history.json', 'games/2026/spring/history.json'],
 ];
 
 function runSecuritySuite() {
@@ -267,22 +271,32 @@ async function runCleaningSuite() {
 
 // Expected LINE is the line the caret should land on — and which line that is, is a usability
 // judgement, not an arbitrary one. For a trailing comma the useful caret is on the comma itself,
-// not on the brace that followed it. For an unclosed brace it is on the brace that was never
-// closed, not at end-of-file, because EOF tells the author nothing about where they lost track.
+// not on the brace that followed it.
+//
+// FOR AN UNCLOSED BRACKET IT DEPENDS ON WHICH BRACKET, and this expectation was WRONG until A4's
+// usability pass. For a NESTED one, the opening bracket localises the fault: the reader can see
+// which block lost its closer. For the OUTERMOST one — which is the common case, because the
+// missing character is the last character of the file — pointing at line 1 column 1 puts the caret
+// on a perfectly good "{" a hundred lines from the edit, which is precisely the "the browser points
+// at the wrong place" complaint this scanner exists to answer. So the outermost case now reports the
+// END of the file, where the "}" has to be typed, and names the opening position in prose instead.
+// `expectedClass` pins that distinction so it cannot silently regress either way.
 const SCANNER_CASES = [
-  ['trailing comma before }', '{\n  "a": 1,\n}', 2],
-  ['trailing comma before ]', '{\n  "a": [1, 2,]\n}', 2],
-  ['unterminated string', '{\n  "a": "oops\n}', 2],
-  ['single quotes', "{\n  'a': 1\n}", 2],
-  ['unquoted key', '{\n  a: 1\n}', 2],
-  ['missing comma between members', '{\n  "a": 1\n  "b": 2\n}', 3],
-  ['unclosed brace', '{\n  "a": 1', 1],
-  ['trailing garbage', '{"a":1}\nnope', 2],
-  ['empty file', '', 1],
+  ['trailing comma before }', '{\n  "a": 1,\n}', 2, 'trailing-comma'],
+  ['trailing comma before ]', '{\n  "a": [1, 2,]\n}', 2, 'trailing-comma'],
+  ['unterminated string', '{\n  "a": "oops\n}', 2, 'unterminated-string'],
+  ['single quotes', "{\n  'a': 1\n}", 2, 'single-quoted-string'],
+  ['unquoted key', '{\n  a: 1\n}', 2, 'unquoted-property-name'],
+  ['missing comma between members', '{\n  "a": 1\n  "b": 2\n}', 3, 'missing-comma'],
+  ['unclosed OUTERMOST brace reports the end of the file', '{\n  "a": 1', 2, 'unclosed-brace-eof'],
+  ['unclosed NESTED bracket reports its opening "["', '{\n  "a": [1, 2', 2, 'unclosed-bracket'],
+  ['unclosed NESTED brace reports its opening "{"', '{\n  "a": {"b": 1', 2, 'unclosed-brace'],
+  ['trailing garbage', '{"a":1}\nnope', 2, 'trailing-content'],
+  ['empty file', '', 1, 'empty-file'],
 ];
 
 function runScannerSuite() {
-  for (const [label, text, expectedLine] of SCANNER_CASES) {
+  for (const [label, text, expectedLine, expectedClass] of SCANNER_CASES) {
     let loc;
     try {
       loc = errors.scanJsonSyntax(text);
@@ -295,6 +309,9 @@ function runScannerSuite() {
     else {
       if (typeof loc.line !== 'number') problems.push('no line number');
       if (loc.line !== expectedLine) problems.push(`line: expected ${expectedLine}, got ${loc.line}`);
+      if (loc.syntaxClass !== expectedClass) {
+        problems.push(`syntaxClass: expected ${expectedClass}, got ${loc.syntaxClass}`);
+      }
       if (!loc.expected) problems.push('no `expected` phrase');
       if (!loc.hint) problems.push('no hint class');
     }
@@ -309,6 +326,132 @@ function runScannerSuite() {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Regression suite — one assertion per defect the A4 adversarial pass found.
+//
+// Each of these was GREEN before, because no fixture reached the path. They are here so the same
+// defect cannot come back quietly; every one names what it is holding down.
+// ---------------------------------------------------------------------------------------------
+
+/** Build a RawDocument the way the loader would, so the validator can be driven with no HTTP. */
+function rawDoc(path, kind, data) {
+  const text = JSON.stringify(data);
+  return { path, kind, text, bytes: text.length, data };
+}
+
+function runRegressionSuite() {
+  // 1. An over-cap list must report the COUNT and stop, not report every member as well. A 200-item
+  //    `columns` array used to produce 201 failures — and, at the 1 MB content cap, ~500,000 of
+  //    them, which is ~5.5 million DOM nodes on the error screen.
+  const columns = [];
+  for (let i = 0; i < 200; i++) columns.push(0);
+  const bloated = validator.validateDocument({
+    kind: KINDS.CONTENT,
+    raw: rawDoc('tests/(synthetic)/over-cap.json', KINDS.CONTENT,
+      { schemaVersion: 1, title: 'x', gameType: 'jeopardy', board: { columns } }),
+  });
+  const oneFailure = !bloated.ok && bloated.failures.length === 1
+    && bloated.failures[0].hint === 'too-many-items';
+  record('regressions', 'an over-cap list reports the count once and stops walking its members',
+    oneFailure,
+    oneFailure ? '200 columns -> exactly 1 failure'
+      : `expected 1 too-many-items failure, got ${bloated.ok ? 'ok' : bloated.failures.length}`);
+
+  // 2. Same rule for a map: `cellStates` arrives from an untrusted state file (spec §4.4).
+  const cellStates = {};
+  for (let i = 0; i < 300; i++) cellStates['bad' + i] = 'hidden';
+  const bloatedState = validator.validateState({
+    raw: rawDoc('import:(synthetic).json', KINDS.STATE, {
+      schemaVersion: 1,
+      gameHash: '0'.repeat(64),
+      gameTitle: 'x',
+      createdAt: '2026-08-17T00:00:00Z',
+      updatedAt: '2026-08-17T00:00:00Z',
+      teams: [],
+      cellStates,
+    }),
+  });
+  const oneMapFailure = !bloatedState.ok && bloatedState.failures.length === 1
+    && bloatedState.failures[0].hint === 'too-many-items';
+  record('regressions', 'an over-cap map reports the count once and stops walking its entries',
+    oneMapFailure,
+    oneMapFailure ? '300 cellStates entries -> exactly 1 failure'
+      : `expected 1 too-many-items failure, got ${bloatedState.ok ? 'ok' : bloatedState.failures.length}`);
+
+  // 3. A minified file is one line of up to 1 MB. The snippet must be CLIPPED — both because an
+  //    unclipped one cost 92 ms of caret-padding in Firefox, and because a caret 900,000 columns
+  //    off the right edge of an overflow-x <pre> is invisible to the person it is for.
+  const pad = 'x'.repeat(5000);
+  const minified = `{"schemaVersion":1,"pad":"${pad}","board":{,}}`;
+  const loc = errors.scanJsonSyntax(minified);
+  const widest = loc ? Math.max(...loc.snippet.map((l) => l.text.length)) : Infinity;
+  const clipped = !!loc && widest < 400 && loc.caretColumn <= widest;
+  record('regressions', 'a minified one-line file gets a clipped snippet with a reachable caret',
+    clipped,
+    clipped ? `fault at column ${loc.column}; widest snippet line ${widest} chars, caret at ${loc.caretColumn}`
+      : `widest snippet line ${widest} chars — the whole fault line is being copied`);
+
+  // 4. The error screen must survive a hand-written failure whose location has no snippet
+  //    (module-contracts §7). It used to throw inside buildSnippet AFTER clearing the mount, so the
+  //    one screen whose job is to explain a failure showed a blank white page instead.
+  const bare = errors.failure({
+    file: 'games/(synthetic).json',
+    kind: KINDS.CONTENT,
+    stage: 'syntax',
+    location: { line: 3, column: 5, offset: 20, caretColumn: 5 },
+    expected: 'a valid JSON document',
+    found: 'text the browser refused to parse',
+    hint: 'syntax',
+  });
+  const box = el('div');
+  let rendered = '';
+  try {
+    errors.renderErrorScreen([bare], box);
+    rendered = box.textContent;
+  } catch (err) {
+    rendered = '';
+    record('regressions', 'error screen renders a location with no snippet', false,
+      `threw: ${err && err.message} — the user would see a blank page`);
+  }
+  if (rendered) {
+    record('regressions', 'error screen renders a location with no snippet', true,
+      `${rendered.length} characters of explanation, no throw`);
+  }
+
+  // 5. `fetch-failed` has two causes and they are not interchangeable. An HTTP status means a server
+  //    answered, which rules file:// out entirely — so the "run a web server" advice must NOT appear
+  //    for a 404, and must appear for a network error.
+  const mk = (found) => errors.failure({
+    file: 'games/(synthetic).json',
+    kind: KINDS.CONTENT,
+    stage: 'fetch',
+    path: '(file)',
+    expected: 'a readable JSON file at this path',
+    found,
+    hint: 'fetch-failed',
+  });
+  const httpBox = el('div');
+  errors.renderErrorScreen([mk('HTTP 404 Not Found')], httpBox);
+  const netBox = el('div');
+  errors.renderErrorScreen([mk('a network error (the request could not be completed)')], netBox);
+  const httpMentions = httpBox.textContent.indexOf('file://') !== -1;
+  const netMentions = netBox.textContent.indexOf('file://') !== -1;
+  record('regressions', 'a 404 is not blamed on file://, and a network error still is',
+    !httpMentions && netMentions,
+    !httpMentions && netMentions
+      ? 'HTTP 404 screen omits the origin note; network-error screen keeps it'
+      : `404 mentions it: ${httpMentions}; network error mentions it: ${netMentions}`);
+
+  // 6. A rejected ?game= gets its own hint class. The unresolved-reference copy it used to carry is
+  //    entirely about gameType / theme / animation — three fields a person following a bad link
+  //    never touched, on a screen whose only actionable advice was therefore irrelevant.
+  const rejected = loader.resolveGameParam('https://evil.example/x.json');
+  const paramHint = !rejected.ok && rejected.failures[0].hint === 'bad-game-param';
+  record('regressions', 'a rejected ?game= value gets the bad-game-param hint', paramHint,
+    paramHint ? 'hint class bad-game-param'
+      : `hint class ${rejected.ok ? '(accepted!)' : rejected.failures[0].hint}`);
+}
+
+// ---------------------------------------------------------------------------------------------
 // Invariant suite — the named CLAUDE.md invariant, asserted at runtime
 //
 // The grep in CI would be better, but spec §2.1 forbids Actions. So we check what we can from
@@ -318,23 +461,78 @@ function runScannerSuite() {
 
 // Repo-root-relative, because index.html sets <base href="../"> so that the loader's file
 // identity strings resolve correctly. See the comment on that tag.
-const SOURCES = [
-  'js/schemas.js', 'js/loader.js', 'js/validator.js', 'js/errors.js',
-  'tests/runner.js',
+//
+// THIS LIST IS SEEDS, NOT THE WHOLE SET. It used to be a hardcoded five-entry list of JS files,
+// which meant the check only covered the files somebody remembered to add to it — so F3 could land
+// `js/renderer.js` (the one module that will build DOM nodes out of untrusted content text) with an
+// `innerHTML` in it, and this suite would stay green while printing "clean" five times about five
+// other files. So instead we seed with the ENTRY POINTS and follow their imports transitively: a
+// module that is actually reachable from the app or from this suite cannot escape the audit.
+const ENTRY_SOURCES = [
+  'index.html', // the app shell — its inline module leads to app.js and everything it draws
+  'tests/index.html', // this suite's own page
+  'tools/firefox-run-tests.py', // the Firefox driver: SPDX only in practice, but it is source
 ];
+
+/**
+ * Resolve a relative import specifier found inside `from`.
+ *
+ * JS resolves against the importing module's own directory. HTML inline modules resolve against the
+ * DOCUMENT BASE, which for both pages in this repo is the repo root (index.html sits there, and
+ * tests/index.html sets <base href="../"> for exactly that reason).
+ */
+function resolveSpecifier(from, spec) {
+  const parts = /\.html$/.test(from) ? [] : from.split('/').slice(0, -1);
+  for (const seg of spec.split('/')) {
+    if (seg === '' || seg === '.') continue;
+    if (seg === '..') parts.pop();
+    else parts.push(seg);
+  }
+  return parts.join('/');
+}
+
+/** Every relative `import … from '…'` / `import '…'` specifier in a source text. */
+function importedPaths(from, text) {
+  const out = [];
+  const re = /\bimport\b[^'"();]*['"](\.[^'"]+)['"]/g;
+  let m = re.exec(text);
+  while (m) {
+    out.push(resolveSpecifier(from, m[1]));
+    m = re.exec(text);
+  }
+  return out;
+}
 // WHY THIS IS ASSEMBLED FROM FRAGMENTS RATHER THAN WRITTEN AS ONE REGEX LITERAL:
-// this file is itself in SOURCES, and a literal /innerHTML/ in its own source would make the
+// this file is itself reachable from ENTRY_SOURCES, and a literal /innerHTML/ in its own source
+// would make the
 // check flag itself — which it did, on the first run. Splitting the needles means the forbidden
 // words never appear as contiguous text here, so runner.js stays honestly scannable instead of
 // being excluded from its own audit. Comment-stripping alone could not fix this: a regex literal
 // is code, not a comment.
+// Two needles are written to catch more than one spelling, because the near-miss is the whole
+// problem: `document.write\b` does NOT match `document.writeln` (the 'l' is a word character, so the
+// boundary fails) even though writeln has exactly the same effect, and matching only the `new`
+// constructor form misses the bare `Function("return " + userText)` call. The parenthesis form
+// catches both call shapes at once, and no legitimate line in this repo names the constructor.
+// Each needle carries its OWN trailing boundary: a single `\b` after the group would break the
+// parenthesis needle, because there is no word boundary between "(" and the quote that follows it.
 const FORBIDDEN = new RegExp(
-  '\\b(' + ['inner' + 'HTML', 'outer' + 'HTML', 'insertAdjacent' + 'HTML',
-    'document\\.write', 'ev' + 'al', 'new ' + 'Function'].join('|') + ')\\b',
+  '\\b(' + [
+    'inner' + 'HTML\\b',
+    'outer' + 'HTML\\b',
+    'insertAdjacent' + 'HTML\\b',
+    'document\\.write(?:ln)?\\b',
+    'ev' + 'al\\b',
+    'Func' + 'tion\\s*\\(',
+  ].join('|') + ')',
 );
 
 async function runInvariantSuite() {
-  for (const src of SOURCES) {
+  const queue = ENTRY_SOURCES.slice();
+  const seen = new Set(queue);
+
+  for (let q = 0; q < queue.length; q++) {
+    const src = queue[q];
     let text;
     try {
       const res = await fetch(src + '?v=' + Date.now(), { cache: 'no-store' });
@@ -345,9 +543,19 @@ async function runInvariantSuite() {
       continue;
     }
 
-    // Strip comments before scanning: this very file names the forbidden APIs in prose, and a
-    // check that cannot survive being documented is a check nobody will keep.
-    const code = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/[^\n]*/g, '$1');
+    // Follow the import graph. Anything reachable joins the queue, so the audit widens by itself
+    // when a module is added instead of when someone remembers to widen it.
+    for (const next of importedPaths(src, text)) {
+      if (!seen.has(next)) { seen.add(next); queue.push(next); }
+    }
+
+    // Strip comments before scanning: this very file names the forbidden APIs in prose, and a check
+    // that cannot survive being documented is a check nobody will keep. The line-comment strip is
+    // ANCHORED TO THE LINE. It used to be /(^|\s)\/\/[^\n]*/, which also deleted from a `//` inside a
+    // string literal to end of line — so `const u = 'http: //x'; el.innerHTML = s;` stripped down to
+    // `const u = 'http: ` and the violation on the rest of that line became invisible. Every comment
+    // in this repo is written at the start of its own line, so anchoring costs nothing.
+    const code = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/[^\n]*$/gm, '');
     const hit = FORBIDDEN.exec(code);
     // Label deliberately avoids naming the forbidden APIs — see the FORBIDDEN comment above.
     record('invariants', `${src} uses no forbidden DOM or dynamic-code API`, !hit,
@@ -355,6 +563,21 @@ async function runInvariantSuite() {
 
     const hasSpdx = /SPDX-License-Identifier:\s*AGPL-3\.0-or-later/.test(text);
     record('invariants', `${src} carries the SPDX header`, hasSpdx, hasSpdx ? 'present' : 'missing');
+
+    // Spec §5 / module-contracts §4.2: the byte cap is enforced BEFORE JSON.parse, so a hostile
+    // 40 MB file never reaches the parser. The oversized fixture cannot prove this — every static
+    // server, including GitHub Pages, sends Content-Length, so that test always short-circuits at
+    // the cheap header pre-check and the authoritative post-body check is never reached. So we
+    // assert the ORDER in the source we have already fetched: the cap's early return has to appear
+    // before the parse call, not merely be commented as if it did.
+    if (src === 'js/loader.js') {
+      const capAt = code.indexOf('bytes > cap');
+      const parseAt = code.indexOf('JSON.par' + 'se(text)');
+      const ordered = capAt !== -1 && parseAt !== -1 && capAt < parseAt;
+      record('invariants', 'loader enforces the byte cap before it parses', ordered,
+        ordered ? `cap at index ${capAt}, parse at ${parseAt}`
+          : `cap at ${capAt}, parse at ${parseAt} — the cap must come first (spec §5)`);
+    }
   }
 
   // The limits in the schema must match the numbers the spec and README promise.
@@ -461,6 +684,7 @@ export async function run(mount) {
 
   runSecuritySuite();
   runScannerSuite();
+  runRegressionSuite();
   await runCleaningSuite();
   await runInvariantSuite();
 

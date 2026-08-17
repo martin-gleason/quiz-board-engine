@@ -27,7 +27,7 @@
 //
 // The (d) column is why hints attach to *classes* and never to individual fields (plan §7 risk
 // register). Per-field prose would be 300 strings to maintain and would rot the first time a
-// schema changed. Seventeen classes stay true forever.
+// schema changed. A closed set of classes stays true forever.
 //
 // ---------------------------------------------------------------------------------------------
 // WHY WE WRITE OUR OWN JSON SCANNER (plan Q6 — the single most important decision in this file)
@@ -277,6 +277,25 @@ const SYNTAX_HINTS = Object.freeze({
       'Every "[" needs a matching "]". The one marked above was opened and the file ended before it ' +
       'closed, so a "]" is missing somewhere after this point.',
   }),
+  // WHY THE OUTERMOST CASE IS ITS OWN CLASS (A4 usability finding). For a NESTED "{" the opening
+  // brace localises the fault: the reader can see which block lost its closer. For the OUTERMOST
+  // brace — the commonest missing-brace case by far, because it is the last character of the file —
+  // pointing at line 1 column 1 is the worst possible position: the character under the caret is
+  // perfectly good JSON and the edit belongs 150 lines away. So for depth 1 the caret goes where
+  // the "}" has to be TYPED (the end of the file) and the opening position is carried in prose.
+  'unclosed-brace-eof': Object.freeze({
+    title: 'The file ends with an unclosed "{".',
+    body:
+      'The outermost "{" of the file was opened and never closed, so a "}" has to be added at the ' +
+      'end of the file. The "expected" line above gives the position of the "{" that is still open. ' +
+      'Deleting a block of text and taking its closing brace with it is the usual cause.',
+  }),
+  'unclosed-bracket-eof': Object.freeze({
+    title: 'The file ends with an unclosed "[".',
+    body:
+      'The outermost "[" of the file was opened and never closed, so a "]" has to be added at the ' +
+      'end of the file. The "expected" line above gives the position of the "[" that is still open.',
+  }),
   'unterminated-string': Object.freeze({
     title: 'This piece of text is missing its closing quotation mark.',
     body:
@@ -417,6 +436,32 @@ export function scanJsonSyntax(text) {
     while (i < len && isWs(text.charAt(i))) i++;
   };
 
+  /**
+   * The file ended with `openChar` (opened at offset `open`) still open.
+   *
+   * `depth === 1` means the still-open bracket is the OUTERMOST one, i.e. the whole document.
+   * See the 'unclosed-brace-eof' hint copy for why that case points at the end of the file
+   * instead of at the opening character.
+   */
+  const unclosed = (openChar, open) => {
+    const closeChar = openChar === '{' ? '}' : ']';
+    if (depth === 1) {
+      const oc = lineColAt(text, open);
+      return fault(
+        openChar === '{' ? 'unclosed-brace-eof' : 'unclosed-bracket-eof',
+        len,
+        'a matching "' + closeChar + '" for the "' + openChar + '" opened at line ' + oc.line + ', column ' + oc.column,
+        'the end of the file',
+      );
+    }
+    return fault(
+      openChar === '{' ? 'unclosed-brace' : 'unclosed-bracket',
+      open,
+      'a matching "' + closeChar + '" for this "' + openChar + '"',
+      'the end of the file',
+    );
+  };
+
   // --- string ------------------------------------------------------------------------------
   // Returns a fault or null. The caret for an unterminated string lands on the OPENING quote,
   // because that is the character whose partner is missing; pointing at the end of the line
@@ -510,7 +555,7 @@ export function scanJsonSyntax(text) {
     i++; // '{'
     depth++;
     skipWs();
-    if (i >= len) return fault('unclosed-brace', open, 'a matching "}" for this "{"', 'the end of the file');
+    if (i >= len) return unclosed('{', open);
     if (at(i) === '}') {
       i++;
       depth--;
@@ -519,7 +564,7 @@ export function scanJsonSyntax(text) {
     let lastComma = -1;
     for (;;) {
       skipWs();
-      if (i >= len) return fault('unclosed-brace', open, 'a matching "}" for this "{"', 'the end of the file');
+      if (i >= len) return unclosed('{', open);
       const c = text.charAt(i);
       // THE TRAILING-COMMA CASE, and the reason its caret is on the comma and not on the brace.
       if (c === '}' && lastComma !== -1) {
@@ -539,7 +584,7 @@ export function scanJsonSyntax(text) {
       const keyFault = scanString();
       if (keyFault) return keyFault;
       skipWs();
-      if (i >= len) return fault('unclosed-brace', open, 'a matching "}" for this "{"', 'the end of the file');
+      if (i >= len) return unclosed('{', open);
       if (at(i) !== ':') {
         return fault('missing-colon', i, 'a colon between the field name and its value', 'the character ' + JSON.stringify(at(i)));
       }
@@ -548,7 +593,7 @@ export function scanJsonSyntax(text) {
       const valFault = scanValue();
       if (valFault) return valFault;
       skipWs();
-      if (i >= len) return fault('unclosed-brace', open, 'a matching "}" for this "{"', 'the end of the file');
+      if (i >= len) return unclosed('{', open);
       const sep = text.charAt(i);
       if (sep === ',') {
         lastComma = i;
@@ -572,7 +617,7 @@ export function scanJsonSyntax(text) {
     i++; // '['
     depth++;
     skipWs();
-    if (i >= len) return fault('unclosed-bracket', open, 'a matching "]" for this "["', 'the end of the file');
+    if (i >= len) return unclosed('[', open);
     if (at(i) === ']') {
       i++;
       depth--;
@@ -581,14 +626,14 @@ export function scanJsonSyntax(text) {
     let lastComma = -1;
     for (;;) {
       skipWs();
-      if (i >= len) return fault('unclosed-bracket', open, 'a matching "]" for this "["', 'the end of the file');
+      if (i >= len) return unclosed('[', open);
       if (at(i) === ']' && lastComma !== -1) {
         return fault('trailing-comma', lastComma, 'another item after this comma, or no comma at all', 'a comma followed by "]"');
       }
       const valFault = scanValue();
       if (valFault) return valFault;
       skipWs();
-      if (i >= len) return fault('unclosed-bracket', open, 'a matching "]" for this "["', 'the end of the file');
+      if (i >= len) return unclosed('[', open);
       const sep = text.charAt(i);
       if (sep === ',') {
         lastComma = i;
@@ -623,9 +668,94 @@ export function scanJsonSyntax(text) {
 // ---------------------------------------------------------------------------------------------
 //
 // Computed from the raw text, not from anything a browser told us, so all three engines produce
-// byte-identical output. Columns are counted in UTF-16 code units — the same unit `text.charAt`
-// walks — so a caret cannot drift out of alignment with the character it is pointing at.
+// byte-identical output.
+//
+// COLUMNS ARE COUNTED IN GRAPHEME CLUSTERS, NOT CODE UNITS. This is not pedantry: `"café"` written
+// decomposed (`e` + U+0301, which is what macOS filesystem tools and some editors produce) is five
+// code units and four visible characters, so a code-unit column drifts one cell right of the
+// character it points at for every combining mark earlier on the line — and the number printed on
+// screen stops matching the number the reader's editor shows. `caretColumn`, by contrast, stays a
+// CODE-UNIT index into the snippet line, because the caret pad is built by slicing that text (see
+// buildSnippet) and the pad has to be able to copy tabs verbatim.
+//
+// SNIPPET LINES ARE CLIPPED. A minified file — what `json.dumps` and `JSON.stringify` emit — is one
+// line of up to 1 MB. Left unclipped, the snippet would be twice the size of the file, the caret pad
+// would be ~900,000 spaces (92 ms of string work in Firefox, measured), and the caret would sit far
+// off the right edge of an `overflow-x:auto` <pre> where nobody can see it. Clipping to a window
+// around the fault fixes the cost and the legibility in one move, and leaves ordinary
+// pretty-printed files byte-identical.
 const SNIPPET_RADIUS = 2; // up to 2 lines either side (module-contracts §5)
+const SNIPPET_LINE_RADIUS = 110; // characters kept either side of the caret on the FAULT line
+const SNIPPET_CONTEXT_MAX = 220; // characters kept from the start of a CONTEXT line
+const ELLIPSIS = '…';
+
+/**
+ * Split a string into grapheme clusters — the units a reader counts as "characters".
+ *
+ * `Intl.Segmenter` is in every browser in the support matrix; the code-point fallback exists so a
+ * headless harness without it degrades to today's behaviour rather than throwing.
+ */
+const SEGMENTER =
+  typeof Intl === 'object' && Intl !== null && typeof Intl.Segmenter === 'function'
+    ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+    : null;
+
+function clusters(s) {
+  if (!SEGMENTER) return Array.from(s);
+  const out = [];
+  for (const part of SEGMENTER.segment(s)) out.push(part.segment);
+  return out;
+}
+
+// For pure-ASCII text — every byte of an ordinary JSON file — code units, code points and grapheme
+// clusters are the same count, so we skip the segmenter entirely. That keeps the common path at one
+// native regex test instead of segmenting a possibly very long line.
+const ASCII_ONLY = /^[\x00-\x7f]*$/;
+
+/** 1-based column of the character AFTER `lead`, counted in grapheme clusters. */
+function columnAfter(lead) {
+  return (ASCII_ONLY.test(lead) ? lead.length : clusters(lead).length) + 1;
+}
+
+/** 1-based line and (grapheme-cluster) column of `offset` within `text`. */
+function lineColAt(text, offset) {
+  const at = Math.max(0, Math.min(offset, text.length));
+  let line = 1;
+  let lineStart = 0;
+  for (let n = 0; n < at; n++) {
+    if (text.charCodeAt(n) === 10) {
+      line++;
+      lineStart = n + 1;
+    }
+  }
+  return { line, column: columnAfter(text.slice(lineStart, at)), lineStart };
+}
+
+/** Do not cut between the two halves of a surrogate pair; a lone surrogate renders as a tofu box. */
+function nudgeLeft(text, index) {
+  const c = text.charCodeAt(index);
+  return index > 0 && c >= 0xdc00 && c <= 0xdfff ? index - 1 : index;
+}
+
+/** Clip a context line to its opening characters. */
+function clipContextLine(text) {
+  if (text.length <= SNIPPET_CONTEXT_MAX) return text;
+  return text.slice(0, nudgeLeft(text, SNIPPET_CONTEXT_MAX)) + ELLIPSIS;
+}
+
+/**
+ * Clip the fault line to a window around the caret.
+ * @returns {{text:string, caretUnits:number}} `caretUnits` is 1-based, into the CLIPPED text.
+ */
+function clipFaultLine(text, caretUnits) {
+  const idx = Math.max(0, Math.min(caretUnits - 1, text.length));
+  if (text.length <= SNIPPET_LINE_RADIUS * 2) return { text, caretUnits };
+  const start = nudgeLeft(text, Math.max(0, idx - SNIPPET_LINE_RADIUS));
+  const end = nudgeLeft(text, Math.min(text.length, idx + SNIPPET_LINE_RADIUS));
+  const head = start > 0 ? ELLIPSIS : '';
+  const tail = end < text.length ? ELLIPSIS : '';
+  return { text: head + text.slice(start, end) + tail, caretUnits: idx - start + head.length + 1 };
+}
 
 function locate(text, f) {
   const offset = Math.max(0, Math.min(f.offset, text.length));
@@ -644,14 +774,23 @@ function locate(text, f) {
     lineStart = end + 1;
     line = n + 1;
   }
-  const column = offset - lineStart + 1;
+  const units = offset - lineStart + 1; // code-unit column, used for slicing
+  const column = columnAfter(text.slice(lineStart, offset)); // what the reader counts
 
   const from = Math.max(0, line - 1 - SNIPPET_RADIUS);
   const to = Math.min(lines.length - 1, line - 1 + SNIPPET_RADIUS);
   const snippet = [];
+  let caretColumn = units;
   for (let n = from; n <= to; n++) {
     // Strip a trailing \r so a CRLF file does not draw a stray glyph at the end of every line.
-    snippet.push({ lineNumber: n + 1, text: lines[n].replace(/\r$/, '') });
+    const raw = lines[n].replace(/\r$/, '');
+    if (n + 1 === line) {
+      const clipped = clipFaultLine(raw, units);
+      caretColumn = clipped.caretUnits;
+      snippet.push({ lineNumber: n + 1, text: clipped.text });
+    } else {
+      snippet.push({ lineNumber: n + 1, text: clipContextLine(raw) });
+    }
   }
 
   return {
@@ -659,7 +798,7 @@ function locate(text, f) {
     column,
     offset,
     snippet,
-    caretColumn: column,
+    caretColumn,
     syntaxClass: f.syntaxClass,
     hint: 'syntax',
     expected: f.expected,
@@ -672,6 +811,10 @@ function locate(text, f) {
  * Error. Passing it in would invite someone, someday, to read `.message` — so the seam simply
  * does not exist (plan Q6, CLAUDE.md constraint 5).
  *
+ * MIND THE RETURN SHAPE, which is not `failure()`'s despite the near-identical name: `failure()`
+ * returns ONE ValidationFailure, this returns a whole `{ok:false, failures:[…]}` Result ready to be
+ * returned straight up the loader's call chain.
+ *
  * @returns {{ok:false, failures:[ValidationFailure]}}
  */
 export function syntaxFailure({ file, kind, text }) {
@@ -682,7 +825,7 @@ export function syntaxFailure({ file, kind, text }) {
       line: 1,
       column: 1,
       offset: 0,
-      snippet: [{ lineNumber: 1, text: String(text || '').split('\n')[0] || '' }],
+      snippet: [{ lineNumber: 1, text: clipContextLine(String(text || '').split('\n')[0] || '') }],
       caretColumn: 1,
       syntaxClass: 'unknown',
       expected: 'a valid JSON document',
@@ -758,8 +901,10 @@ const HINT_TEXT = Object.freeze({
       'per column so they remain legible when projected.',
   }),
   'too-few-items': Object.freeze({
-    title: 'There are fewer items — or fewer characters — here than required.',
-    body: 'Add entries (or text) until the minimum given above is met. An empty list and an empty piece of text both land here.',
+    title: 'This is empty, or shorter than it is allowed to be.',
+    body:
+      'Either the list here has no entries or the text here has too few characters — the "found" line ' +
+      'above says which. Add entries, or text, until the minimum on the "expected" line is met.',
   }),
   'bad-key-format': Object.freeze({
     title: 'This name on the left-hand side is not in the required shape.',
@@ -796,13 +941,27 @@ const HINT_TEXT = Object.freeze({
       'whole spreadsheet. Split the game into several files and pick between them with the ?game= ' +
       'parameter in the address bar.',
   }),
+  // WHY THIS CLASS HAS TWO VARIANTS (A4 usability finding). An HTTP status came back FROM A SERVER,
+  // which definitively excludes the file:// case — under file:// the loader takes its catch branch
+  // and reports "a network error" instead. Telling the teacher who mistyped a filename to go install
+  // a web server sends them down the wrong rabbit hole ten minutes before class, so the two causes
+  // get two hints, selected in hintText() on the `found` phrase the loader already distinguishes.
   'fetch-failed': Object.freeze({
-    title: 'The app could not read this file.',
+    title: 'There is no file at this path.',
     body:
-      'Either the path is wrong or the file is not there. Check the spelling and the capitalisation of ' +
-      'the name — on GitHub Pages, Demo.json and demo.json are different files, even though on a Mac or ' +
-      'Windows machine they look like the same one. If you are opening the app by double-clicking ' +
-      'index.html, that is the cause: see the note at the bottom of this screen.',
+      'The server answered, but it has nothing at this path. Check the spelling and the capitalisation ' +
+      'of the name in the address bar — on GitHub Pages, Demo.json and demo.json are two different ' +
+      'files, even though on a Mac or a Windows machine they look like the same one. Check too that the ' +
+      'file really is in the folder the path names, and that its name ends in .json.',
+  }),
+  'bad-game-param': Object.freeze({
+    title: 'The game named in the web address cannot be used.',
+    body:
+      'The part of the address after ?game= must be the path to a .json file inside the games/ folder of ' +
+      'this same site — for example ?game=games/demo.json. It cannot be a web address on another site, ' +
+      'and it cannot step outside games/ with "..". Capitalisation matters: games/Demo.JSON and ' +
+      'games/demo.json are different files. If you followed a link from somewhere else, delete ' +
+      'everything from the "?" onwards to load the built-in demo.',
   }),
   'ragged-grid': Object.freeze({
     title: 'The columns of this board are not all the same length.',
@@ -814,11 +973,10 @@ const HINT_TEXT = Object.freeze({
   'ladder-short': Object.freeze({
     title: 'This cell has no point value.',
     body:
-      'A cell takes its value from its column\'s "valueLadder" at the same position — the first cell ' +
-      'takes the first ladder entry, and so on — unless the cell carries its own "value", which always ' +
-      'wins. Here the ladder has fewer entries than the column has cells and this cell has no "value" of ' +
-      'its own. Add an entry to the ladder, or a "value" to the cell. The app will not quietly score it ' +
-      'as zero: a board with an invisible missing point value is exactly what this screen exists to prevent.',
+      'Add an entry to this column\'s "valueLadder", or a "value" to the cell itself. A cell takes its ' +
+      'value from the ladder at the same position — the first cell takes the first ladder entry, and so ' +
+      'on — unless it carries its own "value", which always wins. Here the ladder runs out before this ' +
+      'cell and the cell has no "value" of its own, and the app will not quietly score it as zero.',
   }),
   'lifecycle-order': Object.freeze({
     title: 'These game states are out of order, or repeated.',
@@ -833,11 +991,26 @@ const HINT_TEXT = Object.freeze({
   }),
 });
 
+/** The second `fetch-failed` variant: the request never reached a server at all. */
+const FETCH_FAILED_NETWORK = Object.freeze({
+  title: 'The app could not reach this file at all.',
+  body:
+    'The request never got an answer from a server. If you opened the app by double-clicking ' +
+    'index.html, that is the cause — see the note at the bottom of this screen. Otherwise you are ' +
+    'offline, or something on the network is blocking the request.',
+});
+
+/** True when a fetch failure carries an HTTP status, i.e. a server did answer. */
+function isHttpStatusFound(f) {
+  return !!f && typeof f.found === 'string' && f.found.slice(0, 5) === 'HTTP ';
+}
+
 /**
  * Map a hint CLASS (plus, for syntax faults, the scanner's sub-class) to display copy.
  *
- * The `failure` argument is what lets `syntax` carry seventeen genuinely different sentences
- * while remaining one hint class: `location.syntaxClass` selects the sentence. Every other class
+ * The `failure` argument is what lets `syntax` carry a couple of dozen genuinely different sentences
+ * while remaining one hint class: `location.syntaxClass` selects the sentence. `fetch-failed` uses it
+ * too, to tell a server's 404 apart from a request that never reached a server. Every other class
  * ignores the argument entirely.
  */
 export function hintText(hintClass, f) {
@@ -845,7 +1018,12 @@ export function hintText(hintClass, f) {
     const sub = (f && f.location && f.location.syntaxClass) || 'unknown';
     return SYNTAX_HINTS[sub] || SYNTAX_HINTS.unknown;
   }
+  if (hintClass === 'fetch-failed' && !isHttpStatusFound(f)) return FETCH_FAILED_NETWORK;
   return (
+    // Belt and braces: `failure()` throws on any hint outside HINT_CLASSES, and every id in
+    // HINT_CLASSES has an entry above, so this fallback is unreachable through the constructor.
+    // It stays because `hintText` is also callable directly, and a missing hint must not be a throw
+    // on the one screen whose job is to survive.
     HINT_TEXT[hintClass] || {
       title: 'This file could not be accepted.',
       body: 'See the expected and found lines above.',
@@ -874,6 +1052,9 @@ export function hintText(hintClass, f) {
 
 const STYLE_ID = 'qbe-error-style';
 
+/** Most cards drawn on one screen. See the comment at the slice in renderErrorScreen. */
+const MAX_CARDS = 100;
+
 // Author-written CSS. It contains no interpolated data of any kind, and it is applied by setting
 // textContent on a <style> element — never by writing markup. Kept here rather than in a theme
 // file because the error screen must render even when the theme failed to load.
@@ -890,9 +1071,9 @@ const ERROR_CSS = [
   '.qbe-error .qbe-card{background:var(--e-card);border:1px solid var(--e-line);border-left:4px solid var(--e-bad);',
   'border-radius:6px;padding:1rem 1.15rem;margin:0 0 1rem}',
   '.qbe-error .qbe-where{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.95rem;',
-  'color:var(--e-fg);margin:0 0 .75rem;word-break:break-all}',
-  '.qbe-error .qbe-stage{display:inline-block;font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;',
-  'color:var(--e-bg);background:var(--e-dim);border-radius:3px;padding:.1rem .4rem;margin-right:.5rem;vertical-align:.1em}',
+  'font-weight:600;color:var(--e-fg);margin:0 0 .35rem;word-break:break-all}',
+  '.qbe-error .qbe-gloss{color:var(--e-dim);font-size:.85rem;margin:0 0 .75rem}',
+  '.qbe-error .qbe-more{color:var(--e-bad);font-weight:600;margin:1.5rem 0 0}',
   '.qbe-error dl{display:grid;grid-template-columns:max-content 1fr;gap:.3rem .75rem;margin:0 0 .85rem}',
   '.qbe-error dt{color:var(--e-dim);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;padding-top:.15rem}',
   '.qbe-error dd{margin:0}',
@@ -929,15 +1110,41 @@ function ensureStyle(doc) {
 }
 
 /**
- * Render the caret snippet.
+ * Build the caret pad for one snippet line.
  *
- * The caret line is built by copying the fault line's leading characters and replacing every
- * non-tab with a space. Copying the tabs rather than expanding them is what keeps the caret
- * aligned inside a <pre>, where a tab is not one column wide — this is the detail that makes the
- * difference between a caret that helps and a caret that misleads, and it is why we do not
- * simply repeat " ".repeat(column - 1).
+ * TABS ARE COPIED VERBATIM, never expanded. Inside a <pre> a tab is not one column wide, so a pad
+ * of plain spaces would put the caret somewhere the character is not. The gutter prefix is the same
+ * width on the text line and the caret line, so both hit identical tab stops at any `tab-size`.
+ * This is the detail that makes the difference between a caret that helps and a caret that misleads
+ * — it is why we do not simply repeat " ".repeat(column - 1). Do not "simplify" it.
+ *
+ * EVERYTHING ELSE IS COUNTED IN GRAPHEME CLUSTERS, not code units: a combining mark (`e` + U+0301,
+ * which is how macOS tools spell "café") is its own code unit but occupies no cell of its own, so a
+ * code-unit pad drifts one cell right for every mark earlier on the line. Clusters whose first code
+ * point is astral get two spaces, because monospace fonts render emoji and the wide CJK planes two
+ * cells wide — that is an approximation of terminal width rules, and it is the same count the old
+ * surrogate-pair-based code produced, so the emoji case does not regress.
+ */
+function caretPad(lead) {
+  let out = '';
+  for (const cluster of clusters(lead)) {
+    if (cluster === '\t') out += '\t';
+    else out += cluster.codePointAt(0) > 0xffff ? '  ' : ' ';
+  }
+  return out;
+}
+
+/**
+ * Render the caret snippet, or `null` when there are no snippet lines to draw.
+ *
+ * The null case is load-bearing, not defensive noise: `failure()` accepts a hand-written `location`
+ * with no `snippet` (module-contracts §7 requires the screen to render from a bare failure array),
+ * and this function used to index `snippet[-1]` and throw — AFTER renderErrorScreen had already
+ * cleared the mount, leaving the user a blank white page. A blank page is the single outcome this
+ * whole file exists to prevent, so the empty snippet is handled rather than trusted away.
  */
 function buildSnippet(location) {
+  if (!Array.isArray(location.snippet) || location.snippet.length === 0) return null;
   const gutter = String(location.snippet[location.snippet.length - 1].lineNumber).length;
   const pad = (n) => {
     const s = String(n);
@@ -949,31 +1156,67 @@ function buildSnippet(location) {
     const marker = l.lineNumber === location.line ? '>' : ' ';
     out += marker + ' ' + pad(l.lineNumber) + ' | ' + l.text + '\n';
     if (l.lineNumber === location.line) {
-      const lead = l.text.slice(0, Math.max(0, location.caretColumn - 1)).replace(/[^\t]/g, ' ');
+      const lead = caretPad(l.text.slice(0, Math.max(0, location.caretColumn - 1)));
       out += '  ' + ' '.repeat(gutter) + ' | ' + lead + '^\n';
     }
   }
   const pre = el('pre', null, out.replace(/\n$/, ''));
-  // The snippet is decorative-plus-informative; a screen reader user gets the same information
-  // from the "line N, column M" heading above it, so we keep the <pre> out of the tab order but
-  // do not hide it.
-  pre.setAttribute('aria-hidden', 'false');
+  // Hidden from assistive technology on purpose. Read aloud, the caret line is "greater-than two
+  // vertical-bar quote a quote colon one comma vertical-bar caret" — noise. The same information is
+  // in the "line N, column M" heading above it, in words.
+  pre.setAttribute('aria-hidden', 'true');
   return pre;
 }
 
-function buildCard(f) {
+const ORDINALS = Object.freeze(['0th', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th', '13th']);
+
+function ordinal(n) {
+  return ORDINALS[n] || n + 'th';
+}
+
+/**
+ * Gloss the zero-based indexes in a JSON path, or return '' when there are none.
+ *
+ * WHY: `board.columns[2]` is the THIRD column, and a reader who does not know that opens the second
+ * one, finds nothing wrong with it, and concludes the error screen is lying. Spec §7 sanctions the
+ * path notation, so the notation stays — this line translates it.
+ */
+function glossPath(path) {
+  if (typeof path !== 'string') return '';
+  const parts = [];
+  const re = /([A-Za-z0-9_]+)\[(\d+)\]/g;
+  let m = re.exec(path);
+  while (m) {
+    parts.push(m[1] + '[' + m[2] + '] is the ' + ordinal(Number(m[2]) + 1));
+    m = re.exec(path);
+  }
+  if (parts.length === 0) return '';
+  return 'Lists count from zero: ' + parts.join(', ') + '.';
+}
+
+/** The "where" line, in words rather than in codebase vocabulary. */
+function whereText(f) {
+  if (f.location) return 'line ' + f.location.line + ', column ' + f.location.column;
+  if (f.path === '(file)') return 'this file as a whole';
+  return f.path;
+}
+
+function buildCard(f, index, total) {
   const card = el('div', 'qbe-card');
 
-  const where = el('p', 'qbe-where');
-  where.appendChild(el('span', 'qbe-stage', f.stage));
-  where.appendChild(
-    document.createTextNode(
-      f.location ? 'line ' + f.location.line + ', column ' + f.location.column : f.path,
-    ),
-  );
+  // An <h3>, not a <p>: with four problems in one file there was previously exactly one heading for
+  // all four, so heading navigation could not move between them. The "N of M" also tells a sighted
+  // reader how much is left.
+  const where = el('h3', 'qbe-where', 'Problem ' + index + ' of ' + total + ' — ' + whereText(f));
   card.appendChild(where);
 
-  if (f.location) card.appendChild(buildSnippet(f.location));
+  const gloss = f.location ? '' : glossPath(f.path);
+  if (gloss) card.appendChild(el('p', 'qbe-gloss', gloss));
+
+  if (f.location) {
+    const pre = buildSnippet(f.location);
+    if (pre) card.appendChild(pre);
+  }
 
   const dl = el('dl');
   dl.appendChild(el('dt', null, 'Expected'));
@@ -1009,18 +1252,18 @@ export function renderErrorScreen(failures, mountEl) {
 
   const wrap = el('div', 'qbe-error-wrap');
 
-  // A region announcement, so a screen reader reaching this screen is told what happened rather
-  // than silently landing on a heading.
-  wrap.setAttribute('role', 'alert');
-  wrap.setAttribute('aria-live', 'assertive');
-
-  wrap.appendChild(
-    el(
-      'h1',
-      null,
-      list.length === 1 ? 'This game could not be loaded (1 problem)' : 'This game could not be loaded (' + list.length + ' problems)',
-    ),
+  // NO role="alert" / aria-live HERE, deliberately. This wrapper holds the whole screen — headline,
+  // lede, every card, every hint, the footer notes. A live region inserted already populated is
+  // announced by most screen readers not at all, and by the rest as one uninterruptible assertive
+  // utterance thousands of words long. Focusing the headline instead lands the reader at the top of
+  // the screen and lets them navigate it like the document it is.
+  const h1 = el(
+    'h1',
+    null,
+    list.length === 1 ? 'This game could not be loaded (1 problem)' : 'This game could not be loaded (' + list.length + ' problems)',
   );
+  h1.setAttribute('tabindex', '-1');
+  wrap.appendChild(h1);
   wrap.appendChild(
     el(
       'p',
@@ -1037,23 +1280,43 @@ export function renderErrorScreen(failures, mountEl) {
     return;
   }
 
+  // A HARD CEILING ON DRAWN CARDS. One card is ~11 DOM nodes, so an unusually fault-dense document
+  // could otherwise ask the browser for millions of them and hang the tab on the way to explaining
+  // itself. Nobody fixes a hundred problems from one screen anyway: the first few are the ones that
+  // get acted on, and the rest are usually consequences of them.
+  const shown = list.slice(0, MAX_CARDS);
+
   // Group by file, preserving first-encounter order, so someone fixing one file reads one block.
   const byFile = new Map();
-  for (const f of list) {
+  for (const f of shown) {
     if (!byFile.has(f.file)) byFile.set(f.file, []);
     byFile.get(f.file).push(f);
   }
 
+  let n = 0;
   for (const [file, group] of byFile) {
     wrap.appendChild(el('h2', null, file));
-    for (const f of group) wrap.appendChild(buildCard(f));
+    for (const f of group) wrap.appendChild(buildCard(f, ++n, shown.length));
+  }
+
+  if (list.length > shown.length) {
+    wrap.appendChild(
+      el(
+        'p',
+        'qbe-more',
+        '…and ' + (list.length - shown.length) + ' more problems, not shown. Fix these ' +
+          shown.length + ' first and reload — later problems are often consequences of earlier ones.',
+      ),
+    );
   }
 
   // ---- Footer notes ------------------------------------------------------------------------
   const notes = el('div', 'qbe-notes');
-  const anyFetchFail = list.some((f) => f.hint === 'fetch-failed');
+  // Gated on the NETWORK-error variant only. An HTTP status means a server answered, which excludes
+  // file:// outright — see the two `fetch-failed` hint variants above.
+  const anyNetworkFail = list.some((f) => f.hint === 'fetch-failed' && !isHttpStatusFound(f));
 
-  if (anyFetchFail) {
+  if (anyNetworkFail) {
     // Plan Q10 / delta D7. This is the single most common "the app is broken" report from a
     // first-time forker, and it is not a bug: browsers refuse module imports and local fetches
     // over file://. It belongs on the screen the user is actually looking at, not only in a
@@ -1082,14 +1345,19 @@ export function renderErrorScreen(failures, mountEl) {
     ),
   );
 
-  notes.appendChild(
-    el(
-      'p',
-      null,
-      'The "Fixing JSON errors" section of the README walks through each of these problems with examples.',
-    ),
-  );
+  // NOTHING HERE POINTS AT A README. There was a note sending a stuck reader to a "Fixing JSON
+  // errors" section of a README that does not exist in this repo, printed unconditionally on every
+  // failure. A closing instruction that dead-ends is worse than no closing instruction; when that
+  // section is written, this is where the pointer goes back.
 
   wrap.appendChild(notes);
   mount.appendChild(wrap);
+
+  // Move the reader to the headline. Wrapped because a detached mount (the test runner renders into
+  // an unattached div) cannot take focus, and a failure to focus must never break the screen.
+  try {
+    h1.focus();
+  } catch (_e) {
+    /* not focusable in this context; the screen is still complete */
+  }
 }

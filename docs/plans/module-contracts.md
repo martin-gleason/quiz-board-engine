@@ -160,7 +160,10 @@ Every node also carries:
   available: it is authored, not inferred.
 - `hint` — optional hint-class id. When absent the validator picks a class from the failure kind
   (`missing-required-field`, `wrong-type`, `out-of-range`, …).
-- `resolves` — optional `RESOLVES.*` marker; ignored structurally, consumed by the contract stage.
+- `resolves` — optional `RESOLVES.*` marker. **Documentation, not dispatch.** Nothing reads it at
+  runtime: the contract stage is six hand-written checks (§6.2), and the marker exists so a reader of
+  `schemas.js` can see which fields carry a cross-reference. Adding `resolves` to a new node does
+  **not** cause anything to be validated; the check has to be written in `validator.js` too.
 
 ### 3.2 Adding a schema version — the discipline
 
@@ -181,6 +184,7 @@ export const GAMES_DIR          = 'games/'
 export const GAMETYPES_DIR      = 'gametypes/'
 export const THEMES_MANIFEST    = 'themes/themes.json'
 export const DEFAULT_GAME       = 'games/demo.json'
+export const DEFAULT_MAX_BYTES  = 262144   // cap for everything that is not a content file
 
 export function resolveGameParam(raw: string|null|undefined) -> Result<string>
 export function gametypePath(id: string) -> string          // 'gametypes/<id>.json'; throws on bad id
@@ -197,8 +201,11 @@ backslash, any path not under `games/`, any name not ending exactly `.json` (so 
 and `x.txt` both die), any embedded `?` or `#`, and any control character.
 
 - Success → `{ ok:true, value:'games/<name>.json' }` (normalized, no leading `/`, no `./`).
+  **Subdirectories under `games/` are allowed**: `games/2026/spring/history.json` resolves. Safe by
+  construction — `.` is not in the allowlist's segment character class, so no segment can be `..`
+  and no name can carry a second extension.
 - `null`/absent → success with `DEFAULT_GAME`. An absent param is not an error.
-- Failure → one failure, `stage:'fetch'`, `hint:'unresolved-reference'`, `file:'(URL parameter)'`,
+- Failure → one failure, `stage:'fetch'`, `hint:'bad-game-param'`, `file:'(URL parameter)'`,
   `path:'?game'`, `expected:'a relative path under games/ ending in .json'`,
   `found:` the rejected value, truncated to 120 chars and rendered via `errors.describeValue`.
 
@@ -257,9 +264,9 @@ ValidationFailure = {
   path:     'board.columns[2].cells[1].value',   // JSON path, or null
   location: null,                       // Location object, or null
   expected: 'a whole number (per-cell point value; it overrides valueLadder)',  // REQUIRED
-  found:    'the string "500"',         // REQUIRED. Human phrase from errors.describeValue().
+  found:    'the text "500"',           // REQUIRED. Human phrase from errors.describeValue().
   hint:     'wrong-type',               // a HINT_CLASSES id. REQUIRED.
-  message:  'board.columns[2].cells[1].value: expected a whole number, found the string "500"'
+  message:  'board.columns[2].cells[1].value: expected a whole number, found the text "500"'
 }
 ```
 
@@ -273,11 +280,21 @@ ValidationFailure = {
 ```js
 Location = {
   line:        14,      // 1-based
-  column:      3,       // 1-based, counted in UTF-16 code units
+  column:      3,       // 1-based, counted in GRAPHEME CLUSTERS — what the reader's editor shows
   offset:      412,     // 0-based index into RawDocument.text
   snippet:     [ { lineNumber: 12, text: '    "value": 100,' }, … ],  // up to 2 lines either side
-  caretColumn: 3        // column within the snippet line whose lineNumber === line
+  caretColumn: 3        // 1-based UTF-16 index into the snippet line whose lineNumber === line
 }
+
+`column` counts grapheme clusters because a combining mark (`e` + U+0301, which is how macOS tools
+spell "café") is a code unit that occupies no cell: counting code units drifts the number one to the
+right of the character it names for every mark earlier on the line. `caretColumn` stays a code-unit
+index, because the caret pad is built by slicing that snippet line so that it can copy tabs verbatim.
+
+**Snippet lines are clipped.** The fault line keeps a window around the caret and context lines keep
+their opening characters, both marked with `…`. A minified file is one line of up to 1 MB; unclipped,
+the snippet is larger than the file and the caret lands far off the right edge of the `<pre>`. So
+`caretColumn` indexes the CLIPPED text and can differ from `column`.
 ```
 
 Field rules:
@@ -315,7 +332,7 @@ Imports: `schemas`, `errors`. **Never** `loader`, `state`, or `renderer`.
 export function validateDocument({ kind, raw }) -> Result<cleaned>
 export function validateBundle(rawBundle) -> Result<CleanedBundle>
 export function validateState({ raw, bundle }) -> Result<CleanedState>
-export function walk(node, value, segments, ctx) -> ValidationFailure[]   // exported for tests
+export function collectFailures(node, value, segments, ctx) -> ValidationFailure[]  // for tests
 ```
 
 ### 6.1 `validateDocument({ kind, raw })`
@@ -337,7 +354,9 @@ Structural stage only, one document.
 contract stage. Failures from all three documents are concatenated in that order, so the error
 screen can group by `file`.
 
-Contract checks, each implementing a named entry in `schemas.CROSS_CHECKS`:
+Contract checks. `schemas.CROSS_CHECKS` is a **documentation table cross-referenced by comment**,
+not a dispatch table — the six checks below are hand-written in `validator.js` and nothing reads
+`CROSS_CHECKS` at runtime. Do not build a dispatcher for six checks; do keep the names in step.
 
 | Check | Rule | hint |
 |---|---|---|
@@ -437,7 +456,8 @@ message class lives beside the code that emits it. That is a requirement, not a 
 
 ```js
 export function failure(fields) -> ValidationFailure      // frozen; throws on unknown hint class
-export function describeValue(v) -> string                // 'the string "abc"', 'an array of 3 items', 'nothing (the field is absent)'
+export function describeValue(v) -> string                // 'the text "abc"', 'a list of 3 items', 'nothing (the field is absent)'
+export function pathFromSegments(segments) -> string      // §5.1 notation; '(file)' for the root
 export function scanJsonSyntax(text) -> Location & { hint, expected, found }
 export function syntaxFailure({ file, kind, text }) -> Result<never>   // {ok:false, failures:[…]}
 export function hintText(hintClass, failure) -> { title: string, body: string }
@@ -454,7 +474,9 @@ export function renderErrorScreen(failures, mountEl) -> void
   class — deterministic and byte-identical in all three engines. Trailing-comma detection is the
   named case: a `,` followed by `}` or `]` yields `hint:'syntax'` and hint copy "there is
   probably an extra comma just before this position."
-- `renderErrorScreen` builds DOM with `createElement`/`textContent` only. No `innerHTML`, no
+- `renderErrorScreen` draws at most 100 cards and appends an "…and N more problems" line beyond
+  that, so a fault-dense document cannot ask the browser for millions of nodes on the way to
+  explaining itself. It builds DOM with `createElement`/`textContent` only. No `innerHTML`, no
   template strings into the DOM (CLAUDE.md named invariant). It groups failures by `file`, and
   for `location` failures renders the snippet in a `<pre>` with the caret line built as its own
   text node. It must render sensibly from a bare hand-written failure array with no board, no
