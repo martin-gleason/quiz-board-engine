@@ -1,0 +1,38 @@
+<!doctype html>
+<!--
+  Quiz Board Engine — placeholder shell.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+  Replaced by the real app in F3. Exists now so GitHub Pages has something to serve
+  and Gate 0 (the Pages URL loads over HTTPS) can be verified.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quiz Board Engine</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 16px/1.6 system-ui, sans-serif;
+    max-width: 42rem;
+    margin: 4rem auto;
+    padding: 0 1.5rem;
+  }
+  code { background: rgba(128,128,128,.2); padding: .1em .35em; border-radius: 3px; }
+</style>
+</head>
+<body>
+  <h1>Quiz Board Engine</h1>
+  <p>
+    A zero-cost, zero-build, zero-CDN static web app that turns plain JSON files into
+    playable quiz board games — Jeopardy, trivia bingo, and Family&nbsp;Feud-style ranked
+    reveals — rendered through a vendored copy of Reveal.js.
+  </p>
+  <p><strong>Status:</strong> under construction. The board renderer lands in F3.</p>
+  <p>
+    Running locally? The app needs an HTTP origin — <code>file://</code> blocks ES module
+    and JSON fetches. Use <code>python3 -m http.server 8000</code>.
+  </p>
+  <p>Licensed under the <a href="LICENSE">GNU AGPL v3 or later</a>.</p>
+</body>
+</html>
