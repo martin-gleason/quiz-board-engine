@@ -1,0 +1,171 @@
+/*
+ * Quiz Board Engine — theme "marquee"
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * DIRECTION — the 1970s studio quiz show: deep royal blue, incandescent gold,
+ * a didone numeral with real flourish. Where midnight is a cool broadcast
+ * CONTROL room, marquee is the stage itself — warm light, gilt frames, velvet.
+ * Cells are gilt-framed panels: a solid gold rule outside, a fine inner gold
+ * keyline (via --cell-shadow's inset layer), and a warm glow, so each cell
+ * reads as a lit sign. The display face is the platform didone where one
+ * exists (Didot on Apple, Bodoni MT on Windows), falling back to Georgia —
+ * high-contrast strokes at display size, exactly the face painted on real
+ * marquee boards. It is used ONLY at value/label sizes where its thin strokes
+ * are safe; body text stays on the system sans.
+ *
+ * COMMITTED TO ONE LOOK: dark in both OS schemes, deliberately (handoff §5.8).
+ * A game show set has the house lights down; that is the design.
+ *
+ * ANSWERED = LIGHTS OUT. Three cues, none of them hue:
+ *   (a) lightness — the panel drops BELOW the ground (1.43:1 above → 1.06:1 below
+ *       ground) and its glow is removed: the sign is switched off;
+ *   (b) texture   — a dot grid, the unlit bulb matrix;
+ *   (c) shape     — the gilt frame decays to a thin cool rule and the value
+ *       is struck through.
+ *
+ * BONUS = CHASE LIGHTS: a DOTTED gold outline around the cell — the one place
+ * the bulb metaphor becomes literal. An invitation, not a spoiler.
+ *
+ * Every text-on-background pair carries its COMPUTED WCAG 2.1 ratio.
+ * No @import, no external url(), no web font; the bingo mark is inline SVG.
+ */
+
+:root {
+  /* --- Surface ---------------------------------------------------------- */
+  /* Deep indigo, not black: house-lights-down, and it lets the answered
+     panel go genuinely darker than the ground. */
+  --board-bg: #0d1633;
+  --board-fg: #f3ead1;               /* 14.84:1 on --board-bg (AAA) */
+
+  /* --- Cells ------------------------------------------------------------ */
+  --cell-bg: #1c2f6e;                /* 1.43:1 vs ground; the gilt frame separates (below) */
+  --cell-text: #f6efdc;              /* 10.88:1 on --cell-bg (AAA) */
+  /* The gilt frame — the load-bearing token. Each cell is a button, and this
+     rule is its 3:1 boundary with a wide margin for projector washout. */
+  --cell-border: 2px solid #d9a93f;  /* 8.22:1 vs --board-bg, 5.77:1 vs --cell-bg (non-text 3:1) */
+  --cell-radius: 6px;
+  /* Three layers: warm glow (the sign is lit), deep drop (stage depth), and a
+     fine inner gold keyline that doubles the frame like real gilt moulding. */
+  --cell-shadow:
+    0 0 18px rgba(242, 193, 78, 0.14),
+    0 8px 20px rgba(0, 0, 0, 0.5),
+    inset 0 0 0 1px rgba(242, 193, 78, 0.4);
+  --cell-hover-bg: #27408f;          /* --cell-text on it: 8.26:1 (AAA) */
+
+  /* revealed: incandescent — the panel lights up warm ivory. */
+  --cell-revealed-bg: #fff6e0;
+  --cell-revealed-text: #2b1d06;     /* 15.23:1 (AAA) */
+
+  /* answered: switched off. See header for the three cues. */
+  --cell-answered-bg: #0a1027;       /* darker than the ground — a hole where a sign was */
+  --cell-answered-text: #8d93ad;     /* 6.19:1 on --cell-answered-bg (AA body) */
+
+  /* marked: the velvet square — deep crimson, gold star stamp. */
+  --cell-marked-bg: #6e1a24;
+  --cell-marked-text: #ffe9ec;       /* 9.87:1 (AAA) */
+  --cell-mark-glyph-color: #f2c14e;  /* 6.81:1 on --cell-marked-bg (non-text 3:1) */
+
+  /* bonus: chase lights. Dotted, so the bulbs are literal. */
+  --cell-bonus-outline: 3px dotted #f2c14e;  /* 7.44:1 vs --cell-bg (non-text 3:1) */
+
+  /* --- Typography ------------------------------------------------------- */
+  /* Platform didones, Georgia as the sturdy floor. Display sizes only. */
+  --font-display: Didot, "Didot LT STD", "Bodoni MT", "Bodoni 72", Georgia,
+    "Times New Roman", serif;
+  --value-color: #f2c14e;            /* 7.44:1 on --cell-bg (AAA large, AA body) */
+
+  /* Labels: a title card — deep panel, ivory didone (plus override below). */
+  --column-label-bg: #091026;
+  --column-label-text: #f3ead1;      /* 15.71:1 on --column-label-bg (AAA) */
+
+  /* --- Detail overlay --------------------------------------------------- */
+  --detail-bg: #131f4a;
+  --detail-text: #f3ead1;            /* 13.23:1 (AAA) */
+  --detail-scrim: rgba(6, 10, 28, 0.88);
+  --answer-color: #f2c14e;           /* 9.46:1 on --detail-bg (AAA) */
+
+  /* --- Score bar -------------------------------------------------------- */
+  --score-bg: #091026;
+  --score-text: #f3ead1;             /* 15.71:1 (AAA) */
+  --team-active-outline: 3px solid #f2c14e;  /* 11.24:1 vs --score-bg (non-text 3:1) */
+
+  /* --- Accent, focus, motion -------------------------------------------- */
+  --accent: #f2c14e;                 /* 10.61:1 vs --board-bg */
+  --accent-contrast: #2b1d06;        /* 9.77:1 on --accent (AAA) — dark ink on gold, like a ticket */
+  --focus-ring: 3px solid #f2c14e;   /* in the gutter against --board-bg: 10.61:1 */
+  /* A touch quicker than paper, slower than broadcast: stage-curtain tempo. */
+  --anim-duration: 360ms;
+}
+
+/* ==========================================================================
+   CLASS OVERRIDES — six
+   ========================================================================== */
+
+/* 1. Column labels as title cards: small didone caps, tracked out like a
+      painted sign. text-transform/letter-spacing are not tokenised. */
+.qbe-column-label {
+  border: 1px solid rgba(242, 193, 78, 0.45);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-weight: 700;
+}
+
+/* 2. The switched-off panel's frame: the gilt rule decays to a thin cool one.
+      This is what keeps a dead sign findable — a cell the host cannot see is
+      a cell they cannot recover. Glow restated off because --cell-shadow is
+      one token for all states. */
+.qbe-cell[data-state="answered"] {
+  border-color: #5a648c;             /* 3.08:1 vs --board-bg, 3.26:1 vs --cell-answered-bg (non-text 3:1) */
+  box-shadow: none;
+}
+
+/* 3. The unlit bulb matrix: a dot grid in a cool faint tone. Same job as
+      default's hatch — a non-hue spent cue — in this theme's vocabulary. */
+.qbe-cell[data-state="answered"]::before {
+  background:
+    radial-gradient(rgba(141, 147, 173, 0.32) 1px, rgba(0, 0, 0, 0) 1.2px) 0 0 /
+    7px 7px;
+}
+
+/* 4. The revealed value. default.css paints it var(--accent): gold on the lit
+      ivory panel is 1.56:1 — invisible. It takes stage crimson instead.
+      Contrast maths, not taste. */
+.qbe-cell[data-state="revealed"] .qbe-cell-value {
+  color: #8a1c26;                    /* 8.58:1 on --cell-revealed-bg (AAA) */
+}
+
+/* 4b. Same maths for the ring default draws in var(--accent): gold on ivory
+      fails the 3:1 boundary, crimson passes. */
+.qbe-cell[data-state="revealed"] {
+  box-shadow: inset 0 0 0 4px #8a1c26,   /* 8.58:1 vs --cell-revealed-bg (non-text 3:1) */
+    0 8px 20px rgba(0, 0, 0, 0.5);
+}
+
+/* 5. The bingo stamp: a star — the marquee glyph. Mask, so
+      --cell-mark-glyph-color still recolours it; only the shape changes. */
+.qbe-cell-mark {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 6 L61 38 L95 38 L67 58 L78 92 L50 71 L22 92 L33 58 L5 38 L39 38 Z' fill='%23000'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 6 L61 38 L95 38 L67 58 L78 92 L50 71 L22 92 L33 58 L5 38 L39 38 Z' fill='%23000'/%3E%3C/svg%3E");
+}
+
+/* 6. Overlay Close label: dark board, so default's var(--board-bg) label
+      disappears on the scrim (the midnight.css finding). */
+.qbe-detail-close {
+  color: var(--board-fg);            /* 16.25:1 on the flattened scrim (AAA) */
+  border-color: var(--board-fg);
+}
+
+/* Active-team tint, in warm gold. */
+.qbe-team[data-active="true"] {
+  background: rgba(242, 193, 78, 0.13);
+}
+
+/* The locked dot, in gold rather than currentColor, for the same reason
+   midnight recolours it: it should read as part of this palette. */
+.qbe-cell[data-locked="true"] {
+  background-image: radial-gradient(
+    circle at calc(100% - 0.45rem) calc(100% - 0.45rem),
+    #f2c14e 0 0.14rem,
+    rgba(0, 0, 0, 0) 0.14rem
+  );
+}

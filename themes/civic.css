@@ -1,0 +1,230 @@
+/*
+ * Quiz Board Engine — theme "civic"
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * DIRECTION — a public-sector data room, not a TV studio.
+ * Warm stone ground, deep forest-sage cells, mono numerals. The palette is the
+ * Civic Data Design System's semantic set, mapped onto the board contract:
+ * stone (#f6f5f2) is the ground, the action green family makes the cells, and
+ * amber appears on exactly ONE thing on the board — the bonus cell — because
+ * in that system amber is a deliberately scarce emphasis colour. If amber is
+ * everywhere it stops meaning "look here".
+ *
+ * Point values and column labels are set in the platform MONO stack, not a
+ * serif: in this design language mono means "this is data". The digits are
+ * tabular by default in every mono face, so ladders align for free.
+ *
+ * LIGHT AND DARK are both handled, via prefers-color-scheme. The dark block
+ * re-maps to the same system's dark tokens; it is not an inversion. Note the
+ * accents flip strategy in dark: sage becomes a LIGHT fill with DARK ink
+ * (#8aa163 / #1c1f22), never white-on-green.
+ *
+ * ANSWERED reads as spent by sinking into the stationery: the card drops from
+ * 8.44:1 against the ground to 1.17:1, goes flat (shadow removed by
+ * default.css), takes a dashed rim, a hatch, and a struck value. Lightness +
+ * texture + shape — no hue involved, so it survives colour-vision deficiency
+ * and a washed-out projector. In dark the same move runs the other way: the
+ * panel drops BELOW the ground (1.06:1) like a switched-off surface.
+ *
+ * Every text-on-background pair carries its COMPUTED WCAG 2.1 ratio (sRGB
+ * relative luminance, not eyeballed). AA: 4.5:1 body, 3:1 large text and
+ * control boundaries. No @import, no external url(), no web font.
+ */
+
+:root {
+  /* --- Surface ---------------------------------------------------------- */
+  --board-bg: #f6f5f2;               /* stone; surface-1 in the source system */
+  --board-fg: #22252a;               /* 14.10:1 on --board-bg (AAA) */
+
+  /* --- Cells ------------------------------------------------------------ */
+  /* The deepest step of the action-green ramp. Dark card on light ground is
+     the right polarity for a classroom projector (see default.css). */
+  --cell-bg: #3f4c2d;                /* 8.44:1 vs --board-bg — unmistakably an object */
+  --cell-text: #f6f5f2;              /* 8.44:1 on --cell-bg (AA body, AAA large) */
+  --cell-border: 2px solid #2b3420;  /* 11.93:1 vs --board-bg (locatable button edge) */
+  /* Sharp corners: 3px. This system's shapes are crisp, not friendly-rounded. */
+  --cell-radius: 3px;
+  /* Warm brown-black shadow, the system's own shadow tint — never neutral grey. */
+  --cell-shadow: 0 2px 0 #2b3420, 0 5px 12px rgba(43, 38, 32, 0.16);
+  --cell-hover-bg: #4c5c36;          /* one ramp step lighter; --cell-text on it: 6.66:1 (AA) */
+
+  /* revealed: the open cell turns to the white "raised card" surface. */
+  --cell-revealed-bg: #ffffff;
+  --cell-revealed-text: #22252a;     /* 15.37:1 (AAA) */
+
+  /* answered: sinks into the inset-surface tone. See header for the cues. */
+  --cell-answered-bg: #e7e4db;       /* 1.17:1 vs --board-bg — near-invisible as an object, on purpose */
+  --cell-answered-text: #5c5a52;     /* 5.43:1 on --cell-answered-bg (AA body) */
+
+  /* marked: the action green itself. Hue never carries it alone — the stamp
+     glyph and the fill-lightness change are the redundant cues. */
+  --cell-marked-bg: #5c7040;
+  --cell-marked-text: #f6f5f2;       /* 5.01:1 (AA body) */
+  --cell-mark-glyph-color: #ece8df;  /* 4.46:1 on --cell-marked-bg (non-text 3:1) */
+
+  /* bonus: THE one amber thing on the board. The deeper light-theme amber
+     (#bd8024) only reaches 2.75:1 against this cell green, so the outline uses
+     the dark-ramp amber instead — same hue, passes the boundary floor. */
+  --cell-bonus-outline: 3px solid #d99a3e;  /* 3.79:1 vs --cell-bg (non-text 3:1) */
+
+  /* --- Typography ------------------------------------------------------- */
+  /* Mono for the numerals: in this language mono means data. Every platform
+     ships one; ui-monospace covers modern engines, the rest are fallbacks. */
+  --font-display: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas,
+    "Liberation Mono", monospace;
+  --value-color: #ece8df;            /* 7.52:1 on --cell-bg (AA body, AAA large) */
+
+  /* Labels become kickers (see the class override below): no filled bar. */
+  --column-label-bg: rgba(0, 0, 0, 0);
+  --column-label-text: #5c5a52;      /* 6.34:1 on --board-bg (AA body) */
+
+  /* --- Detail overlay --------------------------------------------------- */
+  --detail-bg: #ffffff;
+  --detail-text: #22252a;            /* 15.37:1 (AAA) */
+  --detail-scrim: rgba(34, 37, 42, 0.8);
+  --answer-color: #3f4c2d;           /* 9.20:1 on --detail-bg (AAA) */
+
+  /* --- Score bar -------------------------------------------------------- */
+  --score-bg: #22252a;
+  --score-text: #f6f5f2;             /* 14.10:1 (AAA) */
+  /* Amber again — but the score bar and the board are read as separate
+     surfaces, and "whose turn" is the one emphasis the bar carries. */
+  --team-active-outline: 3px solid #d99a3e;  /* 6.33:1 vs --score-bg (non-text 3:1) */
+
+  /* --- Accent, focus, motion -------------------------------------------- */
+  --accent: #5c7040;                 /* 5.01:1 vs --board-bg (non-text 3:1); as revealed-value text on white: 5.46:1 */
+  --accent-contrast: #f6f5f2;        /* 5.01:1 on --accent (AA body) */
+  /* Drawn at outline-offset:3px into the gutter (default.css §7), so it is
+     measured against --board-bg, where it passes. */
+  --focus-ring: 3px solid #5c7040;
+  /* Motion inherits default's 420ms/easing: this room is calm on purpose. */
+}
+
+/* ==========================================================================
+   CLASS OVERRIDES — five, each because a token cannot express it
+   ========================================================================== */
+
+/* 1. Column labels as kickers: mono, uppercase, tracked, sitting on the
+      ground with a sage rule under them — a caption, not a filled tab.
+      text-transform/letter-spacing/border are not tokenised. */
+.qbe-column-label {
+  padding: 0.35em 0.2em 0.5em;
+  border-bottom: 2px solid var(--accent);
+  border-radius: 0;
+  background: var(--column-label-bg);
+  color: var(--column-label-text);
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-weight: 600;
+}
+
+/* 2. The spent-cell rim. default.css hardcodes its own warm grey; this theme
+      uses the system's strong border tone, which is exactly the 3:1 control
+      boundary it was derived to be. */
+.qbe-cell[data-state="answered"] {
+  border-color: #828074;             /* 3.64:1 vs --board-bg, 3.12:1 vs --cell-answered-bg (non-text 3:1) */
+}
+
+/* 3. The hatch, retinted to the system's warm neutral so the texture belongs
+      to the stationery rather than reading as a grey stain. */
+.qbe-cell[data-state="answered"]::before {
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(130, 128, 116, 0.5) 0 2px,
+    rgba(0, 0, 0, 0) 2px 9px
+  );
+}
+
+/* 4. Active-team tint: default tints with its amber rgba; this palette's
+      amber differs. Kept faint — the outline is the message. */
+.qbe-team[data-active="true"] {
+  background: rgba(217, 154, 62, 0.16);
+}
+
+/* 5. Point values track slightly tight: mono digits at display size set wide,
+      and a 12-column board needs every pixel back. Not tokenised. */
+.qbe-cell-value {
+  letter-spacing: -0.02em;
+}
+
+/* ==========================================================================
+   DARK — the same system's dark ramp, via the OS preference.
+   Deliberate strategy change, not an inversion: cells become raised panels
+   barely lighter than the ground whose 3:1 rim does the separating (the dark
+   ramp casts no shadows — surfaces rise instead), and sage flips to a light
+   fill with dark ink wherever it is a fill.
+   ========================================================================== */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --board-bg: #1c1f22;
+    --board-fg: #ece8df;             /* 13.54:1 (AAA) */
+
+    --cell-bg: #24282c;              /* 1.17:1 vs ground — the RIM separates, as below */
+    --cell-text: #ece8df;            /* 12.14:1 on --cell-bg (AAA) */
+    /* The load-bearing token of the dark scheme: the panel fill is near the
+       ground's luminance, so this rim is what makes each cell an object —
+       and each cell is a button, owed a 3:1 boundary. */
+    --cell-border: 2px solid #828074;  /* 4.17:1 vs --board-bg (non-text 3:1) */
+    --cell-shadow: none;             /* dark surfaces rise, they don't cast */
+    --cell-hover-bg: #2c3136;        /* --cell-text on it: 10.74:1 */
+
+    --cell-revealed-bg: #2c3136;
+    --cell-revealed-text: #f6f5f2;   /* 12.04:1 (AAA) */
+
+    /* Switched off: below the ground, into the inset surface. */
+    --cell-answered-bg: #17191c;     /* 1.06:1 vs ground */
+    --cell-answered-text: #948f84;   /* 5.47:1 on --cell-answered-bg (AA body) */
+
+    --cell-marked-bg: #8aa163;       /* light sage fill... */
+    --cell-marked-text: #1c1f22;     /* ...dark ink on it: 5.80:1 (AA body) */
+    --cell-mark-glyph-color: #1c1f22;
+
+    --cell-bonus-outline: 3px solid #d99a3e;  /* 6.11:1 vs dark --cell-bg */
+
+    --value-color: #8aa163;          /* 5.20:1 on --cell-bg (AA body, large ✓) */
+    --column-label-text: #b3aea3;    /* 7.49:1 on --board-bg (AA body) */
+
+    --detail-bg: #24282c;
+    --detail-text: #ece8df;          /* 12.14:1 (AAA) */
+    --detail-scrim: rgba(0, 0, 0, 0.85);
+    --answer-color: #9cb377;         /* 6.45:1 on --detail-bg (AA body) */
+
+    --score-bg: #17191c;
+    --score-text: #ece8df;           /* 14.41:1 (AAA) */
+    --team-active-outline: 3px solid #d99a3e;  /* 7.25:1 vs --score-bg */
+
+    --accent: #8aa163;               /* 5.80:1 vs --board-bg (focus ring in the gutter ✓) */
+    --accent-contrast: #1c1f22;      /* 5.80:1 on --accent (AA body) */
+    --focus-ring: 3px solid #8aa163;
+  }
+
+  /* Dark spent rim: same strong-border tone works on both dark surfaces. */
+  .qbe-cell[data-state="answered"] {
+    border-color: #828074;           /* 4.17:1 vs ground, 4.44:1 vs --cell-answered-bg */
+  }
+
+  .qbe-cell[data-state="answered"]::before {
+    background: repeating-linear-gradient(
+      135deg,
+      rgba(148, 143, 132, 0.35) 0 2px,
+      rgba(0, 0, 0, 0) 2px 9px
+    );
+  }
+
+  /* Revealed-value colour: default.css paints it var(--accent) = light sage,
+     which on the dark revealed panel is fine (4.66:1 large ✓) — but the ring
+     already says "open"; the value reads better in the panel's own ink. */
+  .qbe-cell[data-state="revealed"] .qbe-cell-value {
+    color: #dfa858;                  /* 6.18:1 on --cell-revealed-bg — the dark ramp's amber-text tone; large ✓, body ✓ */
+  }
+
+  /* The overlay's Close label: default.css sets it to var(--board-bg), which
+     is near-black here on a near-black scrim (the midnight.css finding — the
+     relationship inverts with the ground, and a token can't express that). */
+  .qbe-detail-close {
+    color: var(--board-fg);          /* 13.5:1+ on the flattened scrim (AAA) */
+    border-color: var(--board-fg);
+  }
+}

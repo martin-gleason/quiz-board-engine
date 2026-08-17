@@ -3,6 +3,9 @@
   "schemaVersion": 1,
   "themes": {
     "default": "default.css",
-    "midnight": "midnight.css"
+    "midnight": "midnight.css",
+    "civic": "civic.css",
+    "chalkboard": "chalkboard.css",
+    "marquee": "marquee.css"
   }
 }

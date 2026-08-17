@@ -1,0 +1,166 @@
+/*
+ * Quiz Board Engine — theme "chalkboard"
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * DIRECTION — the room the game is actually played in.
+ * A deep slate-green board, chalk-white writing, and one committed idiom:
+ * everything on screen is something a teacher could have drawn by hand.
+ * Cells are chalk-ruled boxes (a drawn line, NOT a shadowed card — this theme
+ * sets --cell-shadow: none and lets the 2px chalk rule do all the separating,
+ * which also means there is no shadow to lose, so `answered` leans on other
+ * cues; see below). The display face is the platform's handwriting/chalk
+ * face where one exists (Chalkboard SE on Apple, Segoe Print on Windows) and
+ * falls back to Comic Sans and then cursive — legible at size, and honest
+ * about the register. Body text stays on the sober system stack, so prompts
+ * remain effortless to read; the chalk face is for values and labels only.
+ *
+ * COMMITTED TO ONE LOOK: this is a dark theme in both OS schemes, on purpose.
+ * A chalkboard is dark; a "light chalkboard" is a whiteboard, which is a
+ * different theme. Stated per handoff §5.8 so the choice is deliberate.
+ *
+ * ANSWERED = ERASED. The three redundant cues, none of them hue:
+ *   (a) lightness — the writing dims from 8.69:1 to 4.83:1 and is struck;
+ *   (b) texture   — a chalk-dust smudge (two soft radial gradients), the
+ *       ghost a real eraser leaves;
+ *   (c) shape     — the crisp chalk rule degrades to a faint dashed one, the
+ *       way a half-erased line looks.
+ * The fill barely moves (1.08:1 vs the board) — an erased square IS the
+ * board — so the dashed rim is what keeps the button findable.
+ *
+ * REVEALED inverts: the square becomes a held-up slate of paper-white chalk
+ * slab with dark writing — the brightest object on the board, so the host's
+ * eye lands on the open cell.
+ *
+ * Every text-on-background pair carries its COMPUTED WCAG 2.1 ratio.
+ * No @import, no external url(), no web font; the bingo mark and textures are
+ * inline SVG/gradients only.
+ */
+
+:root {
+  /* --- Surface ---------------------------------------------------------- */
+  /* Slate green, lifted just off black so chalk lines have air behind them. */
+  --board-bg: #2a3b33;
+  --board-fg: #f2efe2;               /* 10.28:1 on --board-bg (AAA) */
+  /* Roomier gutters than default: drawn boxes need whitespace to read as
+     separate drawings rather than a table. */
+  --board-gap: clamp(0.35rem, 0.9vw, 1rem);
+
+  /* --- Cells ------------------------------------------------------------ */
+  /* Barely lighter than the board — the chalk RULE is the cell's edge, the
+     fill is just enough to lift it. The rule is the load-bearing token. */
+  --cell-bg: #31473c;                /* 1.18:1 vs ground; separation is the border's job */
+  --cell-text: #f2efe2;              /* 8.69:1 on --cell-bg (AAA large, AA body) */
+  --cell-border: 2px solid #cfcabb;  /* 7.23:1 vs --board-bg, 6.11:1 vs --cell-bg (non-text 3:1 with room to fade on a projector) */
+  /* Slightly uneven-feeling radius; a drawn box is never perfectly square. */
+  --cell-radius: 0.4rem;
+  /* No shadow anywhere: chalk sits ON the board, it does not float over it. */
+  --cell-shadow: none;
+  --cell-hover-bg: #3c5648;          /* --cell-text on it: 6.96:1 (AA) */
+
+  /* revealed: the chalk slab. */
+  --cell-revealed-bg: #e9e4d2;
+  --cell-revealed-text: #24352d;     /* 10.17:1 (AAA) */
+
+  /* answered: erased. See header. */
+  --cell-answered-bg: #2e403a;       /* 1.08:1 vs ground — an erased square IS the board */
+  --cell-answered-text: #9fb0a4;     /* 4.83:1 on --cell-answered-bg (AA body) */
+
+  /* marked: the teacher's tick-circle square. */
+  --cell-marked-bg: #3d5a4e;
+  --cell-marked-text: #f2efe2;       /* 6.58:1 (AA body) */
+  --cell-mark-glyph-color: #f7e8a0;  /* 6.14:1 on --cell-marked-bg (non-text 3:1) */
+
+  /* bonus: a starred box — dashed, like something circled for extra credit.
+     Yellow chalk: the second chalk colour every classroom owns. */
+  --cell-bonus-outline: 3px dashed #f7e8a0;  /* 8.11:1 vs --cell-bg (non-text 3:1) */
+
+  /* --- Typography ------------------------------------------------------- */
+  /* Chalk hand for the numbers and labels. Every stack entry is a face that
+     ships with its platform; cursive is the honest last resort. */
+  --font-display: "Chalkboard SE", Chalkboard, "Segoe Print", "Bradley Hand",
+    "Comic Sans MS", cursive;
+  --value-color: #f7e8a0;            /* 8.11:1 on --cell-bg (AAA large, AA body) — yellow chalk for the points */
+  /* Terms on a bingo card stay in the body face for wrap-legibility. */
+
+  /* Labels: written straight on the board, underlined by hand (override below). */
+  --column-label-bg: rgba(0, 0, 0, 0);
+  --column-label-text: #f2efe2;      /* 10.28:1 on --board-bg (AAA) */
+
+  /* --- Detail overlay --------------------------------------------------- */
+  /* The prompt on a held-up slate: paper-chalk surface, slate writing. */
+  --detail-bg: #e9e4d2;
+  --detail-text: #24352d;            /* 10.17:1 (AAA) */
+  --detail-scrim: rgba(22, 33, 28, 0.85);
+  --answer-color: #41604f;           /* 5.48:1 on --detail-bg (AA body) */
+
+  /* --- Score bar -------------------------------------------------------- */
+  /* The chalk tray: one step darker than the board. */
+  --score-bg: #22302a;
+  --score-text: #f2efe2;             /* 11.95:1 (AAA) */
+  --team-active-outline: 3px solid #f7e8a0;  /* 11.16:1 vs --score-bg (non-text 3:1) */
+
+  /* --- Accent, focus, motion -------------------------------------------- */
+  --accent: #f7e8a0;                 /* 9.60:1 vs --board-bg — yellow chalk is the whole accent language */
+  --accent-contrast: #2a3b33;        /* 9.60:1 on --accent (AAA) */
+  --focus-ring: 3px solid #f7e8a0;   /* drawn in the gutter (offset 3px) against --board-bg: 9.60:1 */
+  /* Chalk doesn't animate fast; keep default's 420ms and easing. */
+}
+
+/* ==========================================================================
+   CLASS OVERRIDES — six
+   ========================================================================== */
+
+/* 1. Column labels: hand-written headers with a dashed hand-rule under them.
+      Uppercase would fight the handwriting face; it stays mixed-case. */
+.qbe-column-label {
+  padding: 0.3em 0.2em 0.45em;
+  border-bottom: 2px dashed rgba(242, 239, 226, 0.75);
+  border-radius: 0;
+  font-weight: 400;                  /* chalk faces carry no real bold; faux-bold smears */
+}
+
+/* 2. The erased square's rim: the crisp rule degrades to a faint dashed one.
+      default.css hardcodes its own answered border colour, so it is restated. */
+.qbe-cell[data-state="answered"] {
+  border-color: #8fa094;             /* 4.30:1 vs --board-bg, 3.99:1 vs --cell-answered-bg (non-text 3:1) — findable, clearly not fresh */
+  border-style: dashed;
+}
+
+/* 3. The eraser smudge: two soft chalk-dust clouds instead of default's
+      hatch. Texture is a theme's own vocabulary (midnight.css says the same). */
+.qbe-cell[data-state="answered"]::before {
+  background:
+    radial-gradient(ellipse 70% 45% at 32% 38%, rgba(242, 239, 226, 0.13), rgba(0, 0, 0, 0) 70%),
+    radial-gradient(ellipse 65% 40% at 68% 66%, rgba(242, 239, 226, 0.1), rgba(0, 0, 0, 0) 70%);
+}
+
+/* 4. The revealed slab's ring and value. default.css paints both with
+      var(--accent) — yellow chalk on the pale slab is 1.03:1, invisible. Both
+      take the slab's own dark green instead. Contrast maths, not taste. */
+.qbe-cell[data-state="revealed"] {
+  box-shadow: inset 0 0 0 4px #41604f;   /* 5.48:1 vs --cell-revealed-bg (non-text 3:1) */
+}
+.qbe-cell[data-state="revealed"] .qbe-cell-value {
+  color: #41604f;                    /* 5.48:1 on --cell-revealed-bg (AA body) */
+}
+
+/* 5. The bingo mark: a drawn chalk circle, not an X — a teacher circles what
+      counts. Mask, so --cell-mark-glyph-color still recolours it. The path is
+      deliberately not a perfect circle (two arcs, slightly open) so it reads
+      as drawn. */
+.qbe-cell-mark {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 12 C 74 10 90 28 88 50 C 86 74 70 90 48 88 C 26 86 10 70 12 48 C 14 28 30 15 46 13' fill='none' stroke='%23000' stroke-width='9' stroke-linecap='round'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 12 C 74 10 90 28 88 50 C 86 74 70 90 48 88 C 26 86 10 70 12 48 C 14 28 30 15 46 13' fill='none' stroke='%23000' stroke-width='9' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+/* 6. Overlay Close label: this board is dark, so default's var(--board-bg)
+      label would be dark-on-dark scrim (the midnight.css finding). */
+.qbe-detail-close {
+  color: var(--board-fg);            /* 13.74:1 on the flattened scrim (AAA) */
+  border-color: var(--board-fg);
+}
+
+/* Active-team tint, in yellow chalk. */
+.qbe-team[data-active="true"] {
+  background: rgba(247, 232, 160, 0.12);
+}
