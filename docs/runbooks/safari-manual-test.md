@@ -63,7 +63,7 @@ Record the Safari version you tested: ______________  Date: ______________
 
 Open **http://localhost:8000/tests/**
 
-- [ ] The summary banner reads **PASS** with the same total as Chrome and Firefox (366/366 as of
+- [ ] The summary banner reads **PASS** with the same total as Chrome and Firefox (370/370 as of
       2026-08-18, after F11/F12). **Keep this number current** — a stale baseline turns the
       check below into a rubber stamp. **Any difference in the count is a cross-browser defect**, even if both
       "pass" — the suites must be identical, per spec §2.5.
@@ -115,21 +115,56 @@ Still on the test page, read three error screens as if you had never seen JSON.
 
 ## Part 3 — Gameplay walkthrough
 
-**Applicable since F3/F6 shipped (2026-08-17).** This section mirrors the Chrome/Firefox MCP
-script exactly:
+**Applicable since F3/F6 shipped (2026-08-17); rewritten for the startup picker 2026-08-18.**
+This section mirrors the Chrome/Firefox walkthrough exactly, and together with Part 1 it is what
+demonstrates **Gate 4b** — a host who has never seen a URL parameter can open the site, choose a
+board, choose a theme, and play.
 
-- [ ] Open http://localhost:8000/ — the demo jeopardy board renders, 5 columns × 5 cells.
+**Opening `/` no longer draws a board.** Since F11 it draws the picker. If you see a jeopardy grid
+straight away, you are on a cached build — go back and empty the cache.
+
+### The picker (F11/F12 — never yet seen in Safari)
+
+- [ ] Open http://localhost:8000/ — the **startup screen** appears, listing three boards by name:
+      General Knowledge, Trivia Bingo, Ranked Answers.
+- [ ] Arrow keys move between the three radio buttons, and the focused one is visibly focused.
+      There is **no** focus ring drawn around the "Choose a board" heading itself.
+- [ ] Choose **Trivia Bingo**, leave the look as "Use this game's theme", press Start. A 5×5 bingo
+      card renders with FREE SPACE already marked.
+- [ ] Go back to http://localhost:8000/ and choose **General Knowledge** with the look set to
+      **chalkboard**. The board comes up wearing chalkboard, *not* the midnight theme the file asks
+      for.
+- [ ] Reload. The picker preselects **chalkboard** — the choice is remembered per device.
+- [ ] Open `http://localhost:8000/?game=games/demo.json` directly. It boots **straight to the
+      board, past the picker**, and it is still wearing chalkboard (the device preference applies
+      to a deep link too).
+
+### Gameplay
+
 - [ ] Create two teams at session start.
-- [ ] Play three cells: hidden → revealed → answered. The animation runs.
-- [ ] Award points to one team, deduct from the other. Scores update.
+- [ ] Play three cells: hidden → revealed → answered, walking the overlay with its own button
+      ("Reveal the answer", then "Mark it answered"). The animation runs. Closing with the **X**
+      instead leaves the cell unplayed — that is correct, not a bug.
+- [ ] Award points to one team, deduct from the other. Scores update, and the ± buttons carry the
+      **amount** for the cell in play.
+- [ ] Open the cell outlined in the accent colour with a corner wedge — the bonus cell. Its ±
+      buttons read **double** its face value. (The bonus is deliberately visible before it is
+      played: it should invite, not spoil.)
 - [ ] Reload the page. The resume screen offers the session; resuming restores cell states,
       scores, and bonus cells.
 - [ ] Export state. A `.json` file downloads.
 - [ ] Clear website data (Safari → Settings → Privacy → Manage Website Data → remove localhost),
-      reload, import the file. Board and scores are identical to before.
+      reload, import the file. Board and scores are identical to before. **Note this also clears
+      the theme preference**, so the picker goes back to "Use this game's theme" — expected.
+
+### Accessibility and the deep-link guard
+
 - [ ] System Settings → Accessibility → Display → **Reduce motion** on. Reload. Cells change
-      state with **no animation**.
+      state with **no animation** — removed, not merely faster.
 - [ ] Tab through the board. Focus is visible on each cell and follows reading order.
+- [ ] On **Ranked Answers**, turn VoiceOver on (⌘F5) and move through the six rows. Each row must
+      announce a **different** name — "answer 1 of 6", "answer 2 of 6", and so on. Six identical
+      announcements is a defect; it was one, and it is what this check exists to catch.
 - [ ] `?game=` rejection spot-check: open
       `http://localhost:8000/?game=https://example.com/x.json` and confirm the error screen
       appears and **no external request is made** (Web Inspector → Network shows none).

@@ -894,6 +894,23 @@ body,
   line-height: 1.15;
 }
 
+/* THE SCREEN HEADING TAKES FOCUS, AND MUST NOT LOOK LIKE IT.
+
+   renderer.js gives every setup heading `tabindex="-1"` and focuses it when the screen mounts, so
+   a screen reader announces the new screen instead of leaving the user on a page that silently
+   changed under them. That focus is for ANNOUNCEMENT, not for interaction: the heading is not in
+   the tab order and there is nothing to activate on it.
+
+   Without this rule the UA paints its own focus ring on the heading — a blue box around "Choose a
+   board" on a themed panel, the first thing a host sees. Suppressing it is safe precisely because
+   tabindex is -1: no keyboard user can land here and be left without an indicator. Every element
+   that IS keyboard-reachable keeps its ring in the :focus-visible block further down, and that
+   block is the one a theme must never remove. */
+.qbe-setup-title:focus,
+.qbe-setup-title:focus-visible {
+  outline: none;
+}
+
 .qbe-setup-note {
   margin: 0;
   font-size: clamp(0.9rem, 1.2vw, 1.1rem);

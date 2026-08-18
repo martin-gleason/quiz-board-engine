@@ -4,3 +4,8 @@ Thumbs.db
 .vscode/
 .idea/
 node_modules/
+
+# Completed manual-test transcripts. These are pasted terminal output and have been found to
+# contain a home-directory listing and a hostname; this repo is public and CLAUDE.md forbids
+# identifiable data in it, ever. Keep the evidence locally, or scrub it before tracking it.
+docs/handoffs/Runbook*Safari*.md
