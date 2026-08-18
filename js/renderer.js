@@ -1414,6 +1414,152 @@ export function renderTeamSetup({ mount, handlers, names, editing }) {
 }
 
 /**
+ * The STARTUP screen — pick a board, pick a look, start (deltas D12 / D13, features F11 / F12).
+ *
+ * @param {{games:Array<{name:string,file:string}>, themes:string[], themePref:string|null,
+ *          mount:HTMLElement, handlers?:{onStart?:Function}}} args
+ * @returns {{root:HTMLElement, destroy:Function}}
+ *
+ * WHY THIS SCREEN EXISTS. Every entry point before it assumed the host already knew a URL. With no
+ * server there is no directory listing, so a teacher with three boards could reach exactly one of
+ * them — the `demo.json` default — and had to hand-edit a query string for the other two. That is a
+ * developer's front door on a tool built for a classroom.
+ *
+ * WHY IT IS ONE SCREEN AND NOT TWO. Board and look are one decision made once, at the moment the
+ * projector goes on. Splitting them into two sequential screens would put a Back button between a
+ * host and a room full of waiting people, to separate two questions that take four seconds together.
+ *
+ * WHAT IT IS NOT ALLOWED TO DO. It renders NAMES. The game list holds manifest keys and manifest
+ * values, and the value only ever leaves here by way of `handlers.onStart`, which hands it to
+ * `loader.resolveGameParam` before anything is fetched — the same guard a `?game=` parameter meets
+ * (spec §6.3). No string on this screen becomes a URL, an href, or markup: `buildSetup` and `el`
+ * build everything with `createElement`/`textContent`, like the rest of this module.
+ *
+ * RADIOS, NOT A <select>, FOR THE BOARD. Three-to-a-dozen boards is a set you want to SEE — a host
+ * scanning a projected screen for "Trivia Bingo" should not have to open a menu to discover their
+ * options. The theme control is a `<select>` for the opposite reason: it is a refinement, its
+ * default is almost always right, and it should not out-shout the choice that matters.
+ */
+export function renderStartupScreen({ games, themes, themePref, mount, handlers }) {
+  const doc = mount.ownerDocument || document;
+  const h = handlers || {};
+  const list = Array.isArray(games) ? games : [];
+  const themeList = Array.isArray(themes) ? themes : [];
+
+  const ui = buildSetup(
+    doc,
+    'startup',
+    'Choose a board',
+    'Pick the game you want to project, and how it should look. You can change the look later by coming back here; changing it does not affect a game in progress.',
+  );
+
+  // ---- the board list ------------------------------------------------------------------------
+  // A real radio group: `name` shared across the inputs, so the platform gives arrow-key navigation,
+  // single-selection semantics and a "3 of 3" announcement for free. This is the CLAUDE.md
+  // accessibility rule in practice — get it from the platform, not from bespoke ARIA.
+  const fieldset = el(doc, 'fieldset', 'qbe-startup-games');
+  const legend = el(doc, 'legend', 'qbe-startup-legend', 'Board');
+  fieldset.appendChild(legend);
+
+  for (let i = 0; i < list.length; i++) {
+    const game = list[i];
+    const id = 'qbe-game-' + i;
+    const row = el(doc, 'div', 'qbe-startup-choice');
+    const input = doc.createElement('input');
+    input.type = 'radio';
+    input.name = 'qbe-game';
+    input.id = id;
+    input.className = 'qbe-startup-radio';
+    // The FILE rides on a data attribute rather than on `value`, so that nothing which reads this
+    // form generically can mistake a filename for a display label or the other way round.
+    input.setAttribute('data-file', game.file);
+    input.value = game.name;
+    if (i === 0) input.checked = true;
+    const label = doc.createElement('label');
+    label.className = 'qbe-startup-label';
+    label.setAttribute('for', id);
+    label.textContent = game.name;
+    row.appendChild(input);
+    row.appendChild(label);
+    fieldset.appendChild(row);
+  }
+  ui.body.appendChild(fieldset);
+
+  // ---- the theme control ---------------------------------------------------------------------
+  const themeWrap = el(doc, 'div', 'qbe-startup-theme');
+  const themeLabel = doc.createElement('label');
+  themeLabel.className = 'qbe-startup-label';
+  themeLabel.setAttribute('for', 'qbe-theme-select');
+  themeLabel.textContent = 'Look';
+  const select = doc.createElement('select');
+  select.id = 'qbe-theme-select';
+  select.className = 'qbe-startup-select';
+
+  // THE FIRST OPTION IS THE GAME'S OWN THEME, and it is the default (plan Phase 4b, decision 2).
+  // A content file may declare a theme, and its author meant it; the picker exists to let a host
+  // overrule that for THEIR room — a washed-out projector in daylight — not to quietly discard it
+  // for everyone who never touched this control. Its value is the empty string, which is exactly
+  // what `readThemePreference` returns "no preference" as.
+  const keep = doc.createElement('option');
+  keep.value = '';
+  keep.textContent = "Use this game's theme";
+  select.appendChild(keep);
+
+  for (const name of themeList) {
+    const opt = doc.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    if (name === themePref) opt.selected = true;
+    select.appendChild(opt);
+  }
+  themeWrap.appendChild(themeLabel);
+  themeWrap.appendChild(select);
+  ui.body.appendChild(themeWrap);
+
+  // `begin`, not `start`: the team-setup screen's primary button is already `data-action="start"`,
+  // and two different screens answering to one action name is exactly the ambiguity that makes a
+  // test helper click the wrong thing six months from now.
+  ui.actions.appendChild(chromeButton(doc, 'begin', 'Start', 'Start the selected board'));
+
+  ui.root.addEventListener('click', (event) => {
+    const target = event.target instanceof Element ? event.target.closest('button') : null;
+    if (!target || !ui.root.contains(target)) return;
+    if (target.getAttribute('data-action') !== 'begin') return;
+    const chosen = ui.root.querySelector('input[name="qbe-game"]:checked');
+    // No selection cannot normally happen — the first radio is checked on build — but a board list
+    // that arrived empty would leave nothing checked, and calling `onStart(undefined)` would send a
+    // non-path into the loader. Refusing here keeps that impossible rather than merely unlikely.
+    if (!chosen) return;
+    if (h.onStart) {
+      h.onStart({
+        file: chosen.getAttribute('data-file'),
+        name: chosen.value,
+        // '' means "use the game's theme" and is passed through as null, so every downstream
+        // reader sees ONE spelling of "no override" instead of two.
+        theme: select.value === '' ? null : select.value,
+      });
+    }
+  });
+
+  // Enter anywhere in the form starts the game. A host tabbing through radios and pressing Return
+  // expects the primary action, and without this the keypress is swallowed by a form with no
+  // submit behaviour of its own.
+  ui.root.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    if (event.target instanceof Element && event.target.closest('button')) return;
+    event.preventDefault();
+    const startButton = ui.root.querySelector('button[data-action="begin"]');
+    if (startButton) startButton.click();
+  });
+
+  // No Escape handler, for the same reason the resume screen has none: this screen is the only
+  // route into a game, so dismissing it would strand the host on an empty stage.
+  const view = mountSetup(mount, ui, null);
+  tryFocus(ui.heading);
+  return view;
+}
+
+/**
  * The resume screen (spec §4.4: "a resume screen lists recent sessions by title and date with
  * resume/discard").
  *

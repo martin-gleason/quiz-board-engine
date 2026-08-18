@@ -245,7 +245,39 @@ Emitted by `renderer.js` via `createElement`/`textContent` only. Indentation sho
             button.qbe-btn[data-action]    "add-team"/"start"/"cancel", or "new"
 
 .qbe-live                                  ARIA live region on <body>, OUTSIDE .reveal — see §5.9
+
+#qbe-startup                               THE STARTUP PICKER (F11/F12), OUTSIDE .reveal — see below
+  .qbe-setup[data-screen="startup"]        the same setup shell as above, same panel/title/note/body
+    .qbe-setup-panel
+      h2.qbe-setup-title
+      p.qbe-setup-note
+      .qbe-setup-body
+        fieldset.qbe-startup-games         the board choice; a real radio GROUP
+          legend.qbe-startup-legend
+          .qbe-startup-choice              one per game in /games/games.json
+            input.qbe-startup-radio        type="radio", name="qbe-game"; data-file is the filename
+            label.qbe-startup-label
+        .qbe-startup-theme                 the look choice
+          label.qbe-startup-label
+          select.qbe-startup-select        first option is "use this game's theme", value ""
+      .qbe-setup-actions
+        button.qbe-btn[data-action]        "begin"
 ```
+
+**The startup screen is the one screen drawn OUTSIDE `.reveal`**, and a theme author needs to know
+why before styling it. Spec §5 promises that reveal is not initialised until a bundle validates; at
+the moment this screen is up no game has been chosen, so there is no bundle to validate. It
+therefore mounts in `#qbe-startup` in the shell, as a sibling of `.reveal` and `#qbe-error`.
+
+Two consequences for a theme:
+
+1. **It is drawn before any theme is selected**, so it is styled by `themes/default.css` alone. A
+   theme may restyle it — the classes above are contract like any others — but must not *depend* on
+   being loaded in time to do so. Anything essential to reading this screen has to survive the base
+   layer.
+2. **It reuses `.qbe-setup*` wholesale.** Only the seven `.qbe-startup-*` classes are new. A theme
+   that already styles the resume and team screens gets this one mostly for free, which is the
+   intent — three pre-game screens that look like each other.
 
 **Guarantees a theme may rely on:**
 
@@ -270,7 +302,10 @@ Emitted by `renderer.js` via `createElement`/`textContent` only. Indentation sho
   cell: one rule styles every button in the product, and `[data-action="score-up"]` narrows it when
   a particular button needs more. The `data-action` values are a closed set — `score-up`,
   `score-down`, `teams`, `export`, `import`, `add-team`, `start`, `cancel`, `resume`, `discard`,
-  `new` — so a selector against one of them cannot silently stop matching.
+  `new`, `begin` — so a selector against one of them cannot silently stop matching. `begin` is the
+  startup picker's Start button and is deliberately NOT `start`: the team-setup screen already owns
+  that name, and two screens answering to one action is how a selector ends up matching the wrong
+  button.
 - **The award buttons carry an amount, not a glyph.** They read `+200` / `−200` (U+2212, not a
   hyphen), and the number is the cell currently in play *including* the F7 bonus multiplier. Before
   any cell has been opened they are `disabled`. Size the button for four characters, not one.
