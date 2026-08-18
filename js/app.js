@@ -120,7 +120,16 @@ export async function boot({ search = window.location.search, mounts = {} } = {}
   if (!new URLSearchParams(search || '').has('game') && startupMount) {
     return showStartup(ctxBase);
   }
-  return openGame(ctxBase, { search, themeOverride: null });
+  // A DEEP LINK STILL WEARS THE DEVICE'S THEME (delta D13). The preference is a property of the
+  // ROOM — this projector, this lighting — not of the visit, so a host who chose `chalkboard` for
+  // the hall keeps it when they open a board they bookmarked. Skipping it here was the bug the
+  // Phase 5 walkthrough caught: the picker honoured the choice and the bookmark silently did not,
+  // which is the same feature behaving two ways depending on how you arrived.
+  //
+  // This is also what makes the stale-preference fallback in `openGame` a live guard rather than
+  // decoration. The picker can only ever offer names the manifest currently holds, so a name that
+  // has since been removed cannot come from there — it can only come from storage, on this path.
+  return openGame(ctxBase, { search, themeOverride: state.readThemePreference() });
 }
 
 /**
@@ -193,10 +202,14 @@ async function showStartup(ctx) {
         // straight to `fetchContentBundle` would give the picker a second, weaker route to a file;
         // building the parameter and letting `resolveGameParam` judge it means spec §6.3 is
         // enforced on exactly one code path, whether the string came from a URL or from this list.
+        // Caught, not dropped. The deep-link branch returns this promise into `boot().catch()`;
+        // the picker branch cannot (it resolves when the SCREEN is up, long before a board is), so
+        // without this a wiring throw here would surface as a bare unhandled rejection instead of
+        // the same diagnostic the other path prints.
         openGame(ctx, {
           search: '?' + new URLSearchParams({ game: loader.GAMES_DIR + file }).toString(),
           themeOverride: theme,
-        });
+        }).catch((err) => console.error('Quiz Board Engine failed to start:', err));
       },
     },
   });

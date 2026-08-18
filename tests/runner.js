@@ -1419,6 +1419,29 @@ async function runRenderSuite() {
       hiddenValue === null ? 'the highest-scoring row shows no number until it is revealed'
         : 'the row already reads "' + hiddenValue.textContent + '" while still hidden');
 
+    // ---- EVERY RANKED ROW MUST ANNOUNCE ITSELF DISTINCTLY -------------------------------------
+    //
+    // Phase 5 walkthrough finding, and the reason this assertion exists at all: on a feud board
+    // every row shares the survey question and every unplayed row reports "points hidden", so all
+    // six announced as ONE identical sentence and a screen-reader user could not tell which row
+    // they had landed on. Sighted users have the physical order; this is the equivalent.
+    //
+    // Asserted as "all names distinct" rather than against fixed strings, because the useful
+    // property is uniqueness — a future rewording must keep it without having to edit this line.
+    const feudNames = [...fStage.querySelectorAll('.qbe-cell')]
+      .map((c) => c.getAttribute('aria-label'));
+    record('render', 'every ranked-list row has its own accessible name (not six identical ones)',
+      feudNames.length > 1 && new Set(feudNames).size === feudNames.length,
+      feudNames.length + ' rows, ' + new Set(feudNames).size + ' distinct names — first is: "'
+        + feudNames[0] + '"');
+    // The position is the DRAWN one. drawOrder sorts this layout by descending value, so a row
+    // numbered by its authored index would announce a number that contradicts the screen.
+    record('render', 'the ranked-list position announced is the drawn one, counting from 1',
+      /(^|, )answer 1 of 6(,|$)/.test(feudNames[0] || '')
+      && /(^|, )answer 6 of 6(,|$)/.test(feudNames[feudNames.length - 1] || ''),
+      'first row announces "' + feudNames[0] + '"; last row announces "'
+        + feudNames[feudNames.length - 1] + '"');
+
     topRow.button.click();
     const promptText = f.view.detail.prompt.textContent;
     f.view.detail.next.click();
@@ -2640,6 +2663,48 @@ async function runStartupSuite() {
           : 'board rendered, no startup screen drawn');
   } finally {
     if (deep.frame) deep.frame.remove();
+  }
+
+  // ---- F12-T3b: the preference is a DEVICE setting, so a deep link wears it too ----------------
+  //
+  // Phase 5 walkthrough finding. The picker honoured the stored theme and `?game=` silently did
+  // not, so the same preference behaved two ways depending on how the host arrived. Both halves
+  // are asserted here, including the one that only this path can reach: a stored name the manifest
+  // no longer holds must fall back to the game's own theme rather than reaching an error screen.
+  const prefBeforeDeep = state.readThemePreference();
+  const deepSessions = sessionKeysNow();
+  try {
+    state.writeThemePreference('chalkboard');
+    const themed = await bootShell('games/demo.json');
+    try {
+      const href = themed.doc && themed.doc.getElementById('qbe-theme')
+        ? (themed.doc.getElementById('qbe-theme').getAttribute('href') || '').split('?')[0] : null;
+      record('startup', 'a ?game= deep link wears the stored device theme, not just the picker',
+        !themed.timedOut && !!href && /themes\/chalkboard\.css$/.test(href),
+        themed.timedOut ? 'the shell did not reach a board'
+          : 'mounted stylesheet is ' + href + ' (demo.json asks for midnight; the device says chalkboard)');
+    } finally {
+      if (themed.frame) themed.frame.remove();
+    }
+
+    // A theme removed between two sessions is the ordinary case, not an attack.
+    state.writeThemePreference('nosuchtheme');
+    const stale = await bootShell('games/demo.json');
+    try {
+      const href = stale.doc && stale.doc.getElementById('qbe-theme')
+        ? (stale.doc.getElementById('qbe-theme').getAttribute('href') || '').split('?')[0] : null;
+      record('startup', 'a stored theme the manifest no longer holds falls back to the game\'s own',
+        !stale.timedOut && !!href && /themes\/midnight\.css$/.test(href)
+          && !stale.doc.querySelector('.qbe-error'),
+        stale.timedOut ? 'the shell did not reach a board'
+          : 'mounted stylesheet is ' + href + ', error screen present: '
+            + !!stale.doc.querySelector('.qbe-error'));
+    } finally {
+      if (stale.frame) stale.frame.remove();
+    }
+  } finally {
+    state.writeThemePreference(prefBeforeDeep);
+    dropNewSessions(deepSessions);
   }
 
   // ---- F12-T3: the override is not just remembered, it becomes the stylesheet ------------------

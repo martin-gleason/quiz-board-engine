@@ -281,9 +281,22 @@ function faceValue(cell, bundle, state) {
  * is deliberately withheld: it is the question, and the name of a not-yet-played cell must not
  * read it out.
  */
-function accessibleName(cell, column, bundle, state) {
+function accessibleName(cell, column, bundle, state, position) {
   const parts = [];
   if (column.label) parts.push(column.label);
+  // THE RANKED-LIST ROW NEEDS ITS POSITION, and it is the only layout that does. Everywhere else
+  // the composed name is already unique: a jeopardy cell carries its own value, a bingo square its
+  // own term. A feud row has neither — every row in the column shares the survey question, and
+  // every unplayed row reports "points hidden", so all six announced as one identical sentence and
+  // a screen-reader user had no way to tell which row they had landed on. Found by walking the
+  // board with the keyboard (Phase 5), not by a test, which is why one now exists.
+  //
+  // The position is the DRAWN one, not `cell.row`: `drawOrder` sorts this layout by descending
+  // value, so the authored index and the projected index are different numbers, and the useful one
+  // is what the room can see. It leaks nothing — the ordering is already visible.
+  if (position && bundle.gametype.layout === 'ranked-list') {
+    parts.push('answer ' + position.index + ' of ' + position.total);
+  }
   if (cell.value !== undefined) {
     parts.push(faceValue(cell, bundle, state) === null ? 'points hidden' : cell.value + ' points');
   }
@@ -318,7 +331,7 @@ function accessibleName(cell, column, bundle, state) {
  * face — that is the question. A revealed feud row still keeps its answer in the overlay only: it
  * HAS a value, so it gets no text element, and its answer is the reveal payload rather than a label.
  */
-function buildCell(doc, cell, column, bundle, session, state) {
+function buildCell(doc, cell, column, bundle, session, state, position) {
   const button = el(doc, 'button', 'qbe-cell');
   button.type = 'button';
   button.setAttribute('data-cell', cell.key);
@@ -329,7 +342,7 @@ function buildCell(doc, cell, column, bundle, session, state) {
   if (session && Array.isArray(session.bonusCells) && session.bonusCells.indexOf(cell.key) !== -1) {
     button.setAttribute('data-bonus', 'true');
   }
-  button.setAttribute('aria-label', accessibleName(cell, column, bundle, state));
+  button.setAttribute('aria-label', accessibleName(cell, column, bundle, state, position));
 
   const face = faceValue(cell, bundle, state);
   let valueEl = null;
@@ -351,7 +364,7 @@ function buildCell(doc, cell, column, bundle, session, state) {
   mark.setAttribute('aria-hidden', 'true');
   button.appendChild(mark);
 
-  return { button, valueEl, cell, column };
+  return { button, valueEl, cell, column, position };
 }
 
 /**
@@ -455,9 +468,12 @@ export function renderBoard({ bundle, session, mount, handlers }) {
     // Omitted when the column has no label (theme-contract §2: absent, never empty).
     if (column.label) columnEl.appendChild(el(doc, 'h2', 'qbe-column-label', column.label));
 
-    for (const cell of drawOrder(column.cells, layout)) {
+    const drawn = drawOrder(column.cells, layout);
+    for (let i = 0; i < drawn.length; i++) {
+      const cell = drawn[i];
       const state = cellStateFor(bundle, session, cell.key);
-      const record = buildCell(doc, cell, column, bundle, session, state);
+      const record = buildCell(doc, cell, column, bundle, session, state,
+        { index: i + 1, total: drawn.length });
       columnEl.appendChild(record.button);
       cells.set(cell.key, record.button);
       records.set(cell.key, record);
@@ -535,7 +551,8 @@ export function updateBoard(view, { bundle, session }) {
     // and a bingo card's `preMarked` free squares played their mark animation at load. The
     // animation marks the EVENT of a reveal, not the fact that a page was opened.
     record.button.setAttribute('data-animate', 'true');
-    record.button.setAttribute('aria-label', accessibleName(record.cell, record.column, b, state));
+    record.button.setAttribute('aria-label',
+      accessibleName(record.cell, record.column, b, state, record.position));
     if (bonus) record.button.setAttribute('data-bonus', 'true');
     else record.button.removeAttribute('data-bonus');
 

@@ -44,7 +44,7 @@ python3 tools/firefox-run-tests.py http://localhost:8127/tests/
 
 For automation, the page exposes:
 
-- `document.title` → `"PASS <n>/<n> — Quiz Board Engine tests"` (366/366 as of 2026-08-18)
+- `document.title` → `"PASS <n>/<n> — Quiz Board Engine tests"` (370/370 as of 2026-08-18)
 - `window.__TEST_RESULTS__` → `{ ok, passed, failed, total, results: [{ group, name, passed, detail }] }`
 
 Read the object rather than scraping rendered text.
