@@ -103,6 +103,9 @@
   --score-bg: #091026;
   --score-text: #f3ead1;             /* 15.71:1 (AAA) */
   --team-active-outline: 3px solid #f2c14e;  /* 11.24:1 vs --score-bg (non-text 3:1) */
+  /* The active row's inner tint. Was a one-declaration class override;
+     a token in contract v1.6. */
+  --team-active-bg: rgba(242, 193, 78, 0.13);
 
   /* --- Accent, focus, motion -------------------------------------------- */
   --accent: #f2c14e;                 /* 10.61:1 vs --board-bg */
@@ -113,10 +116,11 @@
 }
 
 /* ==========================================================================
-   CLASS OVERRIDES — four
+   CLASS OVERRIDES — four numbered, plus the one-line locked-dot tint
    (Six in the donated file. The spent rim, the revealed VALUE's colour and the
    Close label all became tokens in theme-contract v1.2, which is what the
-   reporting duty in §6 is for.)
+   reporting duty in §6 is for; the active-team tint became --team-active-bg in
+   v1.6.)
    ========================================================================== */
 
 /* 1. Column labels as title cards: small didone caps, tracked out like a
@@ -136,13 +140,14 @@
     7px 7px;
 }
 
-/* 3. The lit panel's shadow LIST — the colour is now the token's job, but the
-      rule survives. default.css writes `inset ring, var(--cell-shadow)`, and
-      this theme's --cell-shadow is three layers including the warm glow and an
-      inset gold keyline; on the revealed panel the 4px crimson ring replaces
-      that keyline and the glow is deliberately not restated. Cannot become a
-      token: box-shadow is a single property, so the layer LIST cannot be
-      composed from parts, only rewritten whole. */
+/* 3. The lit panel's shadow LIST. default.css now draws the revealed ring
+      ALONE (contract v1.6 — --cell-shadow is never composed into a list), so a
+      revealed cell inherits no drop shadow at all. This theme wants one: its
+      --cell-shadow is three layers including a warm glow and an inset gold
+      keyline, and on the lit panel the 4px crimson ring replaces that keyline
+      while a plain drop keeps the panel standing off the board. Restating the
+      whole list is the correct and only way to do that: box-shadow is a single
+      property, so a layer list cannot be composed from parts. */
 .qbe-cell[data-state="revealed"] {
   box-shadow: inset 0 0 0 4px var(--cell-revealed-accent),
     0 8px 20px rgba(0, 0, 0, 0.5);
@@ -153,11 +158,6 @@
 .qbe-cell-mark {
   -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 6 L61 38 L95 38 L67 58 L78 92 L50 71 L22 92 L33 58 L5 38 L39 38 Z' fill='%23000'/%3E%3C/svg%3E");
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 6 L61 38 L95 38 L67 58 L78 92 L50 71 L22 92 L33 58 L5 38 L39 38 Z' fill='%23000'/%3E%3C/svg%3E");
-}
-
-/* Active-team tint, in warm gold. */
-.qbe-team[data-active="true"] {
-  background: rgba(242, 193, 78, 0.13);
 }
 
 /* The locked dot, in gold rather than currentColor, for the same reason

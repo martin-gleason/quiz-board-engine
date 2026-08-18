@@ -95,6 +95,9 @@
   /* Amber again — but the score bar and the board are read as separate
      surfaces, and "whose turn" is the one emphasis the bar carries. */
   --team-active-outline: 3px solid #d99a3e;  /* 6.33:1 vs --score-bg (non-text 3:1) */
+  /* The active row's inner tint. Was a one-declaration class override;
+     a token in contract v1.6. */
+  --team-active-bg: rgba(217, 154, 62, 0.16);
 
   /* --- Accent, focus, motion -------------------------------------------- */
   --accent: #5c7040;                 /* 5.01:1 vs --board-bg (non-text 3:1); as revealed-value text on white: 5.46:1 */
@@ -106,9 +109,10 @@
 }
 
 /* ==========================================================================
-   CLASS OVERRIDES — four, each because a token cannot express it.
+   CLASS OVERRIDES — three, each because a token cannot express it.
    (Five in the donated file. The spent rim became --cell-answered-border in
-   theme-contract v1.2, along with the two dark-block rules noted below.)
+   theme-contract v1.2, along with the two dark-block rules noted below; the
+   active-team tint became --team-active-bg in v1.6.)
    ========================================================================== */
 
 /* 1. Column labels as kickers: mono, uppercase, tracked, sitting on the
@@ -136,11 +140,9 @@
   );
 }
 
-/* 3. Active-team tint: default tints with its amber rgba; this palette's
-      amber differs. Kept faint — the outline is the message. */
-.qbe-team[data-active="true"] {
-  background: rgba(217, 154, 62, 0.16);
-}
+/* 3. DELETED in contract v1.6 — the active-team tint is now --team-active-bg,
+      set in the token block above. The numbering below is left alone so this
+      file's comments still line up with the review that produced them. */
 
 /* 4. Point values track slightly tight: mono digits at display size set wide,
       and a 12-column board needs every pixel back. Not tokenised. */
@@ -163,7 +165,7 @@
     --board-bg: #1c1f22;
     --board-fg: #ece8df;             /* 13.54:1 (AAA) */
 
-    --cell-bg: #24282c;              /* 1.17:1 vs ground — the RIM separates, as below */
+    --cell-bg: #24282c;              /* 1.12:1 vs ground — the RIM separates, as below */
     --cell-text: #ece8df;            /* 12.14:1 on --cell-bg (AAA) */
     /* The load-bearing token of the dark scheme: the panel fill is near the
        ground's luminance, so this rim is what makes each cell an object —
@@ -206,7 +208,7 @@
        answered fill), and --cell-answered-border already carries it. */
 
     /* Revealed VALUE only. --cell-revealed-accent still resolves to --accent =
-       light sage, which is fine for the ring (4.66:1, and the ring is what says
+       light sage, which is fine for the ring (4.60:1, and the ring is what says
        "open"); the number reads better in the panel's own ink. Was a class
        override in the donated file; a token in contract v1.2. */
     --cell-revealed-value-color: #dfa858;  /* 6.18:1 on --cell-revealed-bg — the dark ramp's amber-text tone; large ✓, body ✓ */

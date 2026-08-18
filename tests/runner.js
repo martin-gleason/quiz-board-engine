@@ -619,6 +619,10 @@ const CONTRACT_CLASSES = new Set([
   'qbe-setup', 'qbe-setup-panel', 'qbe-setup-title', 'qbe-setup-note', 'qbe-setup-body',
   'qbe-setup-actions', 'qbe-field', 'qbe-field-input',
   'qbe-session', 'qbe-session-title', 'qbe-session-meta',
+  // contract v1.5 (F8): the win rail. A completed pattern is an announcement to the room, so it is
+  // DOM the design collaborator has to be able to style — which is why it went into the published
+  // contract before it went into the renderer, and why it is transcribed here like everything else.
+  'qbe-wins', 'qbe-win',
 ]);
 
 // theme-contract §3, verbatim. `null` in the list means "the attribute may also be absent", which is
@@ -635,9 +639,16 @@ const CONTRACT_ATTR_VALUES = {
   'data-animation': ['flip', 'zoom', 'fade'],
   'data-phase': ['prompt', 'answer'],
   'data-active': ['true'],
-  // contract v1.3. `data-team` and `data-session` are absent from this table on purpose: they carry
-  // an INDEX, not a value from a closed set, so there is no enum to check them against.
+  // contract v1.3. `data-team`, `data-session` and `data-delta` are absent from this table on
+  // purpose: they carry a NUMBER, not a value from a closed set, so there is no enum to check them
+  // against. `data-delta` was also absent from the contract itself until v1.6 — the renderer had
+  // been writing it on the score bar's buttons the whole time, so the published "closed attribute
+  // set" was not closed and a collaborator's `.qbe-btn:not([data-delta])` would have surprised them.
   'data-screen': ['teams', 'resume'],
+  // contract v1.5: which line completed. The values are spec §4.2's pattern set verbatim, and the
+  // detector is driven by the game type's own `patterns` list, so an id outside this set reaching
+  // the DOM would mean the renderer invented a pattern the config never asked for.
+  'data-pattern': ['row', 'column', 'diagonal', 'full-card'],
   'data-action': [
     'score-up', 'score-down', 'export', 'import', 'teams',
     'add-team', 'start', 'cancel', 'resume', 'discard', 'new',
@@ -657,6 +668,7 @@ const CONTRACT_ATTR_HOST = {
   'data-phase': '.qbe-detail',
   'data-active': '.qbe-team',
   'data-screen': '.qbe-setup',
+  'data-pattern': '.qbe-win',
   'data-action': '.qbe-btn',
 };
 
@@ -692,7 +704,8 @@ function contractProblems(stage) {
   const boards = children.filter((n) => classOf(n) === 'qbe-board');
   const details = children.filter((n) => classOf(n) === 'qbe-detail');
   // contract v1.3: the toolbar and the pre-game overlay are stage children too.
-  const chrome = children.filter((n) => classOf(n) === 'qbe-toolbar' || classOf(n) === 'qbe-setup');
+  const chrome = children.filter((n) => classOf(n) === 'qbe-toolbar' || classOf(n) === 'qbe-setup'
+    || classOf(n) === 'qbe-wins');
   if (children.length !== scorebar.length + boards.length + details.length + chrome.length) {
     problems.push('the stage has children the contract does not name');
   }
@@ -751,6 +764,25 @@ function contractProblems(stage) {
     }
   }
   if (cellCount === 0) problems.push('the board rendered no cells at all');
+
+  // contract v1.5: the win rail, when the game type has one. `<aside>` and `<div>` are named in §2
+  // as surely as `<button>` is for a cell — a theme's selector is written against the class, but the
+  // element type is what decides whether the rail lands in the stage's flow at all.
+  for (const rail of children.filter((n) => classOf(n) === 'qbe-wins')) {
+    tagIs(rail, 'ASIDE', 'qbe-wins', problems, '.qbe-wins');
+    if (rail.children.length > 0 && rail.hidden) {
+      problems.push('.qbe-wins holds ' + rail.children.length + ' win(s) but is still hidden');
+    }
+    if (rail.children.length === 0 && !rail.hidden) {
+      problems.push('.qbe-wins is empty but not hidden — §2 promises absence over an empty box');
+    }
+    for (const item of rail.children) {
+      tagIs(item, 'DIV', 'qbe-win', problems, '.qbe-win');
+      if (!item.hasAttribute('data-pattern')) problems.push('a .qbe-win has no data-pattern');
+      if (item.textContent.trim() === '') problems.push('a .qbe-win is present but empty');
+      if (item.children.length !== 0) problems.push('a .qbe-win has children; §2 gives it text only');
+    }
+  }
 
   const detail = details[0];
   tagIs(detail, 'DIV', 'qbe-detail', problems, '.qbe-detail');
@@ -1372,6 +1404,119 @@ async function runRenderSuite() {
         keys.join(',') === expected,
         'authored 5,42,17,42,9 -> drawn ' + vals.join(',') + ' (keys ' + keys.join(',') + ')');
     }
+
+    // ---- F9, the whole scoped feature (spec §10 F9, plan Q11) ---------------------------------
+    //
+    // Feud is a ranked answer-reveal board and NOTHING ELSE: strikes and steals are host-mediated
+    // and deliberately not modeled. So "does it play end to end" is three claims, and these are
+    // them: a hidden row spoils nothing, revealing shows the answer WITH its points, and a resumed
+    // session puts the revealed rows back. Points are awarded with the same team controls jeopardy
+    // uses (asserted in the state suite, which is where scoring lives).
+    const topRow = f.view.records.get('0:0');
+    const hiddenValue = topRow.button.querySelector('.qbe-cell-value');
+    record('render', 'a hidden ranked row prints no point value, so the reveal is not spoiled',
+      hiddenValue === null && topRow.button.getAttribute('data-state') === feud.value.resolved.initialState,
+      hiddenValue === null ? 'the highest-scoring row shows no number until it is revealed'
+        : 'the row already reads "' + hiddenValue.textContent + '" while still hidden');
+
+    topRow.button.click();
+    const promptText = f.view.detail.prompt.textContent;
+    f.view.detail.next.click();
+    const answerLine = f.view.detail.answer.textContent;
+    const revealedValue = topRow.button.querySelector('.qbe-cell-value');
+    record('render', 'revealing a ranked row shows the answer AND its point value (plan Q11)',
+      answerLine === 'Their keys — 38 points'
+      && revealedValue !== null && revealedValue.textContent === '38'
+      && promptText === feud.value.content.board.columns[0].label,
+      'overlay prompt = the survey question; overlay answer = "' + answerLine + '"; the row face now reads "'
+        + (revealedValue ? revealedValue.textContent : '(nothing)') + '"');
+
+    // The resume path, at the renderer's seam: a session that already holds `revealed` rows must
+    // build them revealed, values and all, without anybody clicking anything.
+    const resumedFeud = harnessStage();
+    renderer.renderBoard({
+      bundle: feud.value,
+      session: { cellStates: { '0:0': 'revealed', '0:2': 'revealed' }, bonusCells: [] },
+      mount: resumedFeud,
+      handlers: {},
+    });
+    const shown = [...resumedFeud.querySelectorAll('.qbe-cell')]
+      .filter((c) => c.getAttribute('data-state') === 'revealed')
+      .map((c) => c.getAttribute('data-cell')).sort();
+    const shownValues = [...resumedFeud.querySelectorAll('.qbe-cell-value')].map((v) => v.textContent).sort();
+    record('render', 'a resumed ranked-list board restores exactly the rows that were revealed',
+      shown.join(',') === '0:0,0:2' && shownValues.join(',') === '15,38',
+      'rebuilt from cellStates alone: rows ' + shown.join(',') + ' revealed, showing '
+        + shownValues.join(' and ') + ' points');
+
+    // The answer and the points are ONE reveal, not two. A ranked row's number is the payoff, so a
+    // build that put the value on the face at open (or left it off until a second click) would
+    // either spoil the row or make the host click twice for one answer. The row is watched across
+    // the single advance that changes it: nothing before, both after.
+    f.view.detail.close.click();
+    const secondRow = f.view.records.get('0:1');
+    secondRow.button.click();
+    const midAnswer = f.view.detail.answer;
+    const beforeReveal = {
+      phase: f.view.detail.root.getAttribute('data-phase'),
+      answerHidden: midAnswer.hidden,
+      answerText: midAnswer.textContent,
+      face: secondRow.button.querySelector('.qbe-cell-value'),
+      state: secondRow.button.getAttribute('data-state'),
+    };
+    f.view.detail.next.click();
+    const afterFace = secondRow.button.querySelector('.qbe-cell-value');
+    const expectedLine = secondRow.cell.answer + ' — ' + secondRow.cell.value + ' points';
+    record('render', 'a ranked row\'s answer and its points arrive in the SAME reveal, never one click apart',
+      beforeReveal.phase === 'prompt' && beforeReveal.answerHidden === true
+      && beforeReveal.answerText === '' && beforeReveal.face === null
+      && beforeReveal.state === feud.value.resolved.initialState
+      && f.view.detail.answer.hidden === false
+      && f.view.detail.answer.textContent === expectedLine
+      && afterFace !== null && afterFace.textContent === String(secondRow.cell.value)
+      && secondRow.button.getAttribute('data-state') === 'revealed',
+      'open → phase "' + beforeReveal.phase + '", no answer and no number on the face; one advance → "'
+        + f.view.detail.answer.textContent + '" with '
+        + (afterFace ? afterFace.textContent : '(nothing)') + ' on the row');
+    f.view.detail.close.click();
+
+    // ...and the same reveal survives the REAL persistence seam, not just the renderer's argument.
+    // The board above is rebuilt from a hand-written session object; this one is rebuilt from a
+    // session that has been through `state.newSession` → JSON → `validator.validateState`, which is
+    // the path a host's saved game actually takes (imported state is untrusted, spec §4.4).
+    const feudHash9 = await synthHash('f9-resume');
+    const savedFeud = state.newSession({ bundle: feud.value, gameHash: feudHash9, teams: ['Solo'] });
+    savedFeud.cellStates = { '0:1': 'revealed', '0:4': 'revealed' };
+    const reimported = validator.validateState({
+      raw: rawState('import:(f9-resume).json', JSON.parse(JSON.stringify(savedFeud))),
+      bundle: feud.value,
+    });
+    if (!reimported.ok) {
+      record('render', 'a feud session with revealed rows survives export and re-import', false,
+        reimported.failures.map(errors.formatFailure).join(' | '));
+    } else {
+      const roundTrip = harnessStage();
+      renderer.renderBoard({ bundle: feud.value, session: reimported.value, mount: roundTrip, handlers: {} });
+      const rtCells = [...roundTrip.querySelectorAll('.qbe-cell')];
+      const rtRevealed = rtCells.filter((c) => c.getAttribute('data-state') === 'revealed')
+        .map((c) => c.getAttribute('data-cell')).sort().join(',');
+      const byKey = (k) => feud.value.content.board.columns[0].cells.find((c) => c.key === k);
+      const rtFaces = rtCells.filter((c) => c.getAttribute('data-state') === 'revealed')
+        .map((c) => c.querySelector('.qbe-cell-value'))
+        .map((v) => (v ? v.textContent : '(none)')).sort().join(',');
+      const expectedFaces = [byKey('0:1').value, byKey('0:4').value].map(String).sort().join(',');
+      record('render', 'a revealed ranked row is still revealed, with its points, after a real export/import resume',
+        rtRevealed === '0:1,0:4' && rtFaces === expectedFaces,
+        'through newSession → JSON → validateState → renderBoard: rows ' + rtRevealed
+          + ' revealed, showing ' + rtFaces);
+
+      // A resume must not quietly reorder the board either: the ranking is the board's meaning.
+      const rtOrder = rtCells.map((c) => byKey(c.getAttribute('data-cell')).value);
+      record('render', 'a resumed ranked-list board is still ordered by descending value',
+        rtOrder.length === feud.value.resolved.cellKeys.length
+        && rtOrder.every((v, i) => i === 0 || rtOrder[i - 1] >= v),
+        'resumed DOM order: ' + rtOrder.join(' > '));
+    }
   }
 
   // ---- 8. per-cell value beats the ladder -----------------------------------------------------
@@ -1415,8 +1560,113 @@ async function runRenderSuite() {
       : 'the checker accepted data-state="nearly-answered" — it proves nothing');
   controlStage.remove();
 
+  // ---- 9b. the setup screens: what is behind them, and how they are dismissed ------------------
+  runSetupScreenChecks(demo.value);
+
   // ---- 10. security: untrusted content text reaches the DOM as TEXT ONLY -----------------------
   await runRenderSecurityChecks();
+}
+
+/**
+ * The three things a setup overlay owes that nothing here used to check.
+ *
+ * All three are keyboard- or destruction-shaped, which is why a suite built on clicking passed
+ * through them: a scrim stops the pointer, so a mouse host cannot reach the board behind a modal
+ * and a mouse host who mis-clicks Discard was assumed to have meant it.
+ */
+function runSetupScreenChecks(bundle) {
+  // ---- 1. inert behind the mid-game overlay ---------------------------------------------------
+  //
+  // Opening Teams… mid-game leaves the board, the score bar and the toolbar in the tab order behind
+  // a 0.78-alpha scrim. Measured before the fix: 13 tabs from the first input landed on a
+  // `.qbe-cell` whose own centre hit-tested as `.qbe-setup`, where Space opens a question on the
+  // projector from underneath a modal. A mouse host cannot do that, which is what makes the
+  // keyboard path strictly worse (WCAG 2.4.3). `inert`, not a focus trap — CLAUDE.md forbids
+  // confining a keyboard user, and Tab still cycles out to the browser chrome.
+  const stage = harnessStage();
+  drive(bundle, stage);
+  const toolbar = renderer.renderToolbar({ mount: stage, handlers: {} });
+  const boardEl = stage.querySelector('.qbe-board');
+
+  const editView = renderer.renderTeamSetup({
+    mount: stage, editing: true, names: ['Red'], handlers: { onCancel: () => {} },
+  });
+  record('render', 'the mid-game setup overlay makes the board and toolbar inert',
+    boardEl.inert === true && toolbar.root.inert === true && !editView.root.inert,
+    'board.inert=' + boardEl.inert + ', toolbar.inert=' + toolbar.root.inert
+      + ', the overlay itself stays live (' + !editView.root.inert + ')');
+
+  editView.destroy();
+  record('render', 'destroying the setup overlay gives the board and toolbar back',
+    boardEl.inert === false && toolbar.root.inert === false,
+    'board.inert=' + boardEl.inert + ', toolbar.inert=' + toolbar.root.inert);
+
+  // ---- 2. Escape, but only where there is a Cancel --------------------------------------------
+  //
+  // The question overlay taught the host that Escape closes an overlay (plan Q12) and they use it on
+  // every cell of a game, so Escape doing nothing on Teams… reads as a frozen app. The OPENING team
+  // screen must stay put: it has no Cancel, and dismissing it strands the host on an empty stage.
+  const esc = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+  let cancelled = 0;
+  const escapable = renderer.renderTeamSetup({
+    mount: stage, editing: true, names: ['Red'], handlers: { onCancel: () => { cancelled += 1; } },
+  });
+  esc();
+  escapable.destroy();
+  record('render', 'Escape cancels the mid-game team editor, the way it closes a question',
+    cancelled === 1, 'onCancel fired ' + cancelled + ' time(s)');
+
+  let startedEarly = 0;
+  const opening = renderer.renderTeamSetup({
+    mount: stage, handlers: { onTeamsSubmit: () => { startedEarly += 1; }, onCancel: () => { startedEarly += 1; } },
+  });
+  esc();
+  const stillOpen = opening.root.isConnected && startedEarly === 0;
+  opening.destroy();
+  record('render', 'Escape does NOT dismiss the opening team screen, which has nothing to go back to',
+    stillOpen, stillOpen ? 'the screen is still mounted and no handler fired'
+      : 'the opening screen reacted to Escape — there is no way back from an empty stage');
+  stage.remove();
+
+  // ---- 3. Discard asks twice ------------------------------------------------------------------
+  //
+  // Resume and Discard are the same size, the same fill and 20px apart, with the destructive one on
+  // the right where a hurried pointer overshoots — and one click used to call `state.discardSession`
+  // immediately. There is no undo and, because the shelf holds one session per game file, no second
+  // copy anywhere. `state.discardSession`'s own comment says the confirmation "belongs on the resume
+  // screen"; this is that confirmation. Two presses, not a blocking dialog (forbidden on a projected
+  // screen) and not a disabled button (which sends the host hunting for how to enable it).
+  const resumeStage = harnessStage();
+  const discarded = [];
+  const resumed = [];
+  const rows = renderer.renderResumeScreen({
+    sessions: [{ gameHash: 'c'.repeat(64), gameTitle: 'Period 1', updatedAt: '2026-08-16T20:41:00Z', teamCount: 2 }],
+    gameHash: 'c'.repeat(64),
+    mount: resumeStage,
+    handlers: { onDiscard: (h2) => discarded.push(h2), onResume: (h2) => resumed.push(h2) },
+  });
+  const discardBtn = resumeStage.querySelector('[data-action="discard"]');
+  discardBtn.click();
+  const armed = discarded.length === 0 && discardBtn.textContent === 'Really discard?';
+  record('render', 'one press of Discard destroys nothing and asks instead',
+    armed, 'after the first press the button reads "' + discardBtn.textContent
+      + '" and onDiscard fired ' + discarded.length + ' time(s)');
+
+  discardBtn.click();
+  record('render', 'the second press of Discard is the one that discards',
+    discarded.length === 1 && discarded[0] === 'c'.repeat(64),
+    'onDiscard fired ' + discarded.length + ' time(s)');
+
+  // Arming a confirmation and then reaching for Resume must not leave the row armed behind you.
+  discardBtn.click();
+  resumeStage.querySelector('[data-action="resume"]').click();
+  const disarmed = discardBtn.textContent === 'Discard' && resumed.length === 1;
+  record('render', 'pressing anything else disarms a pending Discard',
+    disarmed, 'the button reads "' + discardBtn.textContent + '" and onResume fired '
+      + resumed.length + ' time(s)');
+  rows.destroy();
+  resumeStage.remove();
 }
 
 /**
@@ -1775,6 +2025,44 @@ async function runThemeGeometrySuite() {
           : 'stylesheets in cascade order: ' + sheets.map((h) => h.replace(/^.*\//, '')).join(', '));
 
       assertShellGeometry(`theme "${name}"`, doc, win, board, frame);
+
+      // ---- THE RING THAT VANISHED --------------------------------------------------------------
+      //
+      // default.css used to write the revealed cue as `inset 0 0 0 4px <accent>, var(--cell-shadow)`
+      // — a THEME-OWNED whole-value token composed into a comma list. `none` is a legal box-shadow
+      // but is NOT a legal item inside a shadow list, so any theme that turned its resting shadow
+      // off (civic's dark scheme does: "dark surfaces rise, they don't cast") made the whole
+      // declaration invalid at computed-value time. An invalid declaration computes to `unset`,
+      // which for box-shadow is `none` — so the theme lost the accent ring it never asked to lose,
+      // and civic dark's hidden→revealed change collapsed to a 1.13:1 fill difference. Under
+      // `prefers-reduced-motion` that ring is the ONLY thing that changes shape (spec §8).
+      //
+      // The suite could not see it because nothing here had ever read a RESOLVED style for a themed
+      // cell — `grep box-shadow tests/runner.js` returned nothing. These two assertions are that
+      // missing read. The second one is the important one: it does not depend on which colour scheme
+      // the machine running the tests happens to be in, because it applies the offending token value
+      // itself and demands the ring survive it.
+      const probe = board.querySelector('.qbe-cell');
+      if (!probe) {
+        record('shell', `theme "${name}": a revealed cell keeps its inset accent ring`, false,
+          'no .qbe-cell to measure');
+      } else {
+        const wasState = probe.getAttribute('data-state');
+        probe.setAttribute('data-state', 'revealed');
+        const ring = win.getComputedStyle(probe).boxShadow;
+        probe.style.setProperty('--cell-shadow', 'none');
+        const ringWithoutShadow = win.getComputedStyle(probe).boxShadow;
+        probe.style.removeProperty('--cell-shadow');
+        if (wasState === null) probe.removeAttribute('data-state');
+        else probe.setAttribute('data-state', wasState);
+
+        const hasRing = (s) => typeof s === 'string' && s !== 'none' && s.indexOf('inset') !== -1;
+        record('shell', `theme "${name}": a revealed cell resolves an inset accent ring`,
+          hasRing(ring), 'computed box-shadow on [data-state="revealed"] = ' + ring);
+        record('shell', `theme "${name}": the revealed ring survives --cell-shadow: none`,
+          hasRing(ringWithoutShadow),
+          'with the resting shadow switched off the ring computes to: ' + ringWithoutShadow);
+      }
     }
   } finally {
     frame.remove();
@@ -2077,6 +2365,19 @@ const FORBIDDEN = new RegExp(
     'document\\.write(?:ln)?\\b',
     'ev' + 'al\\b',
     'Func' + 'tion\\s*\\(',
+    // THREE MORE SINKS THAT VIOLATE THE SAME INVARIANT AND WERE NOT BEING LOOKED FOR. CLAUDE.md
+    // names six APIs, and this list matched those six exactly — but "all content reaches the DOM via
+    // createElement/textContent, and nothing evaluates a string" is the RULE, not the list. A timer
+    // handed a STRING is a string-eval wearing a different name (`setTimeout("f()", 0)` runs it in
+    // global scope with the same semantics as the banned call), and `srcdoc` is an HTML parse of a
+    // string into a live document, which is exactly what the HTML-writing needles above exist to
+    // stop. Neither had ever been searched for, so neither would have been caught. No such call
+    // exists in js/ today — this closes a coverage gap, it does not report a live defect.
+    // The timer needles require a QUOTE right after the paren: the callback form takes a function
+    // reference or an arrow, neither of which can begin with a string delimiter.
+    'set' + 'Timeout\\s*\\(\\s*[\'"`]',
+    'set' + 'Interval\\s*\\(\\s*[\'"`]',
+    'src' + 'doc\\b',
   ].join('|') + ')',
 );
 
@@ -2923,6 +3224,41 @@ async function runStateSecurityChecks(bundle) {
       : !verbatim ? 'the title was altered or missing: ' + JSON.stringify(titleNode && titleNode.textContent)
         : 'FOUND ' + [...injected].map((n) => n.tagName).join(',') + ' — this is a live XSS');
   stage.remove();
+
+  // ---- the resume list is the ONE read path that skips validateState ---------------------------
+  //
+  // Every other route from storage to the screen goes loadSession → validator.validateState →
+  // adopt. `listSessions` does not: it projects rows straight from the parsed entry, because the
+  // rows exist so a host can choose WHICH session to validate. localStorage is shared by every page
+  // on the origin — on `<user>.github.io` that is every project of that user — and a sibling page
+  // can rewrite any `qbe.session.*` value without being able to script us. So an unbounded
+  // `gameTitle` is attacker-controlled prose of attacker-chosen LENGTH: a 400,000-character title
+  // measured 110,462px tall in Firefox, which pushed Resume, Discard and "Start a new game" 162
+  // viewports below the fold. Clicking Resume would have refused the entry correctly — but the host
+  // could no longer reach the button, so the refusal has to happen before the row is drawn. The
+  // bound is the state schema's own `LIMITS.maxLabelChars`, so nothing resumable is ever hidden.
+  await withEmptyShelf(async () => {
+    const legalHash = 'a'.repeat(64);
+    const hostileHash = 'b'.repeat(64);
+    const entry = (gameHash, gameTitle) => JSON.stringify({
+      schemaVersion: 1, gameHash, gameTitle,
+      createdAt: '2026-08-16T20:00:00Z', updatedAt: '2026-08-16T20:41:00Z',
+      teams: [{ name: 'x', score: 0 }], cellStates: {}, bonusCells: [],
+    });
+    localStorage.setItem(state.STORAGE_PREFIX + legalHash, entry(legalHash, 'A legal title'));
+    localStorage.setItem(
+      state.STORAGE_PREFIX + hostileHash,
+      entry(hostileHash, 'RESUME BLOCKED — visit evil.example. ' + 'P'.repeat(200000)),
+    );
+    const rows = state.listSessions();
+    const listed = rows.map((r) => r.gameHash);
+    record('security', 'a stored session whose gameTitle breaks the schema bound is never LISTED',
+      listed.length === 1 && listed[0] === legalHash,
+      listed.length === 1 && listed[0] === legalHash
+        ? `the ${LIMITS.maxLabelChars}-char bound drops the 200k-char row and keeps the legal one`
+        : 'listSessions returned ' + rows.map((r) => r.gameTitle.length + ' chars').join(', ')
+          + ' — an unbounded title can push the Discard button off the screen');
+  });
 }
 
 // =============================================================================================
@@ -3229,6 +3565,445 @@ function renderReport(mount) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// F8 — pattern-complete win detection (spec §4.2, plan Gate 4: "a pattern win is detected exactly
+// once")
+//
+// WHAT THIS SUITE IS DEFENDING. Four things, and each one is a way the feature could ship looking
+// correct on a demo board and be wrong in a room:
+//
+//   1. THE CONFIG DRIVES IT. `patterns` is a per-game-type subset (spec §4.2). A detector that
+//      simply checked all four shapes would win a game type that declared only `["row"]` on a
+//      column, and no shipped board would ever show it — bingo.json declares all four.
+//   2. TERMINAL IS DERIVED. `marked` is bingo's word, not the engine's. The same detector must work
+//      for a game type whose finished state is `revealed`, so the suite runs one.
+//   3. NON-SQUARE BOARDS HAVE NO DIAGONAL. A 5x4 card cannot complete one, and the wrong behaviour
+//      here (reporting a "diagonal" that is really a bent line) is invisible until someone wins on
+//      it in front of a room.
+//   4. EXACTLY ONCE. Including the case the plan's Gate 4 names: one square that completes two
+//      patterns at the same moment, and every later move after that.
+// ---------------------------------------------------------------------------------------------
+
+/** A uniform grid of `cols` x `rows` prompt-only cells — a bingo-shaped board of any dimensions. */
+function gridContent(title, cols, rows, gameTypeId) {
+  const columns = [];
+  for (let c = 0; c < cols; c++) {
+    const cells = [];
+    for (let r = 0; r < rows; r++) cells.push({ prompt: 'C' + c + 'R' + r });
+    columns.push({ label: 'Col ' + c, cells });
+  }
+  return {
+    schemaVersion: 1, title, gameType: gameTypeId, theme: 'default', animation: 'fade',
+    board: { columns },
+  };
+}
+
+/** A board whose columns are DIFFERENT depths — the shape `uniformRows: false` permits. */
+function raggedContent(title, heights, gameTypeId) {
+  const columns = [];
+  for (let c = 0; c < heights.length; c++) {
+    const cells = [];
+    for (let r = 0; r < heights[c]; r++) cells.push({ prompt: 'C' + c + 'R' + r });
+    columns.push({ label: 'Col ' + c, cells });
+  }
+  return {
+    schemaVersion: 1, title, gameType: gameTypeId, theme: 'default', animation: 'fade',
+    board: { columns },
+  };
+}
+
+/** A pattern-complete game type with an ARBITRARY pattern subset and lifecycle — the point of it. */
+function patternGametype(id, patterns, lifecycle) {
+  return {
+    schemaVersion: 1, id, layout: 'grid',
+    cellLifecycle: lifecycle || ['hidden', 'marked'],
+    scoring: { model: 'none' },
+    winCondition: 'pattern-complete',
+    patterns,
+    gridConstraints: { uniformRows: true },
+    requiredCellFields: ['prompt'],
+  };
+}
+
+/**
+ * Validate a content object against a SYNTHETIC game type.
+ *
+ * `synthBundle` fetches a real file from /gametypes/, which is right for everything that has to
+ * agree with shipped config — but the three game types this repo ships cannot express "declares only
+ * row" or "finishes at revealed", and adding a fourth file to /gametypes/ to test a detector would
+ * put a test fixture in the product's data directory.
+ */
+async function synthTypedBundle(label, contentData, gametypeData) {
+  const themes = await rawSupport(loader.THEMES_MANIFEST, KINDS.THEMES);
+  if (!themes.ok) return themes;
+  return validator.validateBundle({
+    content: rawDoc('games/(synthetic ' + label + ').json', KINDS.CONTENT, contentData),
+    gametype: rawDoc('gametypes/(synthetic ' + label + ').json', KINDS.GAMETYPE, gametypeData),
+    themes: themes.value,
+  });
+}
+
+/** A session-shaped object holding exactly these cells in `state`. No storage involved. */
+function sessionWith(keys, cellState) {
+  const cellStates = {};
+  for (const key of keys) cellStates[key] = cellState;
+  return { cellStates, bonusCells: [] };
+}
+
+const winIds = (wins) => wins.map((w) => w.id).join(', ') || '(none)';
+
+/** The live region's current text, or a phrase saying it has never spoken. */
+function spokenText() {
+  const live = document.querySelector('.qbe-live');
+  return live ? live.textContent : '(no live region yet)';
+}
+
+async function runWinsSuite() {
+  const bingo = await fileBundle('games/demo-bingo.json');
+  if (!bingo.ok) {
+    record('wins', 'games/demo-bingo.json validates for the win suite', false,
+      bingo.failures.map(errors.formatFailure).join(' | '));
+    return;
+  }
+  const B = bingo.value;
+
+  // ---- 1. nothing is won at the start, free space and all --------------------------------------
+  //
+  // 2:2 is `preMarked` and therefore already terminal on a brand-new board. A detector that counted
+  // "any complete line" without checking that a line has more than the free square in it, or that
+  // treated a session's EMPTY cellStates as "nothing is marked", would get this wrong in opposite
+  // directions.
+  const fresh = state.completedPatterns({ bundle: B, session: { cellStates: {}, bonusCells: [] } });
+  record('wins', 'a brand-new bingo card has won nothing, free space included',
+    fresh.length === 0,
+    fresh.length === 0 ? 'the preMarked centre square is terminal but is not a line'
+      : 'reported ' + winIds(fresh));
+
+  // ---- 2. one row --------------------------------------------------------------------------
+  const rowKeys = ['0:0', '1:0', '2:0', '3:0', '4:0'];
+  const rowWins = state.completedPatterns({ bundle: B, session: sessionWith(rowKeys, 'marked') });
+  record('wins', 'marking every square of row 1 reports exactly one win, the row',
+    rowWins.length === 1 && rowWins[0].id === 'row:0' && rowWins[0].pattern === 'row',
+    winIds(rowWins));
+
+  // ---- 3. the free square counts toward a line without being re-marked -------------------------
+  //
+  // Column 3 is B/I/N…: its centre cell IS the free space, so a host completes that column by
+  // marking four squares, not five. This is the derivation `renderer.cellStateFor` publishes,
+  // re-derived on the state side — and asserted equal to it below.
+  const colWins = state.completedPatterns({
+    bundle: B, session: sessionWith(['2:0', '2:1', '2:3', '2:4'], 'marked'),
+  });
+  record('wins', 'a preMarked free square completes a line without being marked again',
+    colWins.length === 1 && colWins[0].id === 'column:2',
+    colWins.length === 1 ? 'four marks plus the free space at 2:2 completed ' + colWins[0].id
+      : 'reported ' + winIds(colWins));
+
+  // ---- 3b. each of the four patterns on the shipped 5x5 card, named cell for cell -------------
+  //
+  // The tests above check WHICH pattern fired. These check WHICH CELLS it fired on, because a
+  // detector can report the right id off the wrong line: a column builder reading rows, or a
+  // diagonal that walks `columns[i].cells[i]` on one diagonal and re-walks it on the "other". A win
+  // that names a line the room cannot see on the board is worse than no win at all, so the cell
+  // list is asserted literally, in geometric order, for every shape the card contains.
+  const wonCells = (wins, id) => {
+    const found = wins.filter((w) => w.id === id);
+    return found.length === 1 ? found[0].cells.join(',') : '(' + found.length + ' win(s) with id ' + id + ')';
+  };
+
+  record('wins', 'a row win names that row\'s five squares, left to right',
+    wonCells(rowWins, 'row:0') === '0:0,1:0,2:0,3:0,4:0',
+    'row:0 = ' + wonCells(rowWins, 'row:0'));
+
+  // A column with NO free space in it, so this is the plain five-square case that test 3 (which
+  // leans on the free centre) cannot make on its own.
+  const colOnly = state.completedPatterns({
+    bundle: B, session: sessionWith(['0:0', '0:1', '0:2', '0:3', '0:4'], 'marked'),
+  });
+  record('wins', 'marking a full column reports exactly one win, that column, top to bottom',
+    colOnly.length === 1 && colOnly[0].pattern === 'column'
+    && wonCells(colOnly, 'column:0') === '0:0,0:1,0:2,0:3,0:4',
+    'reported ' + winIds(colOnly) + ' on cells ' + wonCells(colOnly, 'column:0'));
+
+  // The two diagonals, one at a time, each through the free centre square.
+  const mainDiag = state.completedPatterns({
+    bundle: B, session: sessionWith(['0:0', '1:1', '3:3', '4:4'], 'marked'),
+  });
+  record('wins', 'the top-left→bottom-right diagonal is diagonal:0 and names its own five squares',
+    mainDiag.length === 1 && wonCells(mainDiag, 'diagonal:0') === '0:0,1:1,2:2,3:3,4:4',
+    'reported ' + winIds(mainDiag) + ' on cells ' + wonCells(mainDiag, 'diagonal:0'));
+
+  const antiDiag = state.completedPatterns({
+    bundle: B, session: sessionWith(['0:4', '1:3', '3:1', '4:0'], 'marked'),
+  });
+  record('wins', 'the bottom-left→top-right diagonal is diagonal:1 and is a DIFFERENT five squares',
+    antiDiag.length === 1 && wonCells(antiDiag, 'diagonal:1') === '0:4,1:3,2:2,3:1,4:0',
+    'reported ' + winIds(antiDiag) + ' on cells ' + wonCells(antiDiag, 'diagonal:1'));
+
+  // The full card: every shape at once, and the full-card instance must be the whole census — not
+  // "every cell of every row", which a ragged board would make a different set.
+  const everyKey = B.resolved.cellKeys;
+  const blackout = state.completedPatterns({ bundle: B, session: sessionWith(everyKey, 'marked') });
+  const fullCard = blackout.filter((w) => w.pattern === 'full-card');
+  record('wins', 'a blacked-out 5x5 card reports full-card over every square, plus all 5 rows, 5 columns and 2 diagonals',
+    blackout.length === 5 + 5 + 2 + 1
+    && fullCard.length === 1 && fullCard[0].id === 'full-card:0'
+    && fullCard[0].cells.slice().sort().join(',') === everyKey.slice().sort().join(','),
+    blackout.length + ' win(s): ' + winIds(blackout)
+      + ' — full-card covers ' + (fullCard.length === 1 ? fullCard[0].cells.length : '?') + ' of '
+      + everyKey.length + ' squares');
+
+  // ---- 3c. the negatives: an almost-complete line is not a line -------------------------------
+  //
+  // Every assertion above is satisfiable by a detector that says yes too readily, so these are the
+  // ones that make the suite bite. Four of five is the shape a real board is in for most of a game.
+  const fourOfFive = state.completedPatterns({
+    bundle: B, session: sessionWith(['0:1', '1:1', '2:1', '3:1'], 'marked'),
+  });
+  record('wins', 'four squares of a five-square row win nothing — one short is not a win',
+    fourOfFive.length === 0,
+    fourOfFive.length === 0 ? 'row 2 is marked at 0:1, 1:1, 2:1 and 3:1 and 4:1 is still hidden'
+      : 'reported ' + winIds(fourOfFive));
+
+  // One square short of a blackout. The full card must be silent, and so must every line THROUGH
+  // the missing square — while the lines that avoid it still win, so this is not "silence because
+  // detection stopped".
+  const nearlyAll = everyKey.filter((k) => k !== '4:4');
+  const nearWins = state.completedPatterns({ bundle: B, session: sessionWith(nearlyAll, 'marked') });
+  const nearIds = nearWins.map((w) => w.id).sort().join(',');
+  record('wins', 'one unmarked square kills the full card and every line through it, and nothing else',
+    nearIds === 'column:0,column:1,column:2,column:3,diagonal:1,row:0,row:1,row:2,row:3',
+    '24 of 25 squares marked (4:4 hidden) → ' + winIds(nearWins));
+
+  // ---- 4. exactly once, including two patterns completing on the same square (Gate 4) ----------
+  //
+  // 4:4 is the last square of row 5 AND the last square of the top-left→bottom-right diagonal, so
+  // one click completes two patterns. Both must be announced, each once, and the NEXT click must
+  // announce nothing at all.
+  const primed = ['0:4', '1:4', '2:4', '3:4', '0:0', '1:1', '3:3'];
+  const before = state.completedPatterns({ bundle: B, session: sessionWith(primed, 'marked') });
+  const after = state.completedPatterns({ bundle: B, session: sessionWith(primed.concat(['4:4']), 'marked') });
+  record('wins', 'one square completing a row AND a diagonal reports both, each exactly once',
+    before.length === 0 && after.length === 2
+    && after.map((w) => w.id).sort().join(',') === 'diagonal:0,row:4',
+    'before the last square: ' + winIds(before) + ' — after it: ' + winIds(after));
+
+  // The same sequence through the REAL rail, which is where "exactly once" is actually kept.
+  const winStage = harnessStage();
+  renderer.renderBoard({ bundle: B, session: sessionWith(primed, 'marked'), mount: winStage, handlers: {} });
+  const rail = renderer.renderWinRail({ mount: winStage });
+
+  renderer.announce('(seed sentinel)');
+  renderer.updateWins(rail, before);
+  const silentSeed = spokenText();
+  record('wins', 'the rail\'s seeding paint says nothing',
+    silentSeed === '(seed sentinel)',
+    'after the first updateWins the live region still says "' + silentSeed + '"');
+  renderer.updateWins(rail, after);
+  const firstSpoken = spokenText();
+  const chips = [...rail.root.querySelectorAll('.qbe-win')].map((n) => n.textContent);
+
+  // THIS ASSERTION USED TO CHECK ONLY `firstSpoken.indexOf('Pattern complete:') === 0`, which is
+  // true whenever ANY ONE of the two was spoken — so it could not fail on the defect it was written
+  // for. `announce` sets `liveRegion.textContent`, and N writes in one task collapse to the last
+  // value a polite live region ever sees, so announcing per-win inside the loop spoke exactly one of
+  // them: four chips, one sentence, three wins never heard. The test therefore asserts CONTENT, and
+  // specifically that BOTH pattern names are in the single utterance.
+  const spokeBoth = firstSpoken.indexOf('Row 5') !== -1
+    && firstSpoken.indexOf('Diagonal, top left to bottom right') !== -1
+    && firstSpoken.split('Pattern complete:').length === 2; // one lead-in, not one per win
+  record('wins', 'the win rail paints one chip per pattern and speaks BOTH in one utterance',
+    chips.length === 2
+    && chips.indexOf('Pattern complete: Row 5') !== -1
+    && chips.indexOf('Pattern complete: Diagonal, top left to bottom right') !== -1
+    && spokeBoth
+    && rail.root.hidden === false,
+    'rail shows [' + chips.join(' | ') + ']; the live region says "' + firstSpoken + '"');
+
+  // A later move — on a cell that completes nothing — must not repaint or re-announce either win.
+  renderer.announce('(second sentinel)');
+  const later = state.completedPatterns({
+    bundle: B, session: sessionWith(primed.concat(['4:4', '0:1']), 'marked'),
+  });
+  renderer.updateWins(rail, later);
+  const afterLater = spokenText();
+  const chipsLater = [...rail.root.querySelectorAll('.qbe-win')].map((n) => n.textContent);
+  record('wins', 'marking another square afterwards re-announces nothing and paints no new chip',
+    chipsLater.length === 2 && afterLater === '(second sentinel)',
+    'still ' + chipsLater.length + ' chip(s); the live region still says "' + afterLater + '"');
+
+  // ---- 5. a resumed session shows its wins but does not re-announce them ------------------------
+  //
+  // The room already watched these happen. `completedPatterns` is pure, so a resumed session hands
+  // the rail its inherited wins on the FIRST paint — which is exactly the paint the rail seeds
+  // silently. Both halves matter: silent, and still visible.
+  const resumeStage = harnessStage();
+  renderer.renderBoard({ bundle: B, session: sessionWith(rowKeys, 'marked'), mount: resumeStage, handlers: {} });
+  const resumeRail = renderer.renderWinRail({ mount: resumeStage });
+  renderer.announce('(resume sentinel)');
+  renderer.updateWins(resumeRail, state.completedPatterns({ bundle: B, session: sessionWith(rowKeys, 'marked') }));
+  const resumeChips = [...resumeRail.root.querySelectorAll('.qbe-win')].map((n) => n.textContent);
+  record('wins', 'resuming a session with a win already in it paints it but stays silent',
+    resumeChips.length === 1 && resumeChips[0] === 'Pattern complete: Row 1'
+    && spokenText() === '(resume sentinel)',
+    'rail shows [' + resumeChips.join(' | ') + ']; the live region still says "' + spokenText() + '"');
+
+  // The rail is published DOM (theme-contract §2 v1.5), so it is walked like the rest of the board.
+  assertContract('demo-bingo.json + win rail', winStage);
+
+  // ---- 6. the pattern set comes from the CONFIG, never from this code --------------------------
+  const rowOnly = await synthTypedBundle('row-only', gridContent('Row-only wins', 4, 4, 'bingo'),
+    patternGametype('bingo', ['row']));
+  if (!rowOnly.ok) {
+    record('wins', 'a game type declaring only ["row"] validates', false,
+      rowOnly.failures.map(errors.formatFailure).join(' | '));
+  } else {
+    // A complete column AND a complete row on a board whose config names only rows.
+    const both = ['0:0', '0:1', '0:2', '0:3', '1:0', '2:0', '3:0'];
+    const wins = state.completedPatterns({ bundle: rowOnly.value, session: sessionWith(both, 'marked') });
+    record('wins', 'a game type declaring only ["row"] does not win on a completed column',
+      wins.length === 1 && wins[0].id === 'row:0',
+      'column 1 and row 1 are both fully marked; reported ' + winIds(wins));
+  }
+
+  // ---- 7. the terminal state is derived from cellLifecycle, not the word "marked" ---------------
+  const revealType = await synthTypedBundle('reveal-lifecycle',
+    gridContent('Wins on revealed', 3, 3, 'bingo'),
+    patternGametype('bingo', ['row'], ['hidden', 'revealed']));
+  if (!revealType.ok) {
+    record('wins', 'a pattern game type whose terminal state is "revealed" validates', false,
+      revealType.failures.map(errors.formatFailure).join(' | '));
+  } else {
+    const line = ['0:1', '1:1', '2:1'];
+    const onRevealed = state.completedPatterns({ bundle: revealType.value, session: sessionWith(line, 'revealed') });
+    const onHidden = state.completedPatterns({ bundle: revealType.value, session: sessionWith(line, 'hidden') });
+    record('wins', 'the winning state is the game type\'s terminal state, not the literal "marked"',
+      onRevealed.length === 1 && onRevealed[0].id === 'row:1' && onHidden.length === 0,
+      'lifecycle [hidden, revealed]: a fully revealed row wins (' + winIds(onRevealed)
+        + '), a fully hidden one does not (' + winIds(onHidden) + ')');
+  }
+
+  // ---- 8. a non-square board has no diagonal, and says so by silence ---------------------------
+  const oblong = await synthTypedBundle('oblong', gridContent('5 by 4', 5, 4, 'bingo'),
+    patternGametype('bingo', ['row', 'column', 'diagonal', 'full-card']));
+  const square = await synthTypedBundle('square', gridContent('5 by 5', 5, 5, 'bingo'),
+    patternGametype('bingo', ['row', 'column', 'diagonal', 'full-card']));
+  if (!oblong.ok || !square.ok) {
+    record('wins', 'the square and non-square pattern boards validate', false,
+      (oblong.ok ? square : oblong).failures.map(errors.formatFailure).join(' | '));
+  } else {
+    const everything = (bundle) => state.completedPatterns({
+      bundle, session: sessionWith(bundle.resolved.cellKeys, 'marked'),
+    });
+    const oblongWins = everything(oblong.value);
+    const squareWins = everything(square.value);
+    const oblongDiagonals = oblongWins.filter((w) => w.pattern === 'diagonal');
+    const squareDiagonals = squareWins.filter((w) => w.pattern === 'diagonal');
+
+    record('wins', 'a fully marked 5x4 card reports its rows, columns and full card — and NO diagonal',
+      oblongDiagonals.length === 0 && oblongWins.length === 4 + 5 + 1,
+      oblongWins.length + ' win(s): ' + winIds(oblongWins)
+        + ' — a 5x4 grid contains no diagonal, so reporting one would be a bent line called straight');
+
+    record('wins', 'a fully marked 5x5 card reports BOTH diagonals, so the skip is geometry not cowardice',
+      squareDiagonals.length === 2
+      && squareDiagonals.map((w) => w.id).sort().join(',') === 'diagonal:0,diagonal:1'
+      && squareWins.length === 5 + 5 + 2 + 1,
+      squareWins.length + ' win(s) on the square board: ' + winIds(squareWins));
+  }
+
+  // ---- 8b. a RAGGED board reports no line its geometry does not contain ------------------------
+  //
+  // `gridConstraints.uniformRows` DEFAULTS TO FALSE (schemas.js), and nothing in the schema layer
+  // ties `winCondition: "pattern-complete"` to it — so an author-written game type reaches the row
+  // and column builders with columns of unequal depth. The row builder used to collect only the
+  // cells that HAPPEN to exist at row index r: on columns of 5, 3 and 3, marking the single square
+  // `0:4` reported `row:4`, and the rail announced "Pattern complete: Row 5" for one square on an
+  // otherwise empty board. A short column likewise reported itself complete on its own — with a
+  // one-cell column, on the first mark of the game. A wrong win announced to a room cannot be taken
+  // back, so both builders now skip a line the board does not contain, exactly as `diagonal` has
+  // always done. `gametypes/bingo.json` sets `uniformRows: true` and cannot reach this, which is
+  // why a green suite could sit on top of it: the group had no ragged case at all.
+  const raggedType = patternGametype('bingo', ['row', 'column', 'full-card']);
+  raggedType.gridConstraints = { uniformRows: false };
+  const ragged = await synthTypedBundle('ragged', raggedContent('Ragged card', [5, 3, 3], 'bingo'), raggedType);
+  if (!ragged.ok) {
+    record('wins', 'a ragged (non-uniform) pattern board validates', false,
+      ragged.failures.map(errors.formatFailure).join(' | '));
+  } else {
+    const R = ragged.value;
+    const raggedWins = (keys) => state.completedPatterns({ bundle: R, session: sessionWith(keys, 'marked') });
+
+    const deepOnly = raggedWins(['0:4']);
+    record('wins', 'a row only the deepest column reaches is NOT a completed row',
+      deepOnly.length === 0,
+      'columns of 5/3/3, only 0:4 marked → ' + winIds(deepOnly)
+        + ' — row 5 exists in one column out of three, so there is no row 5 to complete');
+
+    const shortColumn = raggedWins(['1:0', '1:1', '1:2']);
+    record('wins', 'a column shorter than the board is NOT a completed column',
+      shortColumn.length === 0,
+      'all three squares of the 3-deep middle column marked → ' + winIds(shortColumn));
+
+    const realRow = raggedWins(['0:0', '1:0', '2:0']);
+    record('wins', 'a row that DOES span every column still wins on a ragged board',
+      realRow.length === 1 && realRow[0].id === 'row:0',
+      'one square in each column at row 0 → ' + winIds(realRow));
+
+    const allMarked = raggedWins(R.resolved.cellKeys);
+    record('wins', 'a fully marked ragged board reports only the lines it really contains',
+      allMarked.map((w) => w.id).sort().join(',') === 'column:0,full-card:0,row:0,row:1,row:2',
+      allMarked.length + ' win(s): ' + winIds(allMarked)
+        + ' — rows 1-3 span all three columns, only column 1 is full depth, and the card is full');
+  }
+
+  // ---- 9. a game type that is not won by patterns is never won by one --------------------------
+  const demo = await fileBundle('games/demo.json');
+  if (demo.ok) {
+    const played = state.completedPatterns({
+      bundle: demo.value, session: sessionWith(demo.value.resolved.cellKeys, 'answered'),
+    });
+    record('wins', 'a fully played jeopardy board reports no pattern win (winCondition is highest-score)',
+      played.length === 0,
+      played.length === 0 ? 'winCondition "' + demo.value.gametype.winCondition
+        + '" short-circuits before any geometry is considered'
+        : 'reported ' + winIds(played));
+  }
+
+  // ---- 10. the two cellStateFor implementations agree ------------------------------------------
+  //
+  // `state.cellStateFor` is a deliberate twin of `renderer.cellStateFor` — the import graph
+  // (module-contracts §2) forbids either module importing the other, so the derivation exists twice
+  // and this is what stops the copies drifting. Every cell of every shipped board, under three
+  // different sessions, including a session carrying a state the game type does not declare.
+  const boards = [['games/demo.json', demo], ['games/demo-bingo.json', bingo],
+    ['games/demo-feud.json', await fileBundle('games/demo-feud.json')]];
+  let compared = 0;
+  const disagreements = [];
+  for (const [label, result] of boards) {
+    if (!result.ok) { disagreements.push(label + ' did not validate'); continue; }
+    const bundle = result.value;
+    const sessions = [
+      { cellStates: {}, bonusCells: [] },
+      sessionWith(bundle.resolved.cellKeys, bundle.resolved.terminalState),
+      // A foreign state that this game type does not declare: both must ignore it identically.
+      sessionWith(bundle.resolved.cellKeys, 'answered'),
+    ];
+    for (const session of sessions) {
+      for (const key of bundle.resolved.cellKeys) {
+        const a = state.cellStateFor(bundle, session, key);
+        const b = renderer.cellStateFor(bundle, session, key);
+        compared++;
+        if (a !== b) disagreements.push(label + ' ' + key + ': state says ' + a + ', renderer says ' + b);
+      }
+    }
+  }
+  record('wins', 'state.cellStateFor and renderer.cellStateFor agree on every cell of every board',
+    compared > 0 && disagreements.length === 0,
+    disagreements.length === 0 ? compared + ' cell/session combinations, identical in both modules'
+      : disagreements.slice(0, 4).join('; '));
+}
+
+// ---------------------------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------------------------
 
@@ -3279,6 +4054,10 @@ export async function run(mount) {
   // source text. Both suites hand the session shelf back exactly as they found it (withEmptyShelf).
   await runStateSuite();
   await runBonusSuite();
+  // F8. Pure detection plus the rail that shows it — no shelf, no boot, so it can run anywhere in
+  // this list; it sits after the state suite because it reads `state` and after the render suite
+  // because it renders a real board to hang the rail on.
+  await runWinsSuite();
   // The file-level audit of the same manifest: fetchability, zero-CDN, SPDX, tokens, classes.
   await runThemeSuite();
   await runInvariantSuite();

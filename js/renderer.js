@@ -184,10 +184,13 @@ export function prefersReducedMotion() {
 /**
  * The state a cell moves to next, or `null` when it is already terminal.
  *
- * Exported for the test runner and for F6's state layer, which has to record the same value the
- * board was just told to display. NOT because app.js calls it — it does not, and a reader who went
- * looking for that caller found nothing: `advance()` hands the next state to `onCellAdvance` as its
- * second argument precisely so the derivation happens once, here.
+ * NOTHING OUTSIDE THIS FILE IMPORTS IT TODAY, and the export is kept for a future caller rather
+ * than for a real one. The JSDoc used to name "the test runner and F6's state layer" as its
+ * consumers; neither is true, and the second cannot become true — module-contracts §2 forbids
+ * `state -> renderer`, so a reader hunting that caller was hunting something the architecture rules
+ * out. `state.js` therefore carries its OWN copy of this derivation, on purpose. And app.js does not
+ * call it either: `advance()` hands the next state to `onCellAdvance` as its second argument
+ * precisely so the derivation happens once, here.
  */
 export function nextLifecycleState(lifecycle, current) {
   const i = lifecycle.indexOf(current);
@@ -203,6 +206,11 @@ export function nextLifecycleState(lifecycle, current) {
  *      saved against a different game type must not smuggle `answered` onto a bingo card.
  *   2. `flags.preMarked` -> the TERMINAL state. Spec §4.1: the bingo free space starts done.
  *   3. the initial state.
+ *
+ * Exported for a future caller, not a current one: nothing outside this file imports it. `state.js`
+ * has a line-for-line twin (`state.cellStateFor`) because module-contracts §2 forbids it importing
+ * the renderer, and the suite asserts the two agree on every cell of every shipped board rather
+ * than trusting that they still do.
  */
 export function cellStateFor(bundle, session, cellKey) {
   const { cellLifecycle } = bundle.gametype;
@@ -671,8 +679,28 @@ function setStageInert(view, on) {
     view.root.inert = on;
     return;
   }
-  for (const child of stage.children) {
-    if (child === view.detail.root) continue;
+  inertSiblings(stage, view.detail.root, on);
+}
+
+/**
+ * `inert` every child of `mount` except `except`, or clear it again.
+ *
+ * Shared by the question overlay and the two setup screens, because they have the same problem: a
+ * scrim stops the POINTER but not the keyboard. Behind the mid-game "Edit the teams" screen sit the
+ * board, the score bar and the toolbar, and Tab walked straight into them — measured 13 tabs from
+ * the first input to a `.qbe-cell` whose own centre hit-tested as `.qbe-setup`, where Space opens a
+ * question on the projector from underneath a modal. A mouse host cannot do that, which makes the
+ * keyboard path strictly worse (WCAG 2.4.3).
+ *
+ * `inert` and NOT a focus trap: CLAUDE.md forbids confining a keyboard user, and inert only removes
+ * the background from the tab order and the accessibility tree — Tab still cycles out to the browser
+ * chrome. On an engine without `inert` this is a plain property assignment: no throw, no effect.
+ * Feature support, never a user-agent test (CLAUDE.md constraint 5).
+ */
+function inertSiblings(mount, except, on) {
+  if (!mount || typeof mount.children === 'undefined') return;
+  for (const child of mount.children) {
+    if (child === except) continue;
     child.inert = on;
   }
 }
@@ -818,6 +846,127 @@ export function announce(text, doc = document) {
     (doc.body || doc.documentElement).appendChild(liveRegion);
   }
   liveRegion.textContent = text;
+}
+
+// =============================================================================================
+// SECTION 6b — the win rail (F8, spec §4.2 `winCondition: "pattern-complete"`)
+// =============================================================================================
+//
+// A WIN IS AN ANNOUNCEMENT, NOT A MODAL. Plan Q4 puts one host in front of one projected screen and
+// makes them the adjudicator; a real bingo room keeps playing for second and third place. So a
+// completed pattern is added to a rail that stays on screen and blocks nothing — no scrim, no focus
+// move, no dismissal to click, and nothing anywhere that ends the game. The board stays live.
+//
+// TWO CHANNELS, ONE EVENT. The rail is what the ROOM sees; `announce()` is what a screen reader
+// hears. They are deliberately separate elements: making the rail itself a live region would speak
+// it and then leave it unreadable in reading order (a live region announces changes, not history),
+// and it would double up with the `.qbe-live` region the score bar already uses. The rail is
+// therefore a plain, permanently readable list, and the live region carries the event.
+//
+// theme-contract v1.5 publishes `aside.qbe-wins` and `.qbe-win[data-pattern]`. That amendment is
+// additive and is mirrored into docs/handoffs/theming-handoff-claude-design.md (delta D11).
+
+// UI prose for the closed pattern set of spec §4.2, keyed the same way STATE_PHRASE is keyed on the
+// lifecycle enum. `index` is zero-based board geometry; the room counts from one.
+const WIN_PHRASE = Object.freeze({
+  row: (i) => 'Row ' + (i + 1),
+  column: (i) => 'Column ' + (i + 1),
+  // Named by direction rather than by "first"/"second": on a projected board the host is looking at
+  // the line, and "diagonal 2" tells them nothing about which one just completed.
+  diagonal: (i) => (i === 0 ? 'Diagonal, top left to bottom right' : 'Diagonal, top right to bottom left'),
+  'full-card': () => 'Full card',
+});
+
+/** "Row 3" — the line's own name, with no lead-in. */
+function winName(win) {
+  const describe = WIN_PHRASE[win.pattern];
+  return describe ? describe(win.index) : win.pattern;
+}
+
+/** "Pattern complete: Row 3". Game-type neutral on purpose — "BINGO!" is one game type's word. */
+function winPhrase(win) {
+  return 'Pattern complete: ' + winName(win);
+}
+
+/**
+ * Create the win rail. Empty and `hidden` until something is won.
+ *
+ * @param {{mount:HTMLElement}} args  `mount` is the stage.
+ * @returns {{root:HTMLElement, items:Map<string,HTMLElement>, seeded:boolean, destroy:Function}}
+ *
+ * Called only for a game type whose `winCondition` is `pattern-complete` (theme-contract §2), for
+ * the same reason the score bar is drawn only when there is scoring: an element that can never
+ * receive content is one more thing for a theme to position and for a host to wonder about.
+ */
+export function renderWinRail({ mount }) {
+  const doc = mount.ownerDocument || document;
+  const root = el(doc, 'aside', 'qbe-wins');
+  root.hidden = true;
+  // A name, so the list is findable by a screen-reader user reading the page rather than only
+  // hearing the live-region announcement as it happens.
+  root.setAttribute('aria-label', 'Completed patterns');
+  mount.appendChild(root);
+  return { root, items: new Map(), seeded: false, destroy: () => root.remove() };
+}
+
+/**
+ * Reconcile the rail with the wins that are true right now.
+ *
+ * @param {object} view  from `renderWinRail`
+ * @param {Array<{id:string, pattern:string, index:number}>} wins  `state.completedPatterns(...)`
+ *
+ * EXACTLY ONCE PER PATTERN INSTANCE, and this is where that promise is kept. `wins` is a complete
+ * statement of what is currently complete — the detector is pure and re-reports every win on every
+ * repaint — so this function diffs it against what is already on the rail, keyed by `win.id`.
+ * Marking the last square of a row that also completes a diagonal paints two items in one call;
+ * marking any cell afterwards paints none, because both ids are already there.
+ *
+ * THE FIRST CALL IS SILENT, and that is what makes a resume quiet. A restored session arrives with
+ * its wins already true: they are painted, because the room should be able to see what has already
+ * been won, but nothing is spoken, because the room already saw them happen. Same technique as the
+ * score bar's `paintedScores` seeding. Anything that appears AFTER that first paint is a real event
+ * and is announced.
+ *
+ * Wins can also DISAPPEAR — an imported session (F10) replaces `cellStates` wholesale and may hold
+ * fewer marks than the board on screen. A stale "Full card" left glowing over a half-played board
+ * would be a lie, so the reconcile removes as well as adds.
+ */
+export function updateWins(view, wins) {
+  if (!view) return;
+  const list = Array.isArray(wins) ? wins : [];
+  const doc = view.root.ownerDocument || document;
+  const live = new Set(list.map((win) => win.id));
+
+  for (const [id, node] of view.items) {
+    if (live.has(id)) continue;
+    node.remove();
+    view.items.delete(id);
+  }
+
+  // ONE UTTERANCE PER MOVE, not one per win. `announce` writes `liveRegion.textContent`, and a
+  // polite live region reports the value it finds when the task ends — so N synchronous writes are
+  // spoken ONCE, as the last of them. Announcing inside this loop therefore lost every win but the
+  // last: marking the final square of a 5x5 completes Row 5, Column 5, the main diagonal and the
+  // full card, and a screen-reader host heard only "Pattern complete: Full card" while four chips
+  // appeared. The rail is the room's channel and it already shows all four; the live region is the
+  // only channel a host who cannot see the rail has, so it has to carry the whole event.
+  const added = [];
+  for (const win of list) {
+    if (view.items.has(win.id)) continue;
+    const item = el(doc, 'div', 'qbe-win', winPhrase(win));
+    item.setAttribute('data-pattern', win.pattern);
+    view.root.appendChild(item);
+    view.items.set(win.id, item);
+    added.push(winName(win));
+  }
+  // Listed in the order the builders report them (rows, then columns, then diagonals, then the full
+  // card), which is the order the chips appear in — so what is heard and what is seen agree.
+  if (view.seeded && added.length > 0) announce('Pattern complete: ' + added.join(', '));
+
+  // `hidden` rather than an empty rail: theme-contract §2's "absent, never empty-but-meaningful",
+  // applied to a container a theme would otherwise have to style around for a whole game of bingo.
+  view.root.hidden = view.items.size === 0;
+  view.seeded = true;
 }
 
 // =============================================================================================
@@ -1101,8 +1250,10 @@ function buildSetup(doc, screen, title, note) {
   const root = el(doc, 'div', 'qbe-setup');
   root.setAttribute('data-screen', screen);
   // Same reasoning as `.qbe-detail`: named by its heading, focus moved into it, but NOT `aria-modal`
-  // and no focus trap — there is nothing behind it worth protecting and trapping a keyboard user is
-  // forbidden outright (CLAUDE.md accessibility rule).
+  // and no focus trap — trapping a keyboard user is forbidden outright (CLAUDE.md accessibility
+  // rule). What IS behind it is made `inert` by `mountSetup` below: this shell used to claim there
+  // was "nothing behind it worth protecting", which is true of the resume screen and false of the
+  // mid-game Teams… screen, where the board, the score bar and the toolbar are all still there.
   root.setAttribute('role', 'dialog');
 
   const panel = el(doc, 'div', 'qbe-setup-panel');
@@ -1121,6 +1272,55 @@ function buildSetup(doc, screen, title, note) {
   root.appendChild(panel);
 
   return { root, panel, heading, body, actions };
+}
+
+/**
+ * Put a setup shell on the stage and take it off again cleanly.
+ *
+ * @param {HTMLElement} mount   the stage
+ * @param {object} ui           from `buildSetup`
+ * @param {Function|null} onEscape  called when Escape is pressed, or null when the screen has no
+ *                                  dismiss semantics
+ * @returns {{root:HTMLElement, destroy:Function}}
+ *
+ * Two things every setup screen owes, kept here so neither caller can forget one:
+ *
+ * INERT BEHIND, cleared on destroy — see `inertSiblings`.
+ *
+ * ESCAPE, but only where there is something to cancel. The question overlay taught the host that
+ * Escape closes an overlay (plan Q12), and they use it on every cell of a game, so pressing it on
+ * the Teams… screen and getting nothing reads as a frozen app. It is NOT registered on the initial
+ * team setup or on the resume screen: those two have no cancel — dismissing them would leave a host
+ * staring at an empty stage with no way back — so they pass `null` rather than a handler that does
+ * something invented. The listener lives on the document only while the screen is up, for the same
+ * reason `openCell`'s does.
+ */
+function mountSetup(mount, ui, onEscape) {
+  mount.appendChild(ui.root);
+  inertSiblings(mount, ui.root, true);
+
+  let escapeListener = null;
+  if (typeof onEscape === 'function') {
+    const doc = ui.root.ownerDocument || document;
+    escapeListener = (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      onEscape();
+    };
+    doc.addEventListener('keydown', escapeListener);
+  }
+
+  return {
+    root: ui.root,
+    destroy: () => {
+      if (escapeListener) {
+        (ui.root.ownerDocument || document).removeEventListener('keydown', escapeListener);
+        escapeListener = null;
+      }
+      inertSiblings(mount, ui.root, false);
+      ui.root.remove();
+    },
+  };
 }
 
 /**
@@ -1206,9 +1406,11 @@ export function renderTeamSetup({ mount, handlers, names, editing }) {
     }
   });
 
-  mount.appendChild(ui.root);
+  // Escape cancels the MID-GAME edit only; the opening screen has no Cancel button and nothing to
+  // go back to.
+  const view = mountSetup(mount, ui, editing && h.onCancel ? () => h.onCancel() : null);
   tryFocus(inputs[0] || ui.heading);
-  return { root: ui.root, destroy: () => ui.root.remove() };
+  return view;
 }
 
 /**
@@ -1233,7 +1435,11 @@ export function renderResumeScreen({ sessions, gameHash, mount, handlers }) {
     doc,
     'resume',
     'Pick up where you left off?',
-    'This browser has a saved session for this game. Resuming restores the board, the teams, the scores and the bonus cells exactly as they were.',
+    // The second sentence is the one a host needs BEFORE they choose, and it was missing. The shelf
+    // holds one session per game file (the key is the content hash), so starting a new game writes
+    // over the saved one — there is no second slot for "period 2". Saying so here is the only place
+    // it can be said in time: once the new game starts, the old board is already gone.
+    'This browser has a saved session for this game. Resuming restores the board, the teams, the scores and the bonus cells exactly as they were. Starting a new game instead REPLACES it — a game file has one saved session, and there is no undo.',
   );
 
   for (let i = 0; i < list.length; i++) {
@@ -1260,12 +1466,43 @@ export function renderResumeScreen({ sessions, gameHash, mount, handlers }) {
     ui.body.appendChild(row);
   }
 
-  ui.actions.appendChild(chromeButton(doc, 'new', 'Start a new game', 'Start a new game and leave the saved session alone'));
+  // THE ACCESSIBLE NAME USED TO SAY THE OPPOSITE OF WHAT THE BUTTON DOES. It read "Start a new game
+  // and leave the saved session alone", and a screen-reader host who believed it lost their board:
+  // sessions are keyed `STORAGE_PREFIX + gameHash`, one per game file, so `newSession -> adopt ->
+  // persist` writes straight over the entry this screen is offering to resume.
+  ui.actions.appendChild(chromeButton(
+    doc,
+    'new',
+    'Start a new game',
+    'Start a new game — this replaces the saved session for this game, and there is no undo',
+  ));
+
+  // DISCARD ASKS TWICE, and this is the confirmation `state.discardSession`'s own comment already
+  // says "belongs on the resume screen" and never had. Resume and Discard are the same size, the
+  // same fill and 20px apart, with the destructive one on the right where a hurried pointer
+  // overshoots — and one click removed the entry immediately, with no undo and (see the note above)
+  // no second copy anywhere.
+  //
+  // A two-step press rather than `window.confirm`: a blocking dialog on a projected screen is
+  // forbidden, and greying the button out would make the host hunt for how to enable it. The second
+  // press is the deliberate act. Only the button's LABEL changes — no new class and no new
+  // attribute, so nothing here has to be published to a theme.
+  let pending = null; // the Discard button currently asking, if any
+  const resetPending = () => {
+    if (!pending) return;
+    pending.button.textContent = 'Discard';
+    pending.button.setAttribute('aria-label', 'Discard the saved session for ' + pending.title);
+    pending = null;
+  };
 
   ui.root.addEventListener('click', (event) => {
     const target = event.target instanceof Element ? event.target.closest('button') : null;
     if (!target || !ui.root.contains(target)) return;
     const action = target.getAttribute('data-action');
+    // Any other button on the screen cancels a pending confirmation: a host who pressed Discard and
+    // then went for Resume has plainly changed their mind, and leaving "Really discard?" armed on a
+    // row they walked away from is a trap for the next click.
+    if (!(action === 'discard' && pending && pending.button === target)) resetPending();
     if (action === 'new') {
       if (h.onNewGame) h.onNewGame();
       return;
@@ -1274,13 +1511,28 @@ export function renderResumeScreen({ sessions, gameHash, mount, handlers }) {
     if (!rowEl) return;
     const summary = list[Number(rowEl.getAttribute('data-session'))];
     if (!summary) return;
-    if (action === 'resume' && h.onResume) h.onResume(summary.gameHash);
-    else if (action === 'discard' && h.onDiscard) h.onDiscard(summary.gameHash);
+    if (action === 'resume' && h.onResume) {
+      h.onResume(summary.gameHash);
+    } else if (action === 'discard') {
+      if (!pending) {
+        pending = { button: target, title: summary.gameTitle };
+        target.textContent = 'Really discard?';
+        target.setAttribute(
+          'aria-label',
+          'Confirm: permanently discard the saved session for ' + summary.gameTitle,
+        );
+        return;
+      }
+      pending = null;
+      if (h.onDiscard) h.onDiscard(summary.gameHash);
+    }
   });
 
-  mount.appendChild(ui.root);
+  // No Escape handler: this screen is the only route into the game, so dismissing it would strand
+  // the host on an empty stage.
+  const view = mountSetup(mount, ui, null);
   tryFocus(ui.heading);
-  return { root: ui.root, destroy: () => ui.root.remove() };
+  return view;
 }
 
 /**

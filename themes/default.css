@@ -68,7 +68,11 @@
   --cell-border: 2px solid #16293f;   /* 12.88:1 vs --board-bg — the cell edge is locatable, which matters because the cell is a button */
   --cell-radius: 0.5rem;
   /* A hard offset plus a soft drop: reads as a physical card, and the hard
-     edge survives compression on a screen share where the blur does not. */
+     edge survives compression on a screen share where the blur does not.
+     This is the cell's RESTING shadow and it is only ever substituted as a
+     WHOLE box-shadow value, never as one item in a list — so `none` is a legal
+     and supported thing for a theme to set here (see the revealed rule in §4
+     for the defect that rule change fixed, and theme-contract §4). */
   --cell-shadow: 0 2px 0 #16293f, 0 6px 14px rgba(28, 26, 23, 0.18);
   --cell-hover-bg: #2c5182;           /* --cell-text on it: 7.28:1 (AA ✓) */
 
@@ -178,6 +182,25 @@
      which fails the 3:1 floor for a non-text indicator. This is the kind of
      pair that only shows up if you actually compute it. */
   --team-active-outline: 3px solid #ffd45e;  /* 12.26:1 vs --score-bg (non-text ✓) */
+  /* The active row's inner tint, the second of the two cues (§5). A TOKEN in
+     contract v1.6 on the evidence §4 asks for: this value was hardcoded next to
+     the tokenised outline, and all four override sheets carried the same
+     one-declaration rule to change it. Tokenising deletes four whole rules
+     rather than one declaration out of four — the same bar --cell-answered-border
+     had to clear in v1.2. Deliberately an alpha tint, not an opaque colour: it
+     has to work over whatever --score-bg a theme sets. */
+  --team-active-bg: rgba(255, 212, 94, 0.14);
+
+  /* --- Win rail (contract v1.5, F8) -------------------------------------- */
+
+  /* A completed pattern is an announcement to the room, so it is drawn in the
+     loudest thing the palette already owns rather than in a colour of its own:
+     the accent fill measures 5.36:1 against --board-bg, which clears the 3:1
+     boundary floor without needing a rim token, and the accent's own contrast
+     colour is already measured against it. Two tokens, both re-measurable in
+     one place by a theme whose accent lands differently. */
+  --win-bg: var(--accent);            /* 5.36:1 vs --board-bg (non-text boundary ✓) */
+  --win-text: var(--accent-contrast); /* 6.04:1 on --win-bg (AA body ✓) */
 
   /* --- Chrome buttons (contract v1.3) ------------------------------------ */
 
@@ -191,7 +214,10 @@
      only 2.83:1 against --score-bg (the score bar: fails). One rim colour in a
      token fixes both, and a theme whose accent lands the other way round can
      re-measure it in one place instead of in four rules. */
-  --btn-border: 2px solid var(--accent-contrast);  /* 16.05:1 vs --score-bg, 1.11:1 vs --board-bg —
+  /* Figures re-measured 2026-08-17: the rim reads 17.08:1 on --score-bg and
+     1.13:1 on --board-bg (both were mistyped as 16.05 and 1.11; the colours
+     were and are correct, and the conclusion is unchanged). */
+  --btn-border: 2px solid var(--accent-contrast);  /* 17.08:1 vs --score-bg, 1.13:1 vs --board-bg —
                                                       the fill carries the boundary on the light
                                                       ground, the rim carries it on the dark one */
 
@@ -487,8 +513,31 @@ body,
   color: var(--cell-revealed-text);
   /* A solid accent inset. This is the STATIC half of the state change: with
      motion removed the cell must still be obviously different (spec §8), and
-     an inset ring is visible whether or not anything animated. */
-  box-shadow: inset 0 0 0 4px var(--cell-revealed-accent), var(--cell-shadow);
+     an inset ring is visible whether or not anything animated.
+
+     THE RING IS ALONE IN THIS LIST, AND THAT IS THE FIX FOR A REAL DEFECT.
+     This used to read `inset 0 0 0 4px <accent>, var(--cell-shadow)`, composing
+     a THEME-OWNED whole-value token into a comma list. `none` is a legal value
+     for box-shadow but is NOT a legal ITEM inside a shadow list, so any theme
+     that turned its resting shadow off — civic's dark scheme does, because dark
+     surfaces rise rather than cast — made the whole declaration invalid at
+     computed-value time. An invalid declaration computes to `unset`, which for
+     box-shadow is `none`: the theme lost the drop shadow it meant to lose AND
+     the accent ring it never asked to lose. Measured on shipped civic dark, the
+     ring was gone and hidden -> revealed was a 1.13:1 fill change, so under
+     `prefers-reduced-motion` an opened cell had no static cue at all.
+
+     No CSS mechanism can make an arbitrary theme value safe inside a list —
+     var() fallbacks fire only for an UNSET custom property, and invalidity
+     cannot be caught. So the composition is removed rather than defended:
+     --cell-shadow is now only ever substituted as a whole value (see the base
+     .qbe-cell rule above and theme-contract §4), where `none` is legal. The
+     visible cost is that a revealed cell no longer carries the theme's resting
+     drop shadow in default, midnight and civic light; the ring, which is the
+     accessibility-bearing cue, is now unconditional. A theme that wants both
+     restates the property with its own layers, which is exactly what
+     marquee.css already does. */
+  box-shadow: inset 0 0 0 4px var(--cell-revealed-accent);
 }
 
 .qbe-cell[data-state="revealed"] .qbe-cell-value {
@@ -650,13 +699,10 @@ body,
   border-radius: calc(var(--cell-radius) * 0.75);
 }
 
-.qbe-team-name {
-  font-size: clamp(0.75rem, 1.1vw, 1.25rem);
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-align: center;
-  overflow-wrap: anywhere;
-}
+/* `.qbe-team-name` used to be declared HERE as well, restating all five of the
+   button block's typographic declarations verbatim at equal specificity and
+   earlier source order — so it was dead, and editing it changed nothing on
+   screen. Deleted; the live block is the button one further down §5. */
 
 .qbe-team-score {
   font-family: var(--font-display);
@@ -671,7 +717,7 @@ body,
 .qbe-team[data-active="true"] {
   outline: var(--team-active-outline);
   outline-offset: -3px;
-  background: rgba(255, 212, 94, 0.14);
+  background: var(--team-active-bg);
 }
 
 /* A host may start with no teams at all (they keep score on a whiteboard, or
@@ -758,6 +804,39 @@ body,
   filter: brightness(1.12);
 }
 
+/* ---- The win rail (contract v1.5, F8) ------------------------------------ */
+
+/* Completed patterns, newest last, sitting between the board and the host's
+   toolbar. It is IN the flow rather than floating over the board on purpose: a
+   win does not interrupt play (plan Q4 — the host adjudicates and the room keeps
+   playing for second place), so it must not cover a cell anyone still has to
+   reach. `flex: 0 0 auto` keeps the board's own growth untouched. */
+.qbe-wins {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+/* Needed because the rule above sets `display` — the renderer hides the rail
+   with the `hidden` attribute until the first pattern completes. */
+.qbe-wins[hidden] {
+  display: none;
+}
+
+.qbe-win {
+  padding: 0.3em 0.8em;
+  border-radius: var(--cell-radius);
+  background: var(--win-bg);
+  color: var(--win-text);
+  font-family: var(--font-display);
+  /* Sized off the column label rather than the point value: this is a phrase,
+     not three digits, and it has to stay on one line on a projector. */
+  font-size: var(--column-label-size);
+  line-height: 1.3;
+}
+
 /* The always-present footer. Right-aligned and quiet: it is host equipment, not
    part of the game, and the room should read past it. */
 .qbe-toolbar {
@@ -786,9 +865,12 @@ body,
   overflow: auto;
 }
 
-.qbe-setup[hidden] {
-  display: none;
-}
+/* `.qbe-setup[hidden] { display: none }` used to live here and never matched:
+   the setup screens are REMOVED by `destroy()`, not hidden — unlike .qbe-detail
+   and input.qbe-file, which really do set [hidden]. Deleted along with the
+   `[hidden]` in the contract's §2 shape for this element (v1.6), so a theme
+   author copying the published shape no longer writes a rule that is dead on
+   arrival. */
 
 .qbe-setup-panel {
   display: flex;

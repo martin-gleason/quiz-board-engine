@@ -168,6 +168,7 @@ export async function boot({ search = window.location.search, mounts = {} } = {}
     screen: null,     // the team-setup / resume overlay currently up, or null
     board: null,      // BoardView, once the game has started
     panel: null,      // PanelView, or null for a game type with no scoring
+    wins: null,       // the F8 win rail, or null unless winCondition is pattern-complete
     toolbar: null,
     // VIEW-ONLY session facts, deliberately not persisted — see `renderer.updateScorePanel`.
     awardKey: null,   // the cell whose points the +/- buttons are currently offering
@@ -366,6 +367,14 @@ function startGame(ctx) {
     },
   });
 
+  // F8. The rail exists only for a game type that can be won by completing a pattern (spec §4.2),
+  // the same shape as the score bar's `scoring.model !== 'none'` gate above: a game type declares
+  // what it has, and the chrome for what it does not have is absent rather than empty. Drawn after
+  // the board so the wins sit under it, and before the toolbar so the host equipment stays last.
+  if (bundle.gametype.winCondition === 'pattern-complete') {
+    ctx.wins = renderer.renderWinRail({ mount: stage });
+  }
+
   // Export/Import are offered for every game type — a bingo card a host cannot export is data loss
   // wearing a layout decision. Teams… is offered only when there is a score bar to show a team IN:
   // passing no handler is what tells the renderer to leave the button out entirely rather than draw
@@ -387,6 +396,13 @@ function startGame(ctx) {
 function repaint(ctx, session) {
   if (!session) return;
   if (ctx.board) renderer.updateBoard(ctx.board, { bundle: ctx.bundle, session });
+  // F8. The rule is `state`'s (a pure function of board + cell states), the pixels and the
+  // announcement are the renderer's, and this line is the whole of app.js's involvement — which is
+  // what keeps "no game rules in the composition root" true. Recomputed on every repaint rather than
+  // tracked incrementally: the detector is pure, so the FIRST paint of a resumed session already
+  // knows every win it inherited, and the renderer seeds its rail from it silently instead of
+  // announcing a pile of wins the room watched happen an hour ago.
+  if (ctx.wins) renderer.updateWins(ctx.wins, state.completedPatterns({ bundle: ctx.bundle, session }));
   if (ctx.panel) {
     renderer.updateScorePanel(ctx.panel, {
       session,

@@ -168,6 +168,9 @@
      accent measured 2.83:1 on its score bar. Same token, opposite answer —
      which is exactly why the ratio gets computed per theme instead of assumed. */
   --team-active-outline: 3px solid #ff3e9d;  /* 5.67:1 vs --score-bg (non-text ✓) */
+  /* The active row's inner tint. Was a one-declaration class override;
+     a token in contract v1.6. */
+  --team-active-bg: rgba(255, 62, 157, 0.14);
 
   /* --- Accent, focus, motion -------------------------------------------- */
 
@@ -179,9 +182,11 @@
 }
 
 /* ==========================================================================
-   CLASS OVERRIDES — five of them, and no more
-   Three carry real design decisions and are numbered; the last two, below them,
-   are one-line tints. Each exists because a token alone genuinely could not
+   CLASS OVERRIDES — four of them, and no more
+   Three carry real design decisions and are numbered; the last one, below them,
+   is a one-line tint. (There were five until contract v1.6 tokenised the
+   active-team tint as --team-active-bg — see theme-contract §6's reporting duty
+   working exactly as intended: four themes each carried that same rule.) Each exists because a token alone genuinely could not
    express it. If a sixth appears, that is a signal the token set is short something, and the
    right move is to report it (theme-contract §6), not to keep adding rules —
    which is exactly how v1.2's five new tokens arrived.
@@ -218,13 +223,6 @@
 .qbe-cell-mark {
   -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 6 94 50 50 94 6 50Z' fill='%23000'/%3E%3C/svg%3E");
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 6 94 50 50 94 6 50Z' fill='%23000'/%3E%3C/svg%3E");
-}
-
-/* 4 and 5: one-line tints. Counted in the five above — they are small, not
-   invisible. default tinted these with its amber, and amber is not in this
-   palette. */
-.qbe-team[data-active="true"] {
-  background: rgba(255, 62, 157, 0.14);
 }
 
 /* The locked dot, in cyan rather than currentColor. Stays a background-image

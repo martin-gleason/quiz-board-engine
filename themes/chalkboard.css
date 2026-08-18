@@ -113,6 +113,9 @@
   --score-bg: #22302a;
   --score-text: #f2efe2;             /* 11.95:1 (AAA) */
   --team-active-outline: 3px solid #f7e8a0;  /* 11.16:1 vs --score-bg (non-text 3:1) */
+  /* The active row's inner tint. Was a one-declaration class override;
+     a token in contract v1.6. */
+  --team-active-bg: rgba(247, 232, 160, 0.12);
 
   /* --- Accent, focus, motion -------------------------------------------- */
   --accent: #f7e8a0;                 /* 9.60:1 vs --board-bg — yellow chalk is the whole accent language */
@@ -122,10 +125,12 @@
 }
 
 /* ==========================================================================
-   CLASS OVERRIDES — four
+   CLASS OVERRIDES — two
    (Six in the donated file. The spent rim, the revealed VALUE's colour and the
    Close label all became tokens in theme-contract v1.2, which is what the
-   reporting duty in §6 is for.)
+   reporting duty in §6 is for. In v1.6 the active-team tint became
+   --team-active-bg, and the revealed ring — override 3 below — stopped being
+   needed at all once default.css quit composing --cell-shadow into a list.)
    ========================================================================== */
 
 /* 1. Column labels: hand-written headers with a dashed hand-rule under them.
@@ -145,17 +150,15 @@
     radial-gradient(ellipse 65% 40% at 68% 66%, rgba(242, 239, 226, 0.1), rgba(0, 0, 0, 0) 70%);
 }
 
-/* 3. The revealed slab's RING — colour now comes from the token; the rule
-      survives only because of the shadow LIST. default.css writes
-      `inset 0 0 0 4px <accent>, var(--cell-shadow)`, and this theme sets
-      --cell-shadow: none — `none` is not a legal item inside a box-shadow list,
-      so that declaration would be invalid at computed-value time and the ring
-      would vanish entirely. Restating the single-layer list is the only way to
-      keep it. Cannot become a token: box-shadow is one property, and the layer
-      COUNT, not the colour, is what differs here. */
-.qbe-cell[data-state="revealed"] {
-  box-shadow: inset 0 0 0 4px var(--cell-revealed-accent);
-}
+/* 3. DELETED — the revealed slab's RING is now inherited.
+      This file used to restate `box-shadow: inset 0 0 0 4px
+      var(--cell-revealed-accent)` because default.css composed the ring with
+      `var(--cell-shadow)` in one list, and this theme's --cell-shadow: none
+      made that whole declaration invalid at computed-value time, taking the
+      ring with it. default.css no longer composes the token into a list
+      (contract v1.6), so the base rule now delivers the ring on its own and
+      this override says nothing the base layer does not already say. The
+      rendered result is byte-identical to what this theme shipped. */
 
 /* 4. The bingo mark: a drawn chalk circle, not an X — a teacher circles what
       counts. Mask, so --cell-mark-glyph-color still recolours it. The path is
@@ -166,7 +169,3 @@
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 12 C 74 10 90 28 88 50 C 86 74 70 90 48 88 C 26 86 10 70 12 48 C 14 28 30 15 46 13' fill='none' stroke='%23000' stroke-width='9' stroke-linecap='round'/%3E%3C/svg%3E");
 }
 
-/* Active-team tint, in yellow chalk. */
-.qbe-team[data-active="true"] {
-  background: rgba(247, 232, 160, 0.12);
-}

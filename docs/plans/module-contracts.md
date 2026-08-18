@@ -492,17 +492,35 @@ Imports: `schemas`, and `vendor/reveal.js/reveal.esm.js`. Nothing else. Pure fun
 arguments; it holds view handles, never game truth.
 
 ```js
-export async function initReveal(revealMount) -> Promise<RevealApi>   // keyboard:false (plan Q12)
+export const REVEAL_CONFIG                                            // frozen; `display` included
+
+export async function initReveal(revealMount, overrides?) -> Promise<RevealApi>  // keyboard:false (Q12)
 export function mountTheme(themeFile: string, doc = document) -> void
 export function prefersReducedMotion() -> boolean
+export function nextLifecycleState(lifecycle: string[], current: string) -> string | null
+export function cellStateFor(bundle, session, cellKey) -> string
+
 export function renderBoard({ bundle, session, mount, handlers }) -> BoardView
 export function updateBoard(view, { bundle, session }) -> void
+export function openCell(view, cellKey) -> void
+export function closeCell(view) -> void
+
+export function renderWinRail({ mount }) -> WinRailView
+export function updateWins(view, wins) -> void
+
 export function renderScorePanel({ bundle, session, mount, handlers }) -> PanelView
-export function updateScorePanel(view, { session }) -> void
-export function renderTeamSetup({ mount, handlers }) -> void
-export function renderResumeScreen({ sessions, mount, handlers }) -> void
-export function announce(text: string) -> void            // ARIA live region for state changes
+export function updateScorePanel(view, { session, award?, activeTeam? }) -> void
+export function renderToolbar({ mount, handlers }) -> { root, destroy }
+
+export function renderTeamSetup({ mount, handlers, names?, editing? }) -> { root, destroy }
+export function renderResumeScreen({ sessions, gameHash, mount, handlers }) -> { root, destroy }
+
+export function announce(text: string, doc = document) -> void   // the ARIA live region
 ```
+
+This block is the AUTHORITY for signatures (§1). It was eight calls stale after F6-F10 — a stranger
+coding against it wrote calls that do not exist — so it is now written from the shipped export list
+rather than from the phase plans.
 
 - `mountTheme` accepts **only** `bundle.resolved.themeFile` — a bare filename already checked
   against `PATTERNS.themeFile` by the schema and already proven to be a manifest value. It
@@ -526,11 +544,27 @@ export function announce(text: string) -> void            // ARIA live region fo
   `renderedStates`, `detail`, `bundle`, `handlers`, `open`, `escapeListener`); `cells` is a
   projection of `records`, so `cells.get(k) === records.get(k).button` always holds. `updateBoard`
   diffs by cell key and touches only changed nodes; it never rebuilds the board.
-- Also exported today, beyond the list above: `REVEAL_CONFIG`, `openCell(view, cellKey)`,
-  `closeCell(view)`, `nextLifecycleState(lifecycle, current)`, `cellStateFor(bundle, session,
-  cellKey)`. The last two are lifecycle vocabulary the state layer needs in F6; nothing in `app.js`
-  calls them. `announce` is listed above as an eventual export and does not exist yet — the live
-  region it wrote into was removed in Phase 2 rather than shipped dead (see js/renderer.js §6).
+- `nextLifecycleState` and `cellStateFor` are exported but **imported by nobody**. They are
+  lifecycle vocabulary kept for a future caller; `state.js` cannot import them (§2 forbids
+  `state -> renderer`), which is why `state.cellStateFor` is a deliberate twin rather than a reuse.
+- `announce` EXISTS and is live (renderer.js §6): the score bar speaks a moved score through it and
+  the win rail speaks completed patterns. Earlier drafts of this section said it did not exist yet.
+  When several patterns complete on one move it makes **one** call listing them all — `textContent`
+  writes in a single task collapse to the last value a polite region ever sees, so a call per win
+  spoke exactly one of them.
+- `renderTeamSetup` and `renderResumeScreen` return a `{ root, destroy }` view; `destroy()` also
+  clears the `inert` it set on the stage's other children and removes its Escape listener.
+  `renderTeamSetup` takes `names` and `editing` (the mid-game Teams… screen); `editing` is the only
+  variant with a `cancel` action and the only one Escape dismisses.
+- `handlers` also carries `onTeamActivate(teamIndex)`, `onNewGame()`, `onTeamsEdit()` and
+  `onCancel()`, which the list further up did not mention.
+- **F8 additions (win rail).** `renderWinRail({ mount }) -> WinRailView` and
+  `updateWins(view, wins)` draw `aside.qbe-wins` / `.qbe-win[data-pattern]` (theme-contract §2,
+  v1.5) and speak each new win through `announce()`. `wins` is `state.completedPatterns()` output
+  and is a COMPLETE statement of what is currently won; the view diffs it by `win.id`, which is
+  where "exactly once per pattern instance" is kept. The first call after mounting seeds silently,
+  so a resumed session shows its wins without re-announcing them. `cellStateFor` is exported and is
+  the twin of `state.cellStateFor` (§9); the runner asserts the two agree.
 - Animations `flip` / `zoom` / `fade` are CSS classes gated on `prefersReducedMotion()`.
 - Reveal handles slide mechanics only. The board is our DOM inside one slide. The markdown plugin
   is never imported — it is not in the repo (delta D4).
@@ -545,19 +579,37 @@ Imports: `schemas` only. Never `validator` (see §2), never touches the DOM.
 export const STORAGE_PREFIX  // 'qbe.session.'
 export const APP_VERSION     // delta D6, written into every state object
 
-export async function hashContent(text: string) -> Promise<string>   // SHA-256 hex, crypto.subtle
+export const STATE_SCHEMA_VERSION                              // 1 (spec §4.4, frozen)
+
+export async function hashContent(text: string) -> Result<string>   // SHA-256 hex, crypto.subtle
+export function sessionFileId(gameHash: string) -> string
 export function newSession({ bundle, gameHash, teams, bonusCells }) -> CleanedState
-export function adopt(cleanedState) -> Result<CleanedState>   // caller MUST pass validator output
+export function adopt(cleanedState, opts = {}) -> Result<CleanedState>  // caller MUST pass validator output
 export function current() -> CleanedState | null
 export function update(mutator: (draft) => void) -> Result<CleanedState>
 export function subscribe(listener: (state) => void) -> () => void
 export function listSessions() -> SessionSummary[]            // newest updatedAt first
-export function loadSession(gameHash) -> Result<CleanedState>
+export function loadSession(gameHash) -> Result<RawDocument>  // a raw document, NOT a session
 export function discardSession(gameHash) -> void
 export function pruneToCap() -> number                        // count removed; cap LIMITS.maxSessions
-export function exportPayload() -> { filename: string, json: string }
-export function pickBonusCells({ bundle, count, random = Math.random }) -> string[]
+export function exportPayload() -> { filename: string, json: string } | null
+export function exportFilename(state) -> string
+export function setCellState(cellKey, nextState) -> Result<CleanedState>
+export function setTeams(names: string[]) -> Result<CleanedState>
+export function adjustScore({ bundle, teamIndex, delta }) -> Result<CleanedState>
+export function cellAward({ bundle, session, cellKey }) -> number
+export function cryptoRandomInt(n: number) -> number          // CSPRNG, rejection-sampled
+export function pickBonusCells({ bundle, count, randomInt = cryptoRandomInt }) -> string[]
+export function __resetForTests() -> void                     // test seam; never called by app.js
 ```
+
+Corrected against the shipped exports. Three of these were **wrong** in a way that silently changed
+behaviour rather than failing loudly, which is why this section is worth keeping honest:
+`hashContent` returns a Result and not a bare promise of a string; `loadSession` returns a RAW
+DOCUMENT so the caller is forced back through `validator.validateState` (a stored session is
+untrusted input); and `pickBonusCells` takes `randomInt`, not `random` — a test written from the old
+signature passes a `random` the function ignores, keeps the CSPRNG, and is green and
+non-deterministic at the same time.
 
 - **The v2.0 seam (spec §4.4).** `current()` returns one plain, JSON-serializable object with no
   functions, no `Map`, no `Date` instances, no class instances, and no reference into
@@ -572,8 +624,31 @@ export function pickBonusCells({ bundle, count, random = Math.random }) -> strin
   cheap invariants (a `schemaVersion` this build knows, `gameHash` matching the loaded game) and
   is documented as callable **only** by `app.js`, only with a `validator.validateState()` result.
 - `pickBonusCells` draws uniformly from `bundle.resolved.randomizableKeys` (already excluding
-  `lockValue`, spec §8) using a caller-supplied `random` so the test runner can seed it. New
-  session reshuffles; resume keeps the stored picks.
+  `lockValue`, spec §8) through the injectable `randomInt`, which defaults to `cryptoRandomInt` —
+  `crypto.getRandomValues` with rejection sampling, so there is no modulo bias. New session
+  reshuffles; resume keeps the stored picks.
+- `adopt` takes an `opts` second argument (`app.js` passes `{ expectGameHash, file }`) so a resumed
+  or imported session can be refused with a message naming the file it came from.
+- `listSessions` bounds every field it projects, because it is the ONE read path from storage to the
+  screen that does not run `validator.validateState` — an entry breaking the state schema's
+  `maxLabelChars` is not listed rather than drawn. localStorage is shared by every page on the
+  origin, so a stored title is untrusted input of untrusted length.
+- **F8 additions (win detection).** `completedPatterns({ bundle, session }) -> Win[]` and
+  `cellStateFor(bundle, session, cellKey) -> string`. `completedPatterns` is PURE — no storage, no
+  DOM, and nothing remembered between calls — and returns every currently-complete pattern instance
+  as `{ id: 'row:2', pattern, index, cells }`, driven by `gametype.patterns` and finishing on
+  `resolved.terminalState`, never on the literal `"marked"`. **A line the board's geometry does not
+  contain is never reported:** diagonals only on a square board, and (since the Phase 4 review) rows
+  only when they span every column and columns only when they span every row. `uniformRows` defaults
+  to `false` and nothing ties it to `winCondition: "pattern-complete"`, so on a ragged board the row
+  builder used to assemble a "complete" row out of whichever squares happened to exist at that index
+  — one mark announcing "Row 5" to a room. It lives here rather than in a seventh module because the import graph (§2) allows only
+  `state` to hold a pure rule that reads a session, and because `adjustScore` / `cellAward` /
+  `pickBonusCells` — the other rules that read one — are already here. Wins are NOT a state field:
+  they are derived from `cellStates`, which is persisted, so a resume reconstructs them exactly and
+  the state schema (v1, frozen — §3.2) needs no new key. `cellStateFor` duplicates
+  `renderer.cellStateFor` because §2 forbids either module importing the other; the runner asserts
+  the two agree on every cell of every shipped board.
 - `SessionSummary = { gameHash, gameTitle, updatedAt, teamCount }` — enough for the resume screen
   and nothing more, so listing sessions never deserializes 10 full boards.
 

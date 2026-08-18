@@ -1,6 +1,84 @@
-# Theme & display contract — v1.4
+# Theme & display contract — v1.6
 
-**Status:** NORMATIVE for F3/F4/F5/F6/F7/F10. Derived from frozen spec §4.3, §4.4, §6.4, §8.
+**Status:** NORMATIVE for F3/F4/F5/F6/F7/F8/F9/F10. Derived from frozen spec §4.3, §4.4, §6.4, §8.
+
+> ## ⚠ AMENDED 2026-08-17 (v1.6) — ONE NEW TOKEN, ONE ATTRIBUTE DOCUMENTED, ONE CORRECTED SHAPE, AND **ONE RULE CHANGE YOU MUST READ IF YOU EVER SET `--cell-shadow: none`**.
+>
+> Additive and corrective: nothing was renamed and nothing was removed from the DOM. A v1.5 theme
+> still renders correctly. One item below is a **defect fix that changes how a revealed cell looks**
+> in themes that did not work around it, so it is flagged loudly rather than folded in quietly.
+>
+> **1. `--cell-shadow` IS NEVER COMPOSED INTO A SHADOW LIST ANY MORE — and `none` is now safe.**
+> `default.css` used to draw the revealed cue as
+> `box-shadow: inset 0 0 0 4px var(--cell-revealed-accent), var(--cell-shadow)`. `none` is a legal
+> whole box-shadow value but is **not** a legal *item inside a list*, so a theme that switched its
+> resting shadow off made that entire declaration invalid at computed-value time — and an invalid
+> declaration computes to `unset`, i.e. `none`. Such a theme lost the drop shadow it meant to lose
+> **and the 4px accent ring it never asked to lose**. The shipped `civic` dark scheme was affected:
+> hidden → revealed collapsed to a 1.13:1 fill difference, and under `prefers-reduced-motion` an
+> opened cell had no static cue at all (§8 requires one). `chalkboard` and `marquee` had each
+> independently discovered the hazard and restated the property to work around it.
+>
+> **The composition is what was wrong, not the themes.** No CSS mechanism can make an arbitrary
+> theme value safe inside a list: a `var()` fallback fires only for an *unset* custom property, and
+> invalidity cannot be caught. So the ring is now declared **alone**:
+> `.qbe-cell[data-state="revealed"] { box-shadow: inset 0 0 0 4px var(--cell-revealed-accent); }`
+>
+> **What changed visually:** a revealed cell no longer inherits the theme's resting drop shadow, in
+> `default`, `midnight` and `civic` light. The ring — the accessibility-bearing cue — is now
+> unconditional in every theme. **What you should do:** nothing, unless you want a lit/raised
+> revealed panel, in which case restate the whole property with your own layers, exactly as
+> `marquee` does. `--cell-shadow: none` is now a supported thing to write, and `chalkboard`'s
+> work-around rule has been deleted because it no longer says anything the base layer does not.
+>
+> **2. New in §4: `--team-active-bg`** (default `rgba(255, 212, 94, 0.14)`). The active team row's
+> inner tint, the second of its two cues beside `--team-active-outline`. It was hardcoded next to
+> the tokenised outline, and **all four** override sheets carried the same one-declaration rule to
+> change it — the exact evidence pattern §6's reporting duty exists to catch, and the same bar
+> `--cell-answered-border` cleared in v1.2. Tokenising it deleted four whole rules. Keep it an alpha
+> tint: it sits over whatever `--score-bg` you set.
+>
+> **3. `data-delta` is now documented in §3.** It was already being written by the renderer onto the
+> score bar's `.qbe-btn` controls and was missing from §3's table, so the "closed attribute set" was
+> not actually closed. It carries the award AMOUNT — identity/plumbing, not state. Do not style on
+> it; `.qbe-btn:not([data-delta])` looks safe and is not.
+>
+> **4. §2 corrected in two places, both of which were already false in v1.5.**
+> `.qbe-setup` does **not** take `[hidden]` — the setup screens are removed from the DOM by
+> `destroy()`, unlike `.qbe-detail` and `input.qbe-file`, which really do set it. A hide rule written
+> against the published shape was dead on arrival, and `default.css` carried one; both are gone.
+> And `.qbe-setup[data-screen="teams"]` is **not** "absent once play starts": the toolbar's Teams…
+> button reopens it over a fully drawn board, where it is appended to the stage — so `.qbe-toolbar`
+> is the last **non-overlay** child of the stage, not unconditionally the last child. Do not build a
+> `.qbe-stage > :last-child` selector.
+>
+> **5. Behaviour, not styling, but it affects what is on screen behind your overlay:** while a setup
+> screen is up, every other child of the stage is set `inert`. It is removed from the tab order and
+> the accessibility tree, not hidden, so your scrim still governs what is *seen*.
+
+> ## ⚠ AMENDED 2026-08-17 (v1.5) — ONE NEW ELEMENT PAIR, ONE NEW ATTRIBUTE, TWO NEW TOKENS.
+>
+> Additive: nothing was renamed, nothing was removed, and no existing token changed. A v1.4 theme
+> still renders correctly — but on a **bingo** board it now leaves one element unstyled, so this is
+> flagged rather than folded in quietly.
+>
+> **New in §2: `aside.qbe-wins[hidden]` with `.qbe-win[data-pattern]` children.** F8 shipped
+> pattern-complete win detection (spec §4.2). When a row, column, diagonal or full card completes,
+> the renderer appends one `.qbe-win` to the rail and speaks the same phrase through the existing
+> `.qbe-live` region. The rail is present **only** when the game type's `winCondition` is
+> `"pattern-complete"` — bingo today — exactly as `.qbe-scorebar` is present only when there is
+> scoring. It is `hidden` until the first pattern completes.
+>
+> **New in §3: `data-pattern` on `.qbe-win`** — `row` `column` `diagonal` `full-card`. It says which
+> kind of line was completed, so a theme can style a full card differently from a row.
+>
+> **New in §4: `--win-bg`, `--win-text`.** Both default to the accent pair, so a theme that already
+> set `--accent` / `--accent-contrast` has a styled rail for free.
+>
+> **What a v1.4 theme should do:** nothing, unless its accent reads badly as a filled chip on the
+> board ground, in which case set the two tokens. Do not position the rail over the board: a win is
+> an announcement, not a modal — play continues for second and third place (plan Q4), so the rail
+> stays in the stage's column flow and must never cover a cell.
 
 > ## ⚠ AMENDED 2026-08-17 (v1.4) — ONE NEW ATTRIBUTE, AND EVERY ANIMATION SELECTOR NEEDS IT.
 >
@@ -142,11 +220,17 @@ Emitted by `renderer.js` via `createElement`/`textContent` only. Indentation sho
         .qbe-detail-actions
           button.qbe-detail-next
           button.qbe-detail-close
-      footer.qbe-toolbar                   ALWAYS present, scoring or not; last child of the stage
+      aside.qbe-wins[hidden]               present only when winCondition === "pattern-complete";
+                                          hidden until the first pattern completes (v1.5)
+        .qbe-win[data-pattern]             one per completed pattern, in completion order
+      footer.qbe-toolbar                   ALWAYS present, scoring or not; last NON-OVERLAY child
+                                          of the stage (a setup overlay may be appended after it)
         button.qbe-btn[data-action]        "teams", "export", "import" — "teams" is ABSENT when the
                                           game type has no scoring (nowhere to show a team)
         input.qbe-file[hidden]             the file picker Import opens; never visible
-      .qbe-setup[hidden][data-screen]      pre-game overlay: "teams" or "resume". Absent once play starts
+      .qbe-setup[data-screen]              overlay: "teams" or "resume". REMOVED when dismissed,
+                                          never [hidden] (v1.6). "resume" is pre-game only, but
+                                          "teams" reopens over a drawn board from the toolbar
         .qbe-setup-panel
           h2.qbe-setup-title
           p.qbe-setup-note                 omitted when there is nothing to explain
@@ -212,8 +296,10 @@ nodes, `:nth-child` positions of cells (columns are ragged in jeopardy), or anyt
 | `data-reduced-motion` | `true` (absent otherwise) | `<html>` |
 | `data-screen` | `teams` `resume` | `.qbe-setup` |
 | `data-action` | the closed set in §2 | `.qbe-btn` |
+| `data-pattern` | `row` `column` `diagonal` `full-card` | `.qbe-win` — which line completed (v1.5) |
 | `data-team` | a zero-based index | `.qbe-team` — identity, not state; do not style on it |
 | `data-session` | a zero-based index | `.qbe-session` — identity, not state; do not style on it |
+| `data-delta` | a signed integer, e.g. `400` / `-400` | `.qbe-btn` in the score bar — the award amount (v1.6); identity/plumbing, not state; do not style on it |
 
 `data-active` is a **marker, not a turn lock** (plan Q4: one projected screen, one operator, no
 notion of whose click is allowed). It is also the one state attribute that is NOT persisted: spec
@@ -259,7 +345,7 @@ top of it, never a replacement for it. See §7.
 | `--cell-text` | resting cell text (**spec-named**) |
 | `--cell-border` | full border shorthand |
 | `--cell-radius` | corner radius |
-| `--cell-shadow` | resting shadow |
+| `--cell-shadow` | resting shadow. Substituted only as a WHOLE `box-shadow` value, never as one item in a list (v1.6), so `none` is legal and safe here |
 | `--cell-hover-bg` | hover/focus background |
 | `--cell-revealed-bg` / `--cell-revealed-text` | `data-state="revealed"` |
 | `--cell-revealed-accent` | the revealed panel's 4px inset ring **and**, by default, its point value. Defaults to `var(--accent)`. Set this when the accent that passes against `--board-bg` fails against the revealed panel — which is common, because the revealed panel is usually the lightest surface in the theme |
@@ -310,6 +396,19 @@ removing a rule, not by moving one declaration out of it.
 |---|---|
 | `--score-bg` / `--score-text` | bar surface |
 | `--team-active-outline` | outline for `data-active="true"` |
+| `--team-active-bg` | **New in v1.6.** Inner tint for the same row, the second of its two cues. Defaults to `rgba(255, 212, 94, 0.14)`. Keep it an alpha tint — it sits over whatever `--score-bg` you set |
+
+### Win rail (new in v1.5)
+
+| Token | Role |
+|---|---|
+| `--win-bg` | fill of a `.qbe-win` chip. Defaults to `var(--accent)` |
+| `--win-text` | its label. Defaults to `var(--accent-contrast)`, which is already measured against the accent |
+
+The rail reuses `--cell-radius`, `--font-display` and `--column-label-size`, so a theme that styled
+its labels has a styled rail already. Two tokens rather than five for the reason §4 gives
+throughout: a token earns its place by removing rules, and the fill/label pair is the only part a
+different palette has to re-measure.
 
 ### Chrome buttons (new in v1.3)
 
@@ -424,4 +523,4 @@ attribute selector and buys the promise that motion means *something just happen
 shortened — removed. The state change must still be perceivable.
 
 -----
-2026-08-17 (v1.4)
+2026-08-17 (v1.6)

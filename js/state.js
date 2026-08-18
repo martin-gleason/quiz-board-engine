@@ -636,6 +636,17 @@ export function update(mutator) {
  * Parse one stored entry far enough to summarize it. Returns null when the entry is missing,
  * unparseable, or not shaped like a session — such an entry cannot be offered on a resume list
  * because there is nothing truthful to put in the row.
+ *
+ * THE RESUME SCREEN IS THE ONE READ PATH THAT REACHES THE DOM WITHOUT `validator.validateState`,
+ * so the bounds the state schema would have enforced have to be enforced here instead. localStorage
+ * is shared by every page on the origin — on `<user>.github.io` that includes every other project
+ * of that user — and a sibling page can rewrite any `qbe.session.*` value even though it cannot
+ * script us. A row built from an unbounded `gameTitle` is therefore attacker-controlled prose of
+ * attacker-chosen LENGTH: a 400,000-character title measured 110,462px tall, which puts Resume,
+ * Discard and "Start a new game" 162 viewports below the fold. Clicking Resume would correctly
+ * refuse the entry, but the host can no longer reach the button — so the refusal has to happen
+ * before the row is drawn, not after it is clicked. An entry that breaks the schema cannot be
+ * resumed anyway, so declining to list it costs nothing.
  */
 function summaryOf(gameHash) {
   const text = readEntry(gameHash);
@@ -647,7 +658,8 @@ function summaryOf(gameHash) {
     return null;
   }
   if (!isPlainObject(data)) return null;
-  if (typeof data.gameTitle !== 'string' || typeof data.updatedAt !== 'string') return null;
+  if (typeof data.gameTitle !== 'string' || data.gameTitle.length > LIMITS.maxLabelChars) return null;
+  if (typeof data.updatedAt !== 'string' || data.updatedAt.length > LIMITS.maxLabelChars) return null;
   return {
     gameHash,
     gameTitle: data.gameTitle,
@@ -797,6 +809,11 @@ export function pruneToCap() {
   const excess = summaries.length - LIMITS.maxSessions;
   if (excess > 0) {
     for (let i = summaries.length - 1; i >= summaries.length - excess; i--) {
+      // THE LIVE SESSION IS NEVER PRUNED, EVEN AT CAP, and that is a rule rather than an oversight:
+      // deleting the game currently on the projector to honour a retention cap would lose the only
+      // session anybody is actually using. It costs at most one entry over the cap, and only for a
+      // host whose live game is also the oldest on the shelf. `app.js` prunes BEFORE any `adopt`,
+      // so on the real boot path `currentState` is null and this branch does not fire at all.
       if (currentState && summaries[i].gameHash === currentState.gameHash) continue;
       removeEntry(summaries[i].gameHash);
       removed += 1;
@@ -942,6 +959,186 @@ function findCell(bundle, cellKey) {
   const col = bundle.content.board.columns[Number(parts[0])];
   if (!col) return null;
   return col.cells[Number(parts[1])] || null;
+}
+
+// =============================================================================================
+// SECTION 11 — win detection (F8, spec §4.2 `winCondition: "pattern-complete"`)
+// =============================================================================================
+//
+// WHY THIS LIVES IN state.js. A completed pattern is a pure function of the BOARD (a CleanedBundle)
+// and the CELL STATES (a session). It needs no DOM, no storage, no fetch and no schema of its own,
+// so the import graph (module-contracts §2) leaves exactly two legal homes: here, or a seventh
+// module — which would mean a new file in spec §3's list and a second ratified delta after D8, for
+// one pure function. `state` is also where every other rule that reads a session already lives:
+// `adjustScore` owns the scoring model, `cellAward` owns the bonus economy, `pickBonusCells` owns
+// the draw. "What has been won" belongs beside "what is it worth" (§10's game moves), not inside
+// `renderer` (which must stay a function of its arguments and may not import `state`), not inside
+// `app` (which contains no game rules by charter), and not inside `validator` (which judges
+// documents and never sees a live session).
+//
+// EVERYTHING IS DRIVEN BY THE CONFIG. The pattern set is `gametype.patterns` — spec §4.2 makes it a
+// subset — so a game type declaring only `["row"]` can never win on a column, and a future pattern
+// id added to `ENUMS.patterns` is skipped here rather than guessed at. The finished state is
+// `resolved.terminalState`, derived from `cellLifecycle` exactly as the renderer derives it; the
+// literal string "marked" appears nowhere in this section.
+//
+// NOTHING HERE ENDS THE GAME. Plan Q4 is a single projected screen with the host as adjudicator, and
+// a real bingo room keeps playing for second and third place. Detection produces a LIST; announcing
+// it is the renderer's job and it blocks nothing.
+
+/**
+ * The lifecycle state a cell is in, from the session — the state-side twin of
+ * `renderer.cellStateFor`, with the same precedence: a stored state this game type declares, else
+ * the terminal state for a `preMarked` cell, else the initial state.
+ *
+ * IT IS A TWIN AND NOT A SHARED FUNCTION because the import graph forbids the only two ways to
+ * share it: `state` may not import `renderer`, and `renderer` may not import `state`
+ * (module-contracts §2). Rather than leave two copies to drift, /tests/index.html asserts they agree
+ * on every cell of every shipped board, for stored, preMarked and absent alike — the duplication is
+ * therefore a tested equivalence rather than a hope.
+ */
+export function cellStateFor(bundle, session, cellKey) {
+  const lifecycle = bundle.gametype.cellLifecycle;
+  const stored = session && session.cellStates ? session.cellStates[cellKey] : undefined;
+  if (typeof stored === 'string' && lifecycle.indexOf(stored) !== -1) return stored;
+  if (bundle.resolved.preMarkedKeys.indexOf(cellKey) !== -1) return bundle.resolved.terminalState;
+  return bundle.resolved.initialState;
+}
+
+/**
+ * The cell keys of every instance of one pattern id, as `{ index, cells }`.
+ *
+ * Each builder returns EVERY candidate line on the board, complete or not; completeness is decided
+ * once, below, so the geometry and the rule stay separable.
+ */
+const PATTERN_INSTANCES = Object.freeze({
+  /**
+   * A row spans EVERY column, or it is not a row.
+   *
+   * THE RAGGED-BOARD RULE, and it is the same rule the diagonal builder states below: a line the
+   * board's geometry does not contain is never reported, because a wrong win announced to a room
+   * cannot be taken back. `gridConstraints.uniformRows` defaults to `false` (schemas.js DEFAULTS)
+   * and nothing ties `winCondition: "pattern-complete"` to it, so an author-written game type can
+   * reach this builder with columns of unequal length. Collecting only the cells that happen to
+   * exist at row index `r` used to turn a SHORT row into a complete one: on columns of 5, 3 and 3,
+   * marking the single square `0:4` reported `row:4` and the rail said "Pattern complete: Row 5".
+   * A row whose cell count is short of the column count is therefore skipped outright rather than
+   * approximated from the squares that are present.
+   */
+  row(bundle) {
+    const columns = bundle.content.board.columns;
+    const out = [];
+    for (let r = 0; r < bundle.resolved.maxRowCount; r++) {
+      const cells = [];
+      for (let c = 0; c < columns.length; c++) {
+        const cell = columns[c].cells[r];
+        if (cell) cells.push(cell.key);
+      }
+      if (cells.length !== columns.length) continue;
+      out.push({ index: r, cells });
+    }
+    return out;
+  },
+
+  /**
+   * A column spans every row, for the same reason. A three-cell column on a board five rows deep is
+   * not a completed column when its three squares are marked — it is a column with a hole in it,
+   * and on a one-cell column the announcement would fire on the very first mark of the game.
+   */
+  column(bundle) {
+    const out = [];
+    const columns = bundle.content.board.columns;
+    for (let c = 0; c < columns.length; c++) {
+      if (columns[c].cells.length !== bundle.resolved.maxRowCount) continue;
+      out.push({ index: c, cells: columns[c].cells.map((cell) => cell.key) });
+    }
+    return out;
+  },
+
+  /**
+   * The two diagonals — but ONLY on a square board.
+   *
+   * THE NON-SQUARE DECISION, and why it is a skip rather than a validation failure. A 5x4 uniform
+   * card has no diagonal: any line you could draw either misses a corner or is not a diagonal, so
+   * there is no honest answer to report. The two candidate behaviours were "skip it here" and
+   * "reject the board at validation", and validation is wrong for a reason that is structural rather
+   * than stylistic: `patterns` lives in the GAME TYPE, which is shared by every board of that type,
+   * while squareness is a property of one CONTENT file. Rejecting would mean `gametypes/bingo.json`
+   * — whose canonical set is [row, column, diagonal, full-card], straight out of spec §4.2 — made
+   * every non-square bingo card in the world a validation error, a rule the spec does not state and
+   * §4.2 does not imply (it constrains `uniformRows`, not squareness). So the board plays, its rows,
+   * columns and full card are all detected, and the one pattern its geometry does not contain is
+   * simply never reported. What is NOT acceptable in either design is reporting a wrong diagonal,
+   * and that is the case this branch exists to make impossible.
+   */
+  diagonal(bundle) {
+    const n = bundle.resolved.columnCount;
+    if (!bundle.resolved.uniform || n < 2 || bundle.resolved.maxRowCount !== n) return [];
+    const columns = bundle.content.board.columns;
+    const main = [];
+    const anti = [];
+    for (let i = 0; i < n; i++) {
+      main.push(columns[i].cells[i].key);
+      anti.push(columns[i].cells[n - 1 - i].key);
+    }
+    return [{ index: 0, cells: main }, { index: 1, cells: anti }];
+  },
+
+  'full-card': function fullCard(bundle) {
+    return [{ index: 0, cells: bundle.resolved.cellKeys.slice() }];
+  },
+});
+
+/**
+ * Every pattern instance that is currently complete.
+ *
+ * @param {{bundle:CleanedBundle, session:object}} args
+ * @returns {ReadonlyArray<{id:string, pattern:string, index:number, cells:ReadonlyArray<string>}>}
+ *
+ * `id` is the stable identity of ONE instance — `"row:2"`, `"diagonal:0"`, `"full-card:0"` — so a
+ * caller can tell a win it has already shown from a new one without comparing cell lists. It is
+ * stable across reloads because it is derived from board geometry alone.
+ *
+ * PURE, and deliberately not memoised: it is O(cells) on a board capped at 144, it holds no state
+ * of its own, and the caller (`app.js`) may call it on every repaint without consequence. "Announce
+ * each win exactly once" is therefore not this function's problem — it reports what IS true, and the
+ * view layer diffs that against what it has already shown. A detector that remembered what it had
+ * announced would have to be reset on import and rebuilt on resume, which is the bug this shape
+ * removes rather than manages.
+ */
+export function completedPatterns({ bundle, session }) {
+  if (!bundle || !bundle.gametype || !bundle.content) return Object.freeze([]);
+  if (bundle.gametype.winCondition !== 'pattern-complete') return Object.freeze([]);
+
+  const configured = Array.isArray(bundle.gametype.patterns) ? bundle.gametype.patterns : [];
+  const terminal = bundle.resolved.terminalState;
+  const done = new Map();
+  const isDone = (key) => {
+    if (!done.has(key)) done.set(key, cellStateFor(bundle, session, key) === terminal);
+    return done.get(key);
+  };
+
+  const wins = [];
+  for (const pattern of configured) {
+    const builder = PATTERN_INSTANCES[pattern];
+    // An id in ENUMS.patterns that this build does not implement is SKIPPED, never approximated.
+    if (typeof builder !== 'function') continue;
+    for (const instance of builder(bundle)) {
+      // An empty line is not a win: `[].every(...)` is `true`, which would announce a pattern made
+      // of no cells at all. The row and column builders now refuse a short line outright, so this
+      // is the backstop for any future builder rather than the ragged-board fix — that one lives in
+      // the builders, where the geometry is.
+      if (instance.cells.length === 0) continue;
+      if (!instance.cells.every(isDone)) continue;
+      wins.push(Object.freeze({
+        id: pattern + ':' + instance.index,
+        pattern,
+        index: instance.index,
+        cells: Object.freeze(instance.cells.slice()),
+      }));
+    }
+  }
+  return Object.freeze(wins);
 }
 
 /**

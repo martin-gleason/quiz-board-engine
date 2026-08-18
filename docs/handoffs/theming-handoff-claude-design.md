@@ -1,8 +1,94 @@
 # Handoff — Quiz Board Engine theming
 
 **To:** Claude Design
-**From:** Marty (maintainer) · prepared 2026-08-17 · revised 2026-08-17 · **contract v1.4**
+**From:** Marty (maintainer) · prepared 2026-08-17 · revised 2026-08-17 · **contract v1.6**
 **Deliverable requested:** visual direction plus one or more drop-in CSS themes.
+
+> ## ⚠ CONTRACT v1.6 — A BUG IN OUR BASE LAYER COST YOU A RING. READ ITEM 1.
+>
+> Additive and corrective. Nothing renamed, nothing removed. A v1.5 theme still renders — but if
+> yours sets `--cell-shadow: none`, it has been silently losing the revealed cell's accent ring, and
+> that is our fault, not yours.
+>
+> **1. `--cell-shadow` was being composed into a shadow LIST, and `none` broke the whole list.**
+> `default.css` drew the revealed cue as
+> `box-shadow: inset 0 0 0 4px var(--cell-revealed-accent), var(--cell-shadow)`. `none` is a legal
+> whole box-shadow value but is **not** a legal item *inside* a list, so setting it made that entire
+> declaration invalid at computed-value time — and an invalid declaration computes to `unset`, which
+> for `box-shadow` is `none`. The theme lost the resting shadow it meant to lose **and the 4px accent
+> ring it never asked to lose**. Our own `civic` dark scheme was hit: hidden → revealed came down to
+> a 1.13:1 fill difference, and with `prefers-reduced-motion` on there was no static cue at all.
+> Two of your themes had already found the hazard the hard way and worked around it by restating the
+> property; that is why they were unaffected.
+>
+> **We fixed the composition, not the themes.** There is no CSS mechanism that makes an arbitrary
+> value safe inside a list — a `var()` fallback fires only when the property is *unset*, and
+> invalidity cannot be caught — so the ring is now declared on its own:
+>
+> ```css
+> .qbe-cell[data-state="revealed"] { box-shadow: inset 0 0 0 4px var(--cell-revealed-accent); }
+> ```
+>
+> **What this changes for you.** `--cell-shadow: none` is now a supported, safe thing to write, and
+> the ring is unconditional in every theme. The trade is that a revealed cell no longer inherits your
+> resting drop shadow — if you want a lit or raised open panel, restate `box-shadow` yourself with
+> your own layers (our `marquee` theme does exactly that and is the model). Everywhere else,
+> `--cell-shadow` is substituted as a whole value, where `none` has always been fine.
+>
+> **2. New token: `--team-active-bg`** (default `rgba(255, 212, 94, 0.14)`). The inner tint on the
+> active team's row, the partner to `--team-active-outline`. It should have been a token from the
+> start: **all four** of the shipped override sheets carried the identical one-declaration rule to
+> restate it, which is precisely the evidence §6 asks us to act on. Tokenising it deleted four whole
+> rules. Keep it an alpha tint — it sits over whatever `--score-bg` you choose.
+>
+> **3. `data-delta` is now in the attribute table.** The renderer has always written it on the score
+> bar's `+`/`−` buttons; it was missing from the published set, so the "closed" list was not closed.
+> It carries the award AMOUNT. Treat it like `data-team`: identity/plumbing, never a styling hook.
+>
+> **4. Two corrections to the DOM shape below, both of which were wrong in v1.5.**
+> `.qbe-setup` never carries `[hidden]` — the setup screens are removed from the DOM outright, unlike
+> `.qbe-detail` and `input.qbe-file`, which really do use `[hidden]`. If you wrote
+> `.qbe-setup[hidden] { display: none }`, it has never matched anything; delete it.
+> And the `"teams"` screen is **not** gone once play starts: the toolbar's Teams… button reopens it
+> over a fully drawn board. It is appended to the stage at that point, so `.qbe-toolbar` is the last
+> **non-overlay** child, not unconditionally the last child — please do not target
+> `.qbe-stage > :last-child`.
+>
+> **5. One behaviour note.** While a setup screen is up, every other child of the stage is marked
+> `inert`: removed from the tab order and the accessibility tree so a keyboard host cannot reach the
+> board through your scrim. It is not hidden, so your scrim still decides what is *seen*.
+
+> ## ⚠ CONTRACT v1.5 — ONE NEW ELEMENT ON THE BINGO BOARD. SMALL, BUT IT IS YOURS TO STYLE.
+>
+> Additive: nothing renamed, nothing removed, no existing token changed. A v1.4 theme still renders
+> correctly everywhere — except that on a **bingo** board one new element will be wearing the base
+> layer's clothes.
+>
+> **Bingo can now be won.** When a row, a column, a diagonal or the full card is completely marked,
+> the app announces it — visibly to the room and through the live region to a screen reader.
+>
+> **New DOM:**
+>
+> ```
+> aside.qbe-wins[hidden]        only on a game type that can be won by a pattern (bingo today)
+>   .qbe-win[data-pattern]      one chip per completed pattern, in completion order
+> ```
+>
+> It sits between the board and the toolbar, in the stage's normal column flow, and is `hidden`
+> until the first pattern completes. `data-pattern` is `row` | `column` | `diagonal` | `full-card`,
+> so a full card can look different from a row if you want it to.
+>
+> **New tokens: `--win-bg`, `--win-text`.** They default to `var(--accent)` and
+> `var(--accent-contrast)`, so if you set the accent pair you already have a styled rail. Set them
+> when your accent reads badly as a filled chip on your board ground.
+>
+> **The one hard rule: do not position the rail over the board.** A win is an announcement, not a
+> modal. The host adjudicates and the room keeps playing for second and third place, so the rail
+> must never cover a cell someone still has to reach. Chips, a strip, a ribbon along the bottom —
+> all fine. An overlay, a banner across the middle, or anything `position: fixed` — not fine.
+>
+> It reuses `--cell-radius`, `--font-display` and `--column-label-size`, which is why it is two
+> tokens rather than five.
 
 > ## ⚠ CONTRACT v1.4 — IF YOU WRITE KEYFRAMES, ONE SELECTOR CHANGE IS REQUIRED.
 >
@@ -178,10 +264,16 @@ source of truth, so `[data-state="answered"]` is your selector.
         .qbe-detail-actions
           button.qbe-detail-next
           button.qbe-detail-close
-      footer.qbe-toolbar                   ALWAYS present, scoring or not; last child of the stage
+      aside.qbe-wins[hidden]               NEW in v1.5 — only when the game type can be won by a
+                                           pattern (bingo); hidden until the first win
+        .qbe-win[data-pattern]             one chip per completed pattern
+      footer.qbe-toolbar                   ALWAYS present, scoring or not; last NON-OVERLAY child of
+                                           the stage (a setup overlay can be appended after it)
         button.qbe-btn[data-action]        "teams" (only when there is a score bar), "export", "import"
         input.qbe-file[hidden]             the import file picker; never visible
-      .qbe-setup[hidden][data-screen]      pre-game overlay: "teams" or "resume"; gone once play starts
+      .qbe-setup[data-screen]              overlay: "teams" or "resume". REMOVED when dismissed,
+                                           never [hidden] (v1.6). "resume" is pre-game only;
+                                           "teams" reopens over a drawn board from the toolbar
         .qbe-setup-panel
           h2.qbe-setup-title
           p.qbe-setup-note                 omitted when there is nothing to explain
@@ -236,7 +328,9 @@ stage itself into a grid. (`.qbe-board` *is* yours, and is where the grid lives.
 | `data-active` | `true` / absent | `.qbe-team` | Whose turn, as marked by the host. A marker, not a turn lock — and the one state that is deliberately NOT saved |
 | `data-screen` | `teams` `resume` | `.qbe-setup` | Which pre-game screen is up |
 | `data-action` | closed set, see §3 | `.qbe-btn` | Which control this is |
+| `data-pattern` | `row` `column` `diagonal` `full-card` | `.qbe-win` | **New in v1.5.** Which line was just completed |
 | `data-team` / `data-session` | a zero-based index | `.qbe-team` / `.qbe-session` | Identity, not state — don't style on it |
+| `data-delta` | a signed integer, e.g. `400` / `-400` | `.qbe-btn` in the score bar | **Documented in v1.6** (always emitted). The award amount — identity/plumbing, not state; don't style on it |
 | `data-reduced-motion` | `true` / absent | `<html>` | Set when the OS asks for reduced motion |
 
 **Don't depend on** `:nth-child` positions of cells (columns are legitimately ragged in Jeopardy),
@@ -271,7 +365,7 @@ overrides only a subset to demonstrate this; read it before you start.
 
 **Surface:** `--board-bg`◆ `--board-fg` `--board-gap` `--board-pad`
 
-**Cells:** `--cell-bg`◆ `--cell-text`◆ `--cell-border` `--cell-radius` `--cell-shadow`
+**Cells:** `--cell-bg`◆ `--cell-text`◆ `--cell-border` `--cell-radius` `--cell-shadow` (whole-value only — `none` is safe here, v1.6)
 `--cell-hover-bg` `--cell-revealed-bg` `--cell-revealed-text` `--cell-revealed-accent`
 `--cell-revealed-value-color` `--cell-answered-bg` `--cell-answered-text`
 `--cell-answered-border` `--cell-marked-bg` `--cell-marked-text` `--cell-mark-glyph-color`
@@ -311,7 +405,15 @@ on `--detail-bg`. The default expresses it as `var(--board-bg)`, which is correc
 theme and invisible on a dark one — the relationship inverts with the ground, which is exactly why
 it needed a token.)
 
-**Score bar:** `--score-bg` `--score-text` `--team-active-outline`
+**Score bar:** `--score-bg` `--score-text` `--team-active-outline` `--team-active-bg`
+
+(`--team-active-bg` is new in v1.6 — the inner tint on the active row. It defaults to
+`rgba(255, 212, 94, 0.14)`; keep it an alpha tint so it works over any `--score-bg`.)
+
+**Win rail (new in v1.5):** `--win-bg` `--win-text`
+
+(The rail also reuses `--cell-radius`, `--font-display` and `--column-label-size`. Both new tokens
+default to the accent pair, which is already measured against itself.)
 
 **Chrome buttons (new in v1.3):** `--btn-border`
 
@@ -378,7 +480,7 @@ Naming: pick real names. `default`, `midnight`, `civic`, `chalkboard` and `marqu
 
 ## 7. Bundle with this handoff
 
-- `docs/plans/theme-contract.md` — **v1.4**, the normative contract; longer and more precise than
+- `docs/plans/theme-contract.md` — **v1.5**, the normative contract; longer and more precise than
   §3–§4 here, and the authority if anything disagrees
 - `themes/default.css` — the base layer: every token defaulted, plus all the structure and the
   three animations. Read this one first; it is written to teach the system
