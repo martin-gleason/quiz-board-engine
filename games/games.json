@@ -1,0 +1,9 @@
+{
+  "_note": "Game manifest, delta D12. The startup picker (F11) reads THIS FILE to learn which boards exist — a static site has no directory listing, so a board that is not listed here cannot be reached from the picker. Structurally identical to themes/themes.json (spec §4.3): values are BARE FILENAMES resolved under /games/, never paths and never URLs. Every value is still passed through loader.resolveGameParam before it is fetched, so spec §6.3's same-origin rule applies to a picker choice exactly as it does to a ?game= parameter. Adding your own board = drop the .json in /games/ and add one line here. Keys are what the picker shows, so write them for a human.",
+  "schemaVersion": 1,
+  "games": {
+    "General Knowledge": "demo.json",
+    "Trivia Bingo": "demo-bingo.json",
+    "Ranked Answers": "demo-feud.json"
+  }
+}

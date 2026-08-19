@@ -16,6 +16,9 @@ import { failure, describeValue, syntaxFailure } from './errors.js';
 export const GAMES_DIR = 'games/';
 export const GAMETYPES_DIR = 'gametypes/';
 export const THEMES_MANIFEST = 'themes/themes.json';
+// D12 — the game manifest the startup picker reads. Named here, beside the themes manifest,
+// because the two are the same kind of thing: the declared set of things a host may choose.
+export const GAMES_MANIFEST = 'games/games.json';
 export const DEFAULT_GAME = 'games/demo.json';
 
 /**
@@ -356,4 +359,36 @@ export async function fetchContentBundle({ gamePath }) {
       themes: themesResult.value,
     }),
   };
+}
+
+/**
+ * Fetch the game manifest and the themes manifest — the two documents the startup picker needs
+ * BEFORE a game exists (delta D12/D13).
+ *
+ * @returns {Promise<{ok:true,value:{games:RawDocument,themes:RawDocument}} | {ok:false,failures:[]}>}
+ *
+ * Separate from `fetchContentBundle` rather than folded into it, because the picker runs at a
+ * moment when there is no content file to bundle *with* — that is the whole point of the screen.
+ * Both are reported together for the same reason `fetchContentBundle` batches its failures: a host
+ * whose install is missing both manifests should see both, not find the second after fixing the
+ * first.
+ *
+ * The themes manifest is fetched here AND again inside `fetchContentBundle` once a game is picked.
+ * That is a deliberate second read, not an oversight: the picker must not hand a parsed manifest
+ * forward into the validation pipeline, because doing so would make the board's theme resolution
+ * depend on a document validated at a different time under different code. Each stage reads what
+ * it judges. The cost is one 300-byte request that the browser will usually serve from cache.
+ */
+export async function fetchManifests() {
+  const [games, themes] = await Promise.all([
+    fetchJsonFile({ path: GAMES_MANIFEST, kind: KINDS.GAMES }),
+    fetchJsonFile({ path: THEMES_MANIFEST, kind: KINDS.THEMES }),
+  ]);
+
+  const failures = [];
+  if (!games.ok) failures.push(...games.failures);
+  if (!themes.ok) failures.push(...themes.failures);
+  if (failures.length > 0) return { ok: false, failures };
+
+  return { ok: true, value: Object.freeze({ games: games.value, themes: themes.value }) };
 }

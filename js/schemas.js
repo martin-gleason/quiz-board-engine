@@ -136,6 +136,12 @@ export const PATTERNS = Object.freeze({
   gameTypeId: /^[a-z0-9][a-z0-9-]{0,31}$/,
   themeName: /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/,
   themeFile: /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\.css$/,
+  // D12 — the game manifest. `gameName` is the label the picker SHOWS, so it is deliberately
+  // laxer than `gameTypeId` (mixed case, underscores) while still refusing anything that could
+  // read as a path. `gameFile` is the same shape as `themeFile` with a different extension: a
+  // bare filename, resolved under /games/ and then re-checked by `loader.resolveGameParam`.
+  gameName: /^[A-Za-z0-9][A-Za-z0-9 _-]{0,63}$/,
+  gameFile: /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\.json$/,
   cellKey: /^\d+:\d+$/, // plan Q7: "<columnIndex>:<rowIndex>", both zero-based, column first
   sha256Hex: /^[0-9a-f]{64}$/,
   iso8601Utc: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/,
@@ -412,6 +418,36 @@ const themesV1 = obj({
 });
 
 // ===========================================================================
+// v1 — GAME MANIFEST (/games/games.json) — delta D12
+// The structural twin of the themes manifest above, and for the same reason: a static site
+// has no directory listing, so the set of things a host may choose has to be DECLARED
+// somewhere. Values are bare .json filenames resolved under /games/ — the pattern rejects
+// slashes, `..` and absolute URLs, and `loader.resolveGameParam` checks the resolved path a
+// second time before it is fetched. Two independent guards on the same rule (spec §6.3),
+// because this is the one manifest whose values become a *fetch* rather than a stylesheet.
+// ===========================================================================
+
+const gamesV1 = obj({
+  expected: 'the game manifest to be a JSON object',
+  required: Object.freeze(['schemaVersion', 'games']),
+  fields: Object.freeze({
+    schemaVersion: schemaVersionLiteral(1),
+    games: Object.freeze({
+      kind: 'map',
+      keyPattern: PATTERNS.gameName,
+      maxEntries: 64,
+      expected: 'an object mapping display names to content filenames under /games/',
+      hint: 'bad-key-format',
+      values: str({
+        pattern: PATTERNS.gameFile,
+        expected: 'a bare .json filename such as "demo.json" (no paths, no URLs)',
+        hint: 'bad-name-format',
+      }),
+    }),
+  }),
+});
+
+// ===========================================================================
 // v1 — STATE (localStorage + export file) — spec §4.4
 // THE V2.0 SEAM. State is ONE plain serializable object, so cloud sync later is a transport
 // swap and nothing else. Imported state is untrusted input and is validated exactly like a
@@ -571,6 +607,7 @@ export const schemas = Object.freeze({
   content: Object.freeze({ 1: contentV1 }),
   gametype: Object.freeze({ 1: gametypeV1 }),
   themes: Object.freeze({ 1: themesV1 }),
+  games: Object.freeze({ 1: gamesV1 }),
   state: Object.freeze({ 1: stateV1 }),
 });
 
@@ -579,6 +616,7 @@ export const KINDS = Object.freeze({
   CONTENT: 'content',
   GAMETYPE: 'gametype',
   THEMES: 'themes',
+  GAMES: 'games',
   STATE: 'state',
 });
 

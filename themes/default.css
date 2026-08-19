@@ -894,6 +894,23 @@ body,
   line-height: 1.15;
 }
 
+/* THE SCREEN HEADING TAKES FOCUS, AND MUST NOT LOOK LIKE IT.
+
+   renderer.js gives every setup heading `tabindex="-1"` and focuses it when the screen mounts, so
+   a screen reader announces the new screen instead of leaving the user on a page that silently
+   changed under them. That focus is for ANNOUNCEMENT, not for interaction: the heading is not in
+   the tab order and there is nothing to activate on it.
+
+   Without this rule the UA paints its own focus ring on the heading — a blue box around "Choose a
+   board" on a themed panel, the first thing a host sees. Suppressing it is safe precisely because
+   tabindex is -1: no keyboard user can land here and be left without an indicator. Every element
+   that IS keyboard-reachable keeps its ring in the :focus-visible block further down, and that
+   block is the one a theme must never remove. */
+.qbe-setup-title:focus,
+.qbe-setup-title:focus-visible {
+  outline: none;
+}
+
 .qbe-setup-note {
   margin: 0;
   font-size: clamp(0.9rem, 1.2vw, 1.1rem);
@@ -915,6 +932,85 @@ body,
   display: flex;
   flex-wrap: wrap;
   gap: 0.6rem;
+}
+
+/* ---- The startup picker (F11/F12) ---------------------------------------- */
+
+/* This screen is the ONLY one that renders before a theme has been chosen, so
+   everything it needs must have a value in this file — a token another theme
+   would have supplied is not available yet. It reuses .qbe-setup* wholesale;
+   only the two controls below are new. */
+
+.qbe-startup-games {
+  margin: 0;
+  padding: 0;
+  border: 0;                          /* the panel already draws the box */
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.qbe-startup-legend,
+.qbe-startup-theme > .qbe-startup-label {
+  padding: 0;
+  font-size: clamp(0.8rem, 1vw, 0.95rem);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+/* The whole row is the target, not just the 13px radio dot — a host reaching for
+   this on a trackpad thirty seconds before a class starts should not have to aim. */
+.qbe-startup-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: calc(var(--cell-radius) / 2);
+}
+
+.qbe-startup-choice:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* :has() is not required for this to be usable — it is emphasis on a state the
+   radio already announces — so a browser without it loses nothing that matters. */
+.qbe-startup-choice:has(.qbe-startup-radio:checked) {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.qbe-startup-radio {
+  flex: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  accent-color: var(--accent);
+}
+
+.qbe-startup-label {
+  flex: 1;
+  font-size: clamp(1rem, 1.5vw, 1.35rem);
+  line-height: 1.3;
+  cursor: pointer;
+}
+
+.qbe-startup-theme {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+}
+
+.qbe-startup-select {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 2px solid color-mix(in srgb, var(--detail-text) 35%, transparent);
+  border-radius: calc(var(--cell-radius) / 2);
+  background: var(--detail-bg);
+  color: var(--detail-text);
+  font-family: var(--font-body);
+  font-size: clamp(0.95rem, 1.3vw, 1.15rem);
 }
 
 /* A label wrapping its own input: the whole row is the click target, and the
@@ -1098,7 +1194,9 @@ body,
 .qbe-detail-close:focus-visible,
 .qbe-btn:focus-visible,
 .qbe-team-name:focus-visible,
-.qbe-field-input:focus-visible {
+.qbe-field-input:focus-visible,
+.qbe-startup-radio:focus-visible,
+.qbe-startup-select:focus-visible {
   outline: var(--focus-ring);
   /* The offset is LOAD-BEARING, not decoration. --accent measures 5.36:1
      against --board-bg but only 1.87:1 against --cell-bg. Pushing the ring

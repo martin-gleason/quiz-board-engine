@@ -70,8 +70,13 @@ send("WebDriver:NewSession", {"capabilities": {}})
 send("WebDriver:Navigate", {"url": URL})
 
 # Poll for the runner to publish its results object.
+#
+# 240 x 0.5s = two minutes. It was 40 (twenty seconds), which was comfortable when the suite was
+# ~100 assertions and silently became a false "runner never published __TEST_RESULTS__" as it grew
+# past ~350 — a timeout that reports as a harness failure rather than as a slow suite is worse than
+# no timeout at all. Two minutes is far past any healthy run and still bounded.
 result = None
-for _ in range(40):
+for _ in range(240):
     out = send("WebDriver:ExecuteScript", {
         "script": "return window.__TEST_RESULTS__ ? JSON.stringify({"
                   "ok: window.__TEST_RESULTS__.ok,"

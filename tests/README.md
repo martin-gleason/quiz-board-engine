@@ -44,7 +44,7 @@ python3 tools/firefox-run-tests.py http://localhost:8127/tests/
 
 For automation, the page exposes:
 
-- `document.title` → `"PASS 87/87 — Quiz Board Engine tests"`
+- `document.title` → `"PASS <n>/<n> — Quiz Board Engine tests"` (370/370 as of 2026-08-18)
 - `window.__TEST_RESULTS__` → `{ ok, passed, failed, total, results: [{ group, name, passed, detail }] }`
 
 Read the object rather than scraping rendered text.
@@ -59,6 +59,7 @@ Read the object rather than scraping rendered text.
 | `cleaning` | `_note` stripped at every depth, cleaned object not aliasing the raw one, result frozen. Spec §5: the renderer only ever receives a cleaned object. |
 | `shell` | Boots the real `index.html` in an iframe and measures computed geometry: the base layer under the selected sheet, `.qbe-board` as a grid with one track per column, a projector-sized cell, the detail overlay positioned above the board. Two boots cover the content-driven theme selection; a third boot then applies **every theme registered in `themes/themes.json`** and re-measures. |
 | `themes` | Audits every registered theme as a file: it fetches 200 and is non-empty, makes no external request (no `@import`, no `http(s)`/protocol-relative `url()` — `data:` is fine), carries the SPDX header, invents no custom property `themes/default.css` does not define, and targets only `.qbe-*` classes theme-contract §2 says the renderer emits. Also checks the manifest against the directory in both directions. |
+| `startup` | F11/F12, the startup pickers. `games/games.json` validates and every entry it declares survives `resolveGameParam`; a tampered manifest value is refused **twice** — by the schema and independently by the loader — while a nested path stays legal for `?game=` and illegal in the manifest. The theme preference round-trips, reads back `null` when hostile, and provably does not touch the session shelf or appear in a session record. The screen itself hands back the chosen file and `null` (not `''`) for "use this game's theme", and a `?game=` deep link still boots past the picker. Finally the override is followed all the way to the stylesheet: the shell is booted with no `?game=` at all, driven through the real picker, and the mounted `<link id="qbe-theme">` must read `chalkboard.css` even though `games/demo.json` asks for `midnight` — the one step where D13 could quietly do nothing while every other assertion stayed green. |
 | `invariants` | Fetches our own source and asserts zero forbidden DOM/dynamic-code APIs, SPDX headers present, and that the schema's limits match the numbers the spec promises. |
 
 ## Adding a fixture

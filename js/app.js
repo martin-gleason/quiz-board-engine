@@ -72,7 +72,8 @@ export async function loadAndValidate(search) {
 /**
  * Boot the app.
  *
- * @param {{search?:string, mounts?:{error?:HTMLElement, reveal?:HTMLElement, stage?:HTMLElement}}} [args]
+ * @param {{search?:string, mounts?:{error?:HTMLElement, reveal?:HTMLElement, stage?:HTMLElement,
+ *          startup?:HTMLElement}}} [args]
  * @returns {Promise<void>}
  */
 export async function boot({ search = window.location.search, mounts = {} } = {}) {
@@ -80,6 +81,9 @@ export async function boot({ search = window.location.search, mounts = {} } = {}
   const errorMount = mounts.error || doc.getElementById('qbe-error') || doc.body;
   const revealMount = mounts.reveal || doc.querySelector('.reveal');
   const stage = mounts.stage || doc.querySelector('.qbe-stage');
+  // The startup screen's own mount, OUTSIDE `.reveal` (delta D12). See `showStartup` for why it
+  // cannot live on the stage like the resume and team screens do.
+  const startupMount = mounts.startup || doc.getElementById('qbe-startup');
 
   // Motion preference is set up FIRST, before anything can animate, and kept live afterwards —
   // spec §8 and theme-contract §8. `prefers-reduced-motion` is a setting a user can change while a
@@ -88,18 +92,139 @@ export async function boot({ search = window.location.search, mounts = {} } = {}
   watchReducedMotion();
   ensureVendorStyles(doc);
 
-  const result = await loadAndValidate(search);
-
   // THE FAILURE PATH, used at boot and at every later step that can fail (a corrupt saved session, a
   // refused import, a storage write that will not go through). Hiding the reveal skeleton is an
   // attribute, not a style — the shell's CSS honours [hidden] — so the error report owns the screen.
   const failScreen = (failures) => {
     if (revealMount) revealMount.setAttribute('hidden', '');
+    // The startup screen goes too. A manifest that will not parse is reported by the screen that
+    // replaces it, not underneath one still asking the host to choose from a list it never got.
+    if (startupMount) startupMount.replaceChildren();
     errors.renderErrorScreen(failures, errorMount);
     // Also to the console, one line per failure: the host may be looking at a projector while a
     // helper reads the developer tools on the laptop.
     for (const f of failures) console.error(errors.formatFailure(f));
   };
+
+  // -------------------------------------------------------------------------------------------
+  // THE FORK (delta D12). A `?game=` parameter is a DEEP LINK and it wins outright: a host who
+  // bookmarked a board, or a teacher who mailed a link to a substitute, gets that board with no
+  // screen in the way. The picker is what happens when nobody said which game — the case that used
+  // to silently mean `games/demo.json` and left the other two boards unreachable.
+  //
+  // `has('game')` rather than `get('game')`: `?game=` with an empty value must still reach
+  // `resolveGameParam`, which reports it as the typo it is. Routing it to the picker instead would
+  // hide a broken link behind a working screen.
+  // -------------------------------------------------------------------------------------------
+  const ctxBase = { doc, errorMount, revealMount, stage, startupMount, failScreen };
+  if (!new URLSearchParams(search || '').has('game') && startupMount) {
+    return showStartup(ctxBase);
+  }
+  // A DEEP LINK STILL WEARS THE DEVICE'S THEME (delta D13). The preference is a property of the
+  // ROOM — this projector, this lighting — not of the visit, so a host who chose `chalkboard` for
+  // the hall keeps it when they open a board they bookmarked. Skipping it here was the bug the
+  // Phase 5 walkthrough caught: the picker honoured the choice and the bookmark silently did not,
+  // which is the same feature behaving two ways depending on how you arrived.
+  //
+  // This is also what makes the stale-preference fallback in `openGame` a live guard rather than
+  // decoration. The picker can only ever offer names the manifest currently holds, so a name that
+  // has since been removed cannot come from there — it can only come from storage, on this path.
+  return openGame(ctxBase, { search, themeOverride: state.readThemePreference() });
+}
+
+/**
+ * The startup screen: fetch the two manifests, judge them, and let the host choose (F11 / F12).
+ *
+ * WHY IT MOUNTS OUTSIDE `.reveal`. Spec §5 and the header of this file promise that nothing is
+ * drawn and reveal is never initialised until a bundle validates. At this moment there is no
+ * bundle — no game has been chosen — so putting the picker on the stage would mean starting reveal
+ * ahead of validation and trading that guarantee for a cosmetic convenience. It goes beside the
+ * error screen instead, on the `themes/default.css` base layer the shell already links.
+ *
+ * A manifest failure IS an error-screen failure, unlike a reveal failure. The distinction the
+ * header draws is "the user's data" versus "our broken dependency", and a manifest is data — a host
+ * who added a board and mistyped the filename gets a located caret and a hint, exactly as they
+ * would for a broken content file.
+ */
+async function showStartup(ctx) {
+  const { doc, revealMount, startupMount, failScreen } = ctx;
+
+  // The empty deck is hidden while the picker is up: reveal has not been initialised, so `.reveal`
+  // is an unstyled empty box that would otherwise sit under the screen taking up the viewport.
+  if (revealMount) revealMount.setAttribute('hidden', '');
+
+  const fetched = await loader.fetchManifests();
+  if (!fetched.ok) return failScreen(fetched.failures);
+
+  const gamesDoc = validator.validateDocument({ kind: KINDS.GAMES, raw: fetched.value.games });
+  const themesDoc = validator.validateDocument({ kind: KINDS.THEMES, raw: fetched.value.themes });
+  // Both reported at once, same reasoning as `fetchContentBundle`'s batching: fixing one and
+  // discovering the other on the next reload is two trips where one would do.
+  const manifestFailures = [];
+  if (!gamesDoc.ok) manifestFailures.push(...gamesDoc.failures);
+  if (!themesDoc.ok) manifestFailures.push(...themesDoc.failures);
+  if (manifestFailures.length > 0) return failScreen(manifestFailures);
+
+  const gameMap = gamesDoc.value.games;
+  const games = Object.keys(gameMap).map((name) => ({ name, file: gameMap[name] }));
+  if (games.length === 0) {
+    // An empty manifest is not a schema violation — `{}` is a legal map — but it IS a dead end, and
+    // a picker with nothing in it would leave the host pressing Start on nothing at all.
+    return failScreen([
+      errors.failure({
+        file: loader.GAMES_MANIFEST,
+        kind: KINDS.GAMES,
+        stage: 'contract',
+        path: 'games',
+        location: null,
+        expected: 'at least one game, as a name and a filename under /games/',
+        found: 'an empty list',
+        hint: 'unresolved-reference',
+      }),
+    ]);
+  }
+
+  const screen = renderer.renderStartupScreen({
+    games,
+    themes: Object.keys(themesDoc.value.themes),
+    themePref: state.readThemePreference(),
+    mount: startupMount,
+    handlers: {
+      onStart: ({ file, theme }) => {
+        // REMEMBERED, but never as part of a session (delta D13). `writeThemePreference` returns
+        // false in a private window; that is not worth telling anyone about, because the pick still
+        // applies to the page they are looking at.
+        state.writeThemePreference(theme);
+        screen.destroy();
+        startupMount.replaceChildren();
+        if (revealMount) revealMount.removeAttribute('hidden');
+        // THE PICKER'S CHOICE GOES THROUGH THE `?game=` GUARD, deliberately. Handing the filename
+        // straight to `fetchContentBundle` would give the picker a second, weaker route to a file;
+        // building the parameter and letting `resolveGameParam` judge it means spec §6.3 is
+        // enforced on exactly one code path, whether the string came from a URL or from this list.
+        // Caught, not dropped. The deep-link branch returns this promise into `boot().catch()`;
+        // the picker branch cannot (it resolves when the SCREEN is up, long before a board is), so
+        // without this a wiring throw here would surface as a bare unhandled rejection instead of
+        // the same diagnostic the other path prints.
+        openGame(ctx, {
+          search: '?' + new URLSearchParams({ game: loader.GAMES_DIR + file }).toString(),
+          themeOverride: theme,
+        }).catch((err) => console.error('Quiz Board Engine failed to start:', err));
+      },
+    },
+  });
+  return undefined;
+}
+
+/**
+ * Everything from "we know which game" onward — the original body of `boot`, unchanged in sequence.
+ *
+ * @param {object} shell  the mounts and the shared `failScreen`
+ * @param {{search:string, themeOverride:string|null}} args
+ */
+async function openGame(shell, { search, themeOverride }) {
+  const { doc, revealMount, stage, failScreen } = shell;
+  const result = await loadAndValidate(search);
 
   if (!result.ok) {
     // Nothing is drawn on a failed load. Reveal is never initialised and `renderBoard` is never
@@ -118,7 +243,17 @@ export async function boot({ search = window.location.search, mounts = {} } = {}
   // themes/themes.json, schema-pinned to a bare `.css` filename (spec §6.4, theme-contract §7).
   // No string from a content file ever becomes a URL — the content file only ever supplied a NAME,
   // and the validator resolved that name against the manifest.
-  renderer.mountTheme(bundle.resolved.themeFile, doc);
+  // THE HOST'S OVERRIDE, resolved here and nowhere else (delta D13). `themeOverride` is a NAME, and
+  // the only thing that ever becomes an href is `bundle.themes.themes[...]` — a manifest VALUE the
+  // schema has already pinned to a bare `.css` filename. Spec §6.4 is untouched: the picker widened
+  // *who* may choose a theme, not *what* may become a stylesheet URL.
+  //
+  // An override naming a theme that is not in the manifest falls back to the game's own theme
+  // instead of failing. The stored preference outlives the manifest that justified it — a theme
+  // removed between two sessions is the ordinary case, not an attack — and putting a host on an
+  // error screen over a stale colour choice would be punishing them for our bookkeeping.
+  const overrideFile = themeOverride ? bundle.themes.themes[themeOverride] : undefined;
+  renderer.mountTheme(overrideFile || bundle.resolved.themeFile, doc);
 
   if (!stage) throw new Error('boot(): no .qbe-stage element to draw into');
 

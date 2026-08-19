@@ -1419,6 +1419,29 @@ async function runRenderSuite() {
       hiddenValue === null ? 'the highest-scoring row shows no number until it is revealed'
         : 'the row already reads "' + hiddenValue.textContent + '" while still hidden');
 
+    // ---- EVERY RANKED ROW MUST ANNOUNCE ITSELF DISTINCTLY -------------------------------------
+    //
+    // Phase 5 walkthrough finding, and the reason this assertion exists at all: on a feud board
+    // every row shares the survey question and every unplayed row reports "points hidden", so all
+    // six announced as ONE identical sentence and a screen-reader user could not tell which row
+    // they had landed on. Sighted users have the physical order; this is the equivalent.
+    //
+    // Asserted as "all names distinct" rather than against fixed strings, because the useful
+    // property is uniqueness — a future rewording must keep it without having to edit this line.
+    const feudNames = [...fStage.querySelectorAll('.qbe-cell')]
+      .map((c) => c.getAttribute('aria-label'));
+    record('render', 'every ranked-list row has its own accessible name (not six identical ones)',
+      feudNames.length > 1 && new Set(feudNames).size === feudNames.length,
+      feudNames.length + ' rows, ' + new Set(feudNames).size + ' distinct names — first is: "'
+        + feudNames[0] + '"');
+    // The position is the DRAWN one. drawOrder sorts this layout by descending value, so a row
+    // numbered by its authored index would announce a number that contradicts the screen.
+    record('render', 'the ranked-list position announced is the drawn one, counting from 1',
+      /(^|, )answer 1 of 6(,|$)/.test(feudNames[0] || '')
+      && /(^|, )answer 6 of 6(,|$)/.test(feudNames[feudNames.length - 1] || ''),
+      'first row announces "' + feudNames[0] + '"; last row announces "'
+        + feudNames[feudNames.length - 1] + '"');
+
     topRow.button.click();
     const promptText = f.view.detail.prompt.textContent;
     f.view.detail.next.click();
@@ -1849,7 +1872,12 @@ function dropNewSessions(before) {
   }
 }
 
-function bootShell(gamePath) {
+function bootShell(gamePath, options) {
+  // `gamePath` may be null: that boots the shell with NO `?game=` at all, which is the only way to
+  // reach the startup picker (F11) — and the only way to prove F12's override really becomes a
+  // stylesheet, since the override is applied at mountTheme time inside app.js and nothing else can
+  // observe it. `options.pickTheme` is a theme NAME to choose in the picker before pressing Start.
+  const pickTheme = (options && options.pickTheme) || null;
   return new Promise((resolve) => {
     const frame = document.createElement('iframe');
     // 1200x900 so the density clamps land in the same range a classroom projector uses; the frame is
@@ -1860,9 +1888,9 @@ function bootShell(gamePath) {
     frame.style.setProperty('position', 'absolute');
     frame.style.setProperty('left', '-4000px');
     frame.style.setProperty('top', '0');
-    frame.setAttribute('title', 'shell boot: ' + gamePath);
+    frame.setAttribute('title', 'shell boot: ' + (gamePath || 'startup picker'));
     // Resolved against <base href="../">, i.e. the repo root — the real shell, not a copy of it.
-    frame.setAttribute('src', 'index.html?game=' + gamePath);
+    frame.setAttribute('src', gamePath ? 'index.html?game=' + gamePath : 'index.html');
     document.body.appendChild(frame);
 
     const started = performance.now();
@@ -1881,7 +1909,25 @@ function bootShell(gamePath) {
       // the poll walks through whichever screen it meets exactly as a host would, by clicking the
       // real button. It does not reach into `state`: if the setup screen ever stops leading to a
       // board, these assertions must fail rather than be routed around.
-      const setup = !board && doc ? doc.querySelector('.qbe-setup') : null;
+      // THE STARTUP SCREEN IS WALKED FIRST, and it is excluded from the generic branch below. It
+      // is a `.qbe-setup` like the other two pre-game screens, so a bare `.qbe-setup` lookup would
+      // find it and then fail to press anything — its primary action is `begin`, not `start`.
+      const startup = !board && doc ? doc.querySelector('.qbe-setup[data-screen="startup"]') : null;
+      if (startup) {
+        if (pickTheme) {
+          const select = startup.querySelector('.qbe-startup-select');
+          const offered = select ? [...select.options].some((o) => o.value === pickTheme) : false;
+          // Set through the real control, not through a handler: if the option is not on the screen
+          // the host could not have chosen it either, and the assertion must fail rather than be
+          // routed around.
+          if (select && offered) select.value = pickTheme;
+        }
+        const begin = startup.querySelector('.qbe-btn[data-action="begin"]');
+        if (begin) begin.click();
+      }
+      const setup = !board && doc
+        ? doc.querySelector('.qbe-setup:not([data-screen="startup"])')
+        : null;
       if (setup) {
         // RESUME IS PREFERRED OVER "Start a new game", and that is about not damaging the host's
         // data rather than about coverage: this page shares an origin with the app, so "new" would
@@ -2380,6 +2426,328 @@ const FORBIDDEN = new RegExp(
     'src' + 'doc\\b',
   ].join('|') + ')',
 );
+
+// =============================================================================================
+// F11 / F12 — the startup pickers (deltas D12, D13)
+// =============================================================================================
+//
+// Two features, one screen, and three things worth proving about them:
+//
+//   1. The GAME MANIFEST is judged like every other document, and — the security-relevant part —
+//      a manifest value never becomes a fetch without passing `resolveGameParam` first. The picker
+//      must not be a second, weaker route into `/games/`.
+//   2. The THEME PREFERENCE is a device setting and NOT session state. The assertion that matters
+//      is the negative one: writing a preference must leave the session shelf and an exported
+//      state object byte-identical.
+//   3. The SCREEN itself hands back what the host chose, and hands back `null` — not `''` — for
+//      "use the game's theme", because `app.js` branches on that value.
+
+async function runStartupSuite() {
+  // ---- the manifest, as data -----------------------------------------------------------------
+  const fetched = await loader.fetchManifests();
+  if (!fetched.ok) {
+    record('startup', 'games/games.json and themes/themes.json both fetch', false,
+      fetched.failures.map(errors.formatFailure).join(' | '));
+    return;
+  }
+  record('startup', 'games/games.json and themes/themes.json both fetch', true,
+    'fetchManifests() returned both documents');
+
+  const gamesDoc = validator.validateDocument({ kind: KINDS.GAMES, raw: fetched.value.games });
+  record('startup', 'the shipped games/games.json validates against the games schema',
+    gamesDoc.ok,
+    gamesDoc.ok ? Object.keys(gamesDoc.value.games).length + ' games declared'
+      : gamesDoc.failures.map(errors.formatFailure).join(' | '));
+  if (!gamesDoc.ok) return;
+
+  const shipped = gamesDoc.value.games;
+
+  // EVERY DECLARED GAME MUST ACTUALLY RESOLVE AND LOAD. A manifest entry pointing at a file that
+  // is not there would put the host on an error screen from a list the app itself drew — which is
+  // the app blaming them for our typo.
+  for (const name of Object.keys(shipped)) {
+    const resolved = loader.resolveGameParam(
+      new URLSearchParams({ game: loader.GAMES_DIR + shipped[name] }).toString(),
+    );
+    record('startup', `manifest entry "${name}" survives resolveGameParam`,
+      resolved.ok,
+      resolved.ok ? 'resolves to ' + resolved.value
+        : resolved.failures.map(errors.formatFailure).join(' | '));
+  }
+
+  // ---- the manifest, as an attack surface ----------------------------------------------------
+  // A tampered manifest is the interesting case: the picker reads a file, and if a value out of
+  // that file could name something outside /games/, the manifest would be a way around spec §6.3.
+  // Two independent guards have to hold — the SCHEMA (bare filename) and RESOLVEGAPARAM (the same
+  // check `?game=` gets) — so both are asserted, separately, on the same hostile values.
+  //
+  // NOTE THE TWO LISTS. `resolveGameParam` legitimately ACCEPTS `games/sub/dir/game.json` — spec
+  // §6.3 forbids escaping `games/`, not nesting inside it, and a host organising boards into
+  // folders is doing nothing wrong. The MANIFEST is stricter than the URL parameter on purpose:
+  // its values are bare filenames, so that a tampered manifest cannot reach even a legal
+  // subdirectory the picker was never meant to offer. Asserting the two rules separately is what
+  // keeps that difference deliberate instead of accidental.
+  const refusedEverywhere = [
+    '../secrets.json',
+    '/etc/passwd.json',
+    'https://example.com/x.json',
+    '//example.com/x.json',
+    'game.json%00.png',
+  ];
+  const refusedByTheManifestOnly = ['sub/dir/game.json'];
+
+  for (const bad of refusedByTheManifestOnly) {
+    const doc = validator.validateDocument({
+      kind: KINDS.GAMES,
+      raw: rawDoc('games/(tampered).json', KINDS.GAMES, { schemaVersion: 1, games: { nested: bad } }),
+    });
+    record('startup', `the games schema refuses a nested path ${JSON.stringify(bad)} as a manifest value`,
+      doc.ok === false,
+      doc.ok ? 'ACCEPTED IT — the manifest is meant to hold bare filenames only'
+        : 'refused: manifest values are bare filenames');
+
+    const viaLoader = loader.resolveGameParam(
+      new URLSearchParams({ game: loader.GAMES_DIR + bad }).toString(),
+    );
+    record('startup', `?game= still ALLOWS the same nested path ${JSON.stringify(bad)}`,
+      viaLoader.ok === true,
+      viaLoader.ok ? 'resolved to ' + viaLoader.value + ' — nesting inside games/ is legal (spec §6.3)'
+        : 'refused, which would break a host who organises boards into folders');
+  }
+
+  for (const bad of refusedEverywhere) {
+    const doc = validator.validateDocument({
+      kind: KINDS.GAMES,
+      raw: rawDoc('games/(tampered).json', KINDS.GAMES, {
+        schemaVersion: 1,
+        games: { evil: bad },
+      }),
+    });
+    record('startup', `the games schema refuses a manifest value of ${JSON.stringify(bad)}`,
+      doc.ok === false,
+      doc.ok ? 'ACCEPTED IT — the picker would fetch this' : 'refused at the structural stage');
+
+    // Belt and braces: even if the schema were loosened, the loader still has to say no.
+    const viaLoader = loader.resolveGameParam(
+      new URLSearchParams({ game: loader.GAMES_DIR + bad }).toString(),
+    );
+    record('startup', `resolveGameParam independently refuses ${JSON.stringify(bad)} from a manifest`,
+      viaLoader.ok === false,
+      viaLoader.ok ? 'ACCEPTED IT — resolved to ' + viaLoader.value : 'refused before any fetch');
+  }
+
+  // An empty map is legal JSON and legal schema, and `app.js` is the layer that has to notice.
+  const emptyDoc = validator.validateDocument({
+    kind: KINDS.GAMES,
+    raw: rawDoc('games/(empty).json', KINDS.GAMES, { schemaVersion: 1, games: {} }),
+  });
+  record('startup', 'an EMPTY games map passes the schema (app.js is what refuses it)',
+    emptyDoc.ok === true,
+    emptyDoc.ok ? 'schema accepts {} — the empty-picker guard lives in showStartup'
+      : 'the schema refused it, so the app-level guard is now unreachable dead code');
+
+  // ---- the theme preference is NOT session state ----------------------------------------------
+  await withEmptyShelf(async () => {
+    const before = state.readThemePreference();
+    try {
+      record('startup', 'a theme preference round-trips through localStorage',
+        state.writeThemePreference('chalkboard') && state.readThemePreference() === 'chalkboard',
+        'wrote and read back "chalkboard"');
+
+      // THE ASSERTION THIS WHOLE DESIGN EXISTS FOR (delta D13). The maintainer's stated worry was
+      // that a theme control would reach into game state. It must not be possible to observe a
+      // theme preference from a session at all.
+      const shelfBefore = JSON.stringify(state.listSessions());
+      state.writeThemePreference('marquee');
+      const shelfAfter = JSON.stringify(state.listSessions());
+      record('startup', 'writing a theme preference does not touch the session shelf',
+        shelfBefore === shelfAfter,
+        shelfBefore === shelfAfter ? 'listSessions() is byte-identical across the write'
+          : 'THE SHELF CHANGED: ' + shelfBefore + ' -> ' + shelfAfter);
+
+      // And nothing named for a theme may appear in a state record, or an export would carry it.
+      const demoBundle = await loadDemoBundleForStartup();
+      if (demoBundle) {
+        const session = state.newSession({ bundle: demoBundle, gameHash: 'a'.repeat(64), teams: ['A'] });
+        const keys = Object.keys(session);
+        record('startup', 'a new session record carries NO theme field',
+          keys.indexOf('theme') === -1 && JSON.stringify(session).indexOf('marquee') === -1,
+          'session keys: ' + keys.join(', '));
+      }
+
+      // A rubbish value written by anything else on the origin is read as "no preference" rather
+      // than handed onward — the same untrusted-input posture as an imported file.
+      try {
+        globalThis.localStorage.setItem(state.THEME_PREF_KEY, '../evil.css');
+      } catch (_e) { /* private window: the assertion below is then vacuously true */ }
+      record('startup', 'a hostile stored preference reads back as null, not as a path',
+        state.readThemePreference() === null,
+        'readThemePreference() rejected "../evil.css"');
+    } finally {
+      state.writeThemePreference(before);
+    }
+  });
+
+  // ---- the screen ------------------------------------------------------------------------------
+  const host = document.createElement('div');
+  document.body.appendChild(host);
+  try {
+    let handed = 'never called';
+    const screen = renderer.renderStartupScreen({
+      games: [{ name: 'demo-jeopardy', file: 'demo.json' }, { name: 'demo-bingo', file: 'demo-bingo.json' }],
+      themes: ['default', 'midnight', 'chalkboard'],
+      themePref: 'chalkboard',
+      mount: host,
+      handlers: { onStart: (choice) => { handed = choice; } },
+    });
+
+    const radios = host.querySelectorAll('input[name="qbe-game"]');
+    record('startup', 'the picker draws one radio per game, with the first preselected',
+      radios.length === 2 && radios[0].checked === true,
+      radios.length + ' radios, first checked = ' + (radios.length ? radios[0].checked : 'n/a'));
+
+    const select = host.querySelector('#qbe-theme-select');
+    record('startup', 'the stored preference is preselected in the theme control',
+      !!select && select.value === 'chalkboard',
+      select ? 'select.value = ' + JSON.stringify(select.value) : 'no select drawn');
+
+    record('startup', "the first theme option is \"use this game's theme\" and its value is empty",
+      !!select && select.options[0].value === '',
+      select ? 'option[0] = ' + JSON.stringify(select.options[0].textContent) : 'no select drawn');
+
+    // The real button, clicked. `handed.file` is what `app.js` turns into a `?game=` parameter.
+    host.querySelector('button[data-action="begin"]').click();
+    record('startup', 'pressing Start hands back the chosen file and theme',
+      handed && handed.file === 'demo.json' && handed.theme === 'chalkboard',
+      JSON.stringify(handed));
+
+    // "Use this game's theme" must arrive as null, not '': app.js branches on falsiness, but every
+    // reader downstream should see one spelling of "no override".
+    select.value = '';
+    host.querySelector('button[data-action="begin"]').click();
+    record('startup', "choosing \"use this game's theme\" hands back null, not an empty string",
+      handed && handed.theme === null,
+      'theme = ' + JSON.stringify(handed && handed.theme));
+
+    // Selecting the second board must change what is handed back — proof the radio group is read
+    // at click time rather than captured when the screen was built.
+    radios[1].checked = true;
+    host.querySelector('button[data-action="begin"]').click();
+    record('startup', 'the picker reads the radio group at click time, not at build time',
+      handed && handed.file === 'demo-bingo.json',
+      'file = ' + JSON.stringify(handed && handed.file));
+
+    // No markup anywhere: the screen is built with createElement/textContent like the rest.
+    const labels = [...host.querySelectorAll('.qbe-startup-label')].map((n) => n.textContent);
+    record('startup', 'game names reach the DOM as text (no element children under a label)',
+      [...host.querySelectorAll('.qbe-startup-label')].every((n) => n.children.length === 0),
+      'labels: ' + labels.join(', '));
+
+    screen.destroy();
+    record('startup', 'destroy() removes the picker from its mount', host.children.length === 0,
+      host.children.length + ' nodes left behind');
+  } finally {
+    host.remove();
+  }
+
+  // ---- the boot fork ---------------------------------------------------------------------------
+  // `?game=` is a deep link and must still bypass the picker entirely. Asserted through the SHELL,
+  // because this is a claim about `boot()`'s branch, not about a helper.
+  const deep = await bootShell('games/demo.json');
+  try {
+    const startupScreen = deep.doc ? deep.doc.querySelector('[data-screen="startup"]') : null;
+    record('startup', 'a ?game= deep link boots past the picker to the board',
+      !deep.timedOut && !!deep.board && !startupScreen,
+      deep.timedOut ? 'the shell did not reach a board'
+        : startupScreen ? 'THE PICKER APPEARED despite an explicit ?game='
+          : 'board rendered, no startup screen drawn');
+  } finally {
+    if (deep.frame) deep.frame.remove();
+  }
+
+  // ---- F12-T3b: the preference is a DEVICE setting, so a deep link wears it too ----------------
+  //
+  // Phase 5 walkthrough finding. The picker honoured the stored theme and `?game=` silently did
+  // not, so the same preference behaved two ways depending on how the host arrived. Both halves
+  // are asserted here, including the one that only this path can reach: a stored name the manifest
+  // no longer holds must fall back to the game's own theme rather than reaching an error screen.
+  const prefBeforeDeep = state.readThemePreference();
+  const deepSessions = sessionKeysNow();
+  try {
+    state.writeThemePreference('chalkboard');
+    const themed = await bootShell('games/demo.json');
+    try {
+      const href = themed.doc && themed.doc.getElementById('qbe-theme')
+        ? (themed.doc.getElementById('qbe-theme').getAttribute('href') || '').split('?')[0] : null;
+      record('startup', 'a ?game= deep link wears the stored device theme, not just the picker',
+        !themed.timedOut && !!href && /themes\/chalkboard\.css$/.test(href),
+        themed.timedOut ? 'the shell did not reach a board'
+          : 'mounted stylesheet is ' + href + ' (demo.json asks for midnight; the device says chalkboard)');
+    } finally {
+      if (themed.frame) themed.frame.remove();
+    }
+
+    // A theme removed between two sessions is the ordinary case, not an attack.
+    state.writeThemePreference('nosuchtheme');
+    const stale = await bootShell('games/demo.json');
+    try {
+      const href = stale.doc && stale.doc.getElementById('qbe-theme')
+        ? (stale.doc.getElementById('qbe-theme').getAttribute('href') || '').split('?')[0] : null;
+      record('startup', 'a stored theme the manifest no longer holds falls back to the game\'s own',
+        !stale.timedOut && !!href && /themes\/midnight\.css$/.test(href)
+          && !stale.doc.querySelector('.qbe-error'),
+        stale.timedOut ? 'the shell did not reach a board'
+          : 'mounted stylesheet is ' + href + ', error screen present: '
+            + !!stale.doc.querySelector('.qbe-error'));
+    } finally {
+      if (stale.frame) stale.frame.remove();
+    }
+  } finally {
+    state.writeThemePreference(prefBeforeDeep);
+    dropNewSessions(deepSessions);
+  }
+
+  // ---- F12-T3: the override is not just remembered, it becomes the stylesheet ------------------
+  //
+  // Everything above this point proves the PREFERENCE round-trips and the SCREEN hands back the
+  // right value. Neither of those is the feature. The feature is `app.js` resolving that name
+  // against the manifest at mountTheme time and the board coming up wearing it — the one step where
+  // D13 could silently do nothing and every other assertion here would still be green.
+  //
+  // demo.json is the first board in the manifest and its own `theme` is "midnight". The picker is
+  // asked for "chalkboard". If the override is ignored, the mounted sheet is midnight.css and this
+  // fails; if the override were ever allowed to become a URL from something other than a manifest
+  // VALUE, the href would show it.
+  const prefBefore = state.readThemePreference();
+  const sessionsBeforePick = sessionKeysNow();
+  const picked = await bootShell(null, { pickTheme: 'chalkboard' });
+  try {
+    const link = picked.doc ? picked.doc.getElementById('qbe-theme') : null;
+    const href = link ? (link.getAttribute('href') || '').split('?')[0] : null;
+    record('startup', "a theme picked at startup overrides the game file's own theme",
+      !picked.timedOut && !!href && /themes\/chalkboard\.css$/.test(href),
+      picked.timedOut ? 'the shell never reached a board through the picker'
+        : 'mounted stylesheet is ' + href
+          + ' (games/demo.json asks for midnight; the picker asked for chalkboard)');
+    record('startup', 'the picked theme is stored as a device preference',
+      state.readThemePreference() === 'chalkboard',
+      'readThemePreference() is ' + JSON.stringify(state.readThemePreference()));
+  } finally {
+    if (picked.frame) picked.frame.remove();
+    // The suite shares an origin with the app, so this really did write the maintainer's own
+    // preference. Put it back exactly as it was — including "unset", which is null, not ''.
+    state.writeThemePreference(prefBefore);
+    dropNewSessions(sessionsBeforePick);
+  }
+}
+
+/** The demo bundle, for the one startup assertion that needs a real bundle to build a session. */
+async function loadDemoBundleForStartup() {
+  const raw = await loader.fetchContentBundle({ gamePath: 'games/demo.json' });
+  if (!raw.ok) return null;
+  const checked = validator.validateBundle(raw.value);
+  return checked.ok ? checked.value : null;
+}
 
 async function runInvariantSuite() {
   const queue = ENTRY_SOURCES.slice();
@@ -4060,6 +4428,9 @@ export async function run(mount) {
   await runWinsSuite();
   // The file-level audit of the same manifest: fetchability, zero-CDN, SPDX, tokens, classes.
   await runThemeSuite();
+  // F11/F12. After the state suite because it uses `withEmptyShelf` and the same shelf helpers,
+  // and before the invariants, which only read source text.
+  await runStartupSuite();
   await runInvariantSuite();
 
   mount.textContent = '';

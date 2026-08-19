@@ -73,6 +73,19 @@
 <div id="qbe-error"></div>
 
 <!--
+  The startup screen's mount point (deltas D12/D13 — the game and theme pickers).
+
+  OUTSIDE .reveal, and for the same reason #qbe-error above is: spec §5 promises that reveal is not
+  initialised until a bundle validates, and at the moment this screen is up no game has been chosen,
+  so there is no bundle yet. Drawing the picker inside the deck would mean starting reveal ahead of
+  validation. renderer.renderStartupScreen() fills it; app.js empties it once a board is chosen.
+
+  Styled by themes/default.css, which is linked above as the base layer — so the picker looks like
+  the rest of the app before any theme has been selected, which is necessarily the case here.
+-->
+<div id="qbe-startup"></div>
+
+<!--
   NO LIVE REGION HERE, deliberately. This file used to carry a hidden <p id="qbe-announcer"> and
   renderer.js an `announce()` to fill it — and nothing in the repo ever called it. Cell state
   changes are announced by the platform instead: closeCell() returns focus to the cell whose

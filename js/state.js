@@ -110,6 +110,89 @@ function storage() {
   }
 }
 
+// =============================================================================================
+// THE THEME PREFERENCE (delta D13) — a DEVICE setting, and deliberately not a session
+// =============================================================================================
+//
+// This is the one value in this module that is NOT part of a session, and keeping it out is the
+// entire design. A session record is a contract: it is hashed against a content file, validated
+// against the state schema on every read, exported, mailed around, and imported back as untrusted
+// input. Putting a cosmetic preference inside that contract would mean a bad theme string could
+// fail the validation of a game in progress — a host loses a half-played board because they picked
+// the wrong colours. That trade is not worth making for a stylesheet.
+//
+// So it lives under its own key, is read defensively, and is never written into a state object.
+// Two consequences, both accepted openly (plan Phase 4b, decision 1):
+//
+//   * The preference does NOT travel with an exported session. A host who exports on the laptop
+//     and imports on the projector machine gets that machine's preference, or the game file's own
+//     theme. Themes are a property of the room, and the room did not move.
+//   * A preference naming a theme that no longer exists is not an error. `app.js` resolves it
+//     against the manifest and silently falls back to the game's own theme — the same posture as
+//     "losing persistence is a degradation, losing the board is a failure" above. Nothing about a
+//     stale colour choice should put a host on an error screen.
+//
+// The stored value is a theme NAME, never a filename and never a path. Resolution to a `.css`
+// file happens exactly where it happens for a content file's theme: against the manifest, in the
+// validator's cross-check or in `app.js`. Spec §6.4 is untouched.
+
+/** localStorage key for the host's theme choice. Singular — one preference per device. */
+export const THEME_PREF_KEY = 'qbe.theme';
+
+/**
+ * Read the stored theme preference.
+ *
+ * @returns {string|null} the theme NAME, or null when unset, unreadable, or not a plain name
+ *
+ * Returns null rather than a Result: there is no failure here worth reporting to a user. Storage
+ * being unavailable, the key being absent, and somebody having typed rubbish into devtools all
+ * mean the same thing to the caller — "no preference" — and all have the same correct response,
+ * which is to use the game's own theme.
+ */
+export function readThemePreference() {
+  const s = storage();
+  if (!s) return null;
+  let raw;
+  try {
+    raw = s.getItem(THEME_PREF_KEY);
+  } catch (_err) {
+    return null;
+  }
+  if (typeof raw !== 'string' || raw === '') return null;
+  // Shape-checked on the way OUT as well as on the way in. The value is read from a store any
+  // script on the origin could have written, so it is untrusted input like everything else — and
+  // the pattern is the same one the themes manifest pins its keys to.
+  return PATTERNS.themeName.test(raw) ? raw : null;
+}
+
+/**
+ * Store (or clear) the theme preference.
+ *
+ * @param {string|null} themeName  a theme name, or null to go back to "use the game's theme"
+ * @returns {boolean} whether it was actually written
+ *
+ * Boolean rather than a Result for the same reason as the reader: a host in a Safari private
+ * window should still get their theme for THIS session — the pick applies to the live page either
+ * way — and telling them their colour choice will not be remembered is a footnote, not an error
+ * screen.
+ */
+export function writeThemePreference(themeName) {
+  const s = storage();
+  if (!s) return false;
+  try {
+    if (themeName === null || themeName === undefined || themeName === '') {
+      s.removeItem(THEME_PREF_KEY);
+      return true;
+    }
+    if (typeof themeName !== 'string' || !PATTERNS.themeName.test(themeName)) return false;
+    s.setItem(THEME_PREF_KEY, themeName);
+    return true;
+  } catch (_err) {
+    // Quota exceeded, or storage disabled between the read and the write.
+    return false;
+  }
+}
+
 const STORAGE_UNAVAILABLE = 'this browser to allow saving to localStorage';
 
 function storageUnavailableFailure(gameHash) {

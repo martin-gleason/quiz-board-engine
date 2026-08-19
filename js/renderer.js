@@ -281,9 +281,22 @@ function faceValue(cell, bundle, state) {
  * is deliberately withheld: it is the question, and the name of a not-yet-played cell must not
  * read it out.
  */
-function accessibleName(cell, column, bundle, state) {
+function accessibleName(cell, column, bundle, state, position) {
   const parts = [];
   if (column.label) parts.push(column.label);
+  // THE RANKED-LIST ROW NEEDS ITS POSITION, and it is the only layout that does. Everywhere else
+  // the composed name is already unique: a jeopardy cell carries its own value, a bingo square its
+  // own term. A feud row has neither — every row in the column shares the survey question, and
+  // every unplayed row reports "points hidden", so all six announced as one identical sentence and
+  // a screen-reader user had no way to tell which row they had landed on. Found by walking the
+  // board with the keyboard (Phase 5), not by a test, which is why one now exists.
+  //
+  // The position is the DRAWN one, not `cell.row`: `drawOrder` sorts this layout by descending
+  // value, so the authored index and the projected index are different numbers, and the useful one
+  // is what the room can see. It leaks nothing — the ordering is already visible.
+  if (position && bundle.gametype.layout === 'ranked-list') {
+    parts.push('answer ' + position.index + ' of ' + position.total);
+  }
   if (cell.value !== undefined) {
     parts.push(faceValue(cell, bundle, state) === null ? 'points hidden' : cell.value + ' points');
   }
@@ -318,7 +331,7 @@ function accessibleName(cell, column, bundle, state) {
  * face — that is the question. A revealed feud row still keeps its answer in the overlay only: it
  * HAS a value, so it gets no text element, and its answer is the reveal payload rather than a label.
  */
-function buildCell(doc, cell, column, bundle, session, state) {
+function buildCell(doc, cell, column, bundle, session, state, position) {
   const button = el(doc, 'button', 'qbe-cell');
   button.type = 'button';
   button.setAttribute('data-cell', cell.key);
@@ -329,7 +342,7 @@ function buildCell(doc, cell, column, bundle, session, state) {
   if (session && Array.isArray(session.bonusCells) && session.bonusCells.indexOf(cell.key) !== -1) {
     button.setAttribute('data-bonus', 'true');
   }
-  button.setAttribute('aria-label', accessibleName(cell, column, bundle, state));
+  button.setAttribute('aria-label', accessibleName(cell, column, bundle, state, position));
 
   const face = faceValue(cell, bundle, state);
   let valueEl = null;
@@ -351,7 +364,7 @@ function buildCell(doc, cell, column, bundle, session, state) {
   mark.setAttribute('aria-hidden', 'true');
   button.appendChild(mark);
 
-  return { button, valueEl, cell, column };
+  return { button, valueEl, cell, column, position };
 }
 
 /**
@@ -455,9 +468,12 @@ export function renderBoard({ bundle, session, mount, handlers }) {
     // Omitted when the column has no label (theme-contract §2: absent, never empty).
     if (column.label) columnEl.appendChild(el(doc, 'h2', 'qbe-column-label', column.label));
 
-    for (const cell of drawOrder(column.cells, layout)) {
+    const drawn = drawOrder(column.cells, layout);
+    for (let i = 0; i < drawn.length; i++) {
+      const cell = drawn[i];
       const state = cellStateFor(bundle, session, cell.key);
-      const record = buildCell(doc, cell, column, bundle, session, state);
+      const record = buildCell(doc, cell, column, bundle, session, state,
+        { index: i + 1, total: drawn.length });
       columnEl.appendChild(record.button);
       cells.set(cell.key, record.button);
       records.set(cell.key, record);
@@ -535,7 +551,8 @@ export function updateBoard(view, { bundle, session }) {
     // and a bingo card's `preMarked` free squares played their mark animation at load. The
     // animation marks the EVENT of a reveal, not the fact that a page was opened.
     record.button.setAttribute('data-animate', 'true');
-    record.button.setAttribute('aria-label', accessibleName(record.cell, record.column, b, state));
+    record.button.setAttribute('aria-label',
+      accessibleName(record.cell, record.column, b, state, record.position));
     if (bonus) record.button.setAttribute('data-bonus', 'true');
     else record.button.removeAttribute('data-bonus');
 
@@ -1410,6 +1427,152 @@ export function renderTeamSetup({ mount, handlers, names, editing }) {
   // go back to.
   const view = mountSetup(mount, ui, editing && h.onCancel ? () => h.onCancel() : null);
   tryFocus(inputs[0] || ui.heading);
+  return view;
+}
+
+/**
+ * The STARTUP screen — pick a board, pick a look, start (deltas D12 / D13, features F11 / F12).
+ *
+ * @param {{games:Array<{name:string,file:string}>, themes:string[], themePref:string|null,
+ *          mount:HTMLElement, handlers?:{onStart?:Function}}} args
+ * @returns {{root:HTMLElement, destroy:Function}}
+ *
+ * WHY THIS SCREEN EXISTS. Every entry point before it assumed the host already knew a URL. With no
+ * server there is no directory listing, so a teacher with three boards could reach exactly one of
+ * them — the `demo.json` default — and had to hand-edit a query string for the other two. That is a
+ * developer's front door on a tool built for a classroom.
+ *
+ * WHY IT IS ONE SCREEN AND NOT TWO. Board and look are one decision made once, at the moment the
+ * projector goes on. Splitting them into two sequential screens would put a Back button between a
+ * host and a room full of waiting people, to separate two questions that take four seconds together.
+ *
+ * WHAT IT IS NOT ALLOWED TO DO. It renders NAMES. The game list holds manifest keys and manifest
+ * values, and the value only ever leaves here by way of `handlers.onStart`, which hands it to
+ * `loader.resolveGameParam` before anything is fetched — the same guard a `?game=` parameter meets
+ * (spec §6.3). No string on this screen becomes a URL, an href, or markup: `buildSetup` and `el`
+ * build everything with `createElement`/`textContent`, like the rest of this module.
+ *
+ * RADIOS, NOT A <select>, FOR THE BOARD. Three-to-a-dozen boards is a set you want to SEE — a host
+ * scanning a projected screen for "Trivia Bingo" should not have to open a menu to discover their
+ * options. The theme control is a `<select>` for the opposite reason: it is a refinement, its
+ * default is almost always right, and it should not out-shout the choice that matters.
+ */
+export function renderStartupScreen({ games, themes, themePref, mount, handlers }) {
+  const doc = mount.ownerDocument || document;
+  const h = handlers || {};
+  const list = Array.isArray(games) ? games : [];
+  const themeList = Array.isArray(themes) ? themes : [];
+
+  const ui = buildSetup(
+    doc,
+    'startup',
+    'Choose a board',
+    'Pick the game you want to project, and how it should look. You can change the look later by coming back here; changing it does not affect a game in progress.',
+  );
+
+  // ---- the board list ------------------------------------------------------------------------
+  // A real radio group: `name` shared across the inputs, so the platform gives arrow-key navigation,
+  // single-selection semantics and a "3 of 3" announcement for free. This is the CLAUDE.md
+  // accessibility rule in practice — get it from the platform, not from bespoke ARIA.
+  const fieldset = el(doc, 'fieldset', 'qbe-startup-games');
+  const legend = el(doc, 'legend', 'qbe-startup-legend', 'Board');
+  fieldset.appendChild(legend);
+
+  for (let i = 0; i < list.length; i++) {
+    const game = list[i];
+    const id = 'qbe-game-' + i;
+    const row = el(doc, 'div', 'qbe-startup-choice');
+    const input = doc.createElement('input');
+    input.type = 'radio';
+    input.name = 'qbe-game';
+    input.id = id;
+    input.className = 'qbe-startup-radio';
+    // The FILE rides on a data attribute rather than on `value`, so that nothing which reads this
+    // form generically can mistake a filename for a display label or the other way round.
+    input.setAttribute('data-file', game.file);
+    input.value = game.name;
+    if (i === 0) input.checked = true;
+    const label = doc.createElement('label');
+    label.className = 'qbe-startup-label';
+    label.setAttribute('for', id);
+    label.textContent = game.name;
+    row.appendChild(input);
+    row.appendChild(label);
+    fieldset.appendChild(row);
+  }
+  ui.body.appendChild(fieldset);
+
+  // ---- the theme control ---------------------------------------------------------------------
+  const themeWrap = el(doc, 'div', 'qbe-startup-theme');
+  const themeLabel = doc.createElement('label');
+  themeLabel.className = 'qbe-startup-label';
+  themeLabel.setAttribute('for', 'qbe-theme-select');
+  themeLabel.textContent = 'Look';
+  const select = doc.createElement('select');
+  select.id = 'qbe-theme-select';
+  select.className = 'qbe-startup-select';
+
+  // THE FIRST OPTION IS THE GAME'S OWN THEME, and it is the default (plan Phase 4b, decision 2).
+  // A content file may declare a theme, and its author meant it; the picker exists to let a host
+  // overrule that for THEIR room — a washed-out projector in daylight — not to quietly discard it
+  // for everyone who never touched this control. Its value is the empty string, which is exactly
+  // what `readThemePreference` returns "no preference" as.
+  const keep = doc.createElement('option');
+  keep.value = '';
+  keep.textContent = "Use this game's theme";
+  select.appendChild(keep);
+
+  for (const name of themeList) {
+    const opt = doc.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    if (name === themePref) opt.selected = true;
+    select.appendChild(opt);
+  }
+  themeWrap.appendChild(themeLabel);
+  themeWrap.appendChild(select);
+  ui.body.appendChild(themeWrap);
+
+  // `begin`, not `start`: the team-setup screen's primary button is already `data-action="start"`,
+  // and two different screens answering to one action name is exactly the ambiguity that makes a
+  // test helper click the wrong thing six months from now.
+  ui.actions.appendChild(chromeButton(doc, 'begin', 'Start', 'Start the selected board'));
+
+  ui.root.addEventListener('click', (event) => {
+    const target = event.target instanceof Element ? event.target.closest('button') : null;
+    if (!target || !ui.root.contains(target)) return;
+    if (target.getAttribute('data-action') !== 'begin') return;
+    const chosen = ui.root.querySelector('input[name="qbe-game"]:checked');
+    // No selection cannot normally happen — the first radio is checked on build — but a board list
+    // that arrived empty would leave nothing checked, and calling `onStart(undefined)` would send a
+    // non-path into the loader. Refusing here keeps that impossible rather than merely unlikely.
+    if (!chosen) return;
+    if (h.onStart) {
+      h.onStart({
+        file: chosen.getAttribute('data-file'),
+        name: chosen.value,
+        // '' means "use the game's theme" and is passed through as null, so every downstream
+        // reader sees ONE spelling of "no override" instead of two.
+        theme: select.value === '' ? null : select.value,
+      });
+    }
+  });
+
+  // Enter anywhere in the form starts the game. A host tabbing through radios and pressing Return
+  // expects the primary action, and without this the keypress is swallowed by a form with no
+  // submit behaviour of its own.
+  ui.root.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    if (event.target instanceof Element && event.target.closest('button')) return;
+    event.preventDefault();
+    const startButton = ui.root.querySelector('button[data-action="begin"]');
+    if (startButton) startButton.click();
+  });
+
+  // No Escape handler, for the same reason the resume screen has none: this screen is the only
+  // route into a game, so dismissing it would strand the host on an empty stage.
+  const view = mountSetup(mount, ui, null);
+  tryFocus(ui.heading);
   return view;
 }
 
