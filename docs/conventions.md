@@ -1,5 +1,5 @@
 <!-- VENDORED from code-process-review/conventions.md — DO NOT EDIT.
-     pinned-sha256: db5ca2272070bef6d280a69907e936079fce7d064f9a68ff4609b704685fc7e2
+     pinned-sha256: a0934ff5a4fac45f7b06afa0b1f2b79a7a3a169b3b1e952180e9ee14c9cd3374
      Project-local rules belong in docs/conventions-local.md (D24).
      Fix upstream, then re-vendor: python3 scripts/vendor.py <project> -->
 
@@ -149,10 +149,17 @@ Six standing documents, plus a plan and a review per unit of work.
 |---|---|---|---|
 | 1 | `CLAUDE.md` | standing rules; `@import`s conventions | when the process changes |
 | 2 | `docs/conventions.md` | this file, vendored and pinned | upstream only |
-| 3 | `docs/specs/SPEC.md` | **the vision sentence**, baseline features, hook intentions | **never — it is the baseline** |
+| 3 | `docs/specs/` | **the vision sentence**, `FR`/`NFR`, hook intentions. One spec or several, named for the product. | **never — it is the baseline** |
 | 4 | `docs/plans/00-register.md` | every register, one `##` each | append-only |
 | 5 | `docs/plans/00-status.md` | the state of the project as one chart | **generated, never hand-written** |
-| 6 | `docs/conventions-local.md` | conventions true of **this project only** | freely, by the project |
+| 6 | `docs/conventions-local.md` | conventions true of **this project only**. *Optional* — a project with no rules of its own does not need the file. | freely, by the project |
+
+**A project's specs live in `docs/specs/`, and the directory is the rule — not a filename.**
+A project may hold one spec or several: a home-automation project has a spec per subsystem,
+a design system has a numbered series, and most name the file after the product rather than
+`SPEC.md`. The earlier rule named `docs/specs/SPEC.md` exactly, and nine of twelve projects
+ignored it for a good reason. A rule the corpus routinely and correctly breaks is a rule
+that was written wrong; it was corrected rather than enforced.
 
 **The vendored copy is never edited — that is what makes it checkable.** A project's own
 rules go in `docs/conventions-local.md`, which `CLAUDE.md` `@import`s alongside the pinned
