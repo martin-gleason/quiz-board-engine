@@ -50,19 +50,20 @@ Counted from the register itself. A register with no rows still gets a line.
 
 | Register | Rows | Open | Closed |
 |---|---|---|---|
-| Decisions (`D`) | 13 | 13 | 0 |
+| Decisions (`D`) | 13 | 0 | 13 |
 | Risks (`RR`) | 0 | 0 | 0 |
 | Owner items (`O`) | 0 | 0 | 0 |
 | Hooks (`H`) | 0 | 0 | 0 |
 | Mutations (`M`) | 0 | 0 | 0 |
-| Other (C) (`C`) | 14 | 14 | 0 |
+| Other (C) (`C`) | 14 | 1 | 13 |
 
 ### By status
 
 | Register | Status | Count |
 |---|---|---|
-| `D` | open | 13 |
-| `C` | open | 14 |
+| `D` | ratified | 13 |
+| `C` | done | 13 |
+| `C` | open | 1 |
 
 ## Hooks
 
@@ -77,34 +78,8 @@ Every open row in the register. Owner is the row's Owner column where the table 
 
 | Owner | ID | P | Status | Item |
 |---|---|---|---|---|
-| owner | D1 | — | open | Add /tests/ (runner + fixtures) to the §3 repo layout |
-| owner | D2 | — | open | Add /docs/runbooks/ |
-| owner | D3 | — | open | /vendor/ gains a per-dependency subdirectory (/vendor/reveal.js/) plus a provenance README.md |
-| owner | D4 | — | open | Pin reveal.js to 5.2.1, ESM build, four dist/ files only |
-| owner | D5 | — | open | Add js/schemas.js to the §3 file list |
-| owner | D6 | — | open | State gains "appVersion" alongside schemaVersion |
-| owner | D7 | — | open | Document that the app requires an HTTP origin, not file:// |
-| owner | D8 | — | open | Add js/app.js (composition root) to the §3 file list |
-| owner | D9 | — | open | Add tools/firefox-run-tests.py |
-| owner | D10 | — | open | Add docs/plans/theme-contract.md (normative DOM + token contract) and docs/handoffs/ for external collaboration |
-| owner | D11 | — | open | Theming is a shared work surface: the maintainer authors CSS/vanilla JS directly, and an external collaborator (Claude D… |
-| owner | D12 | — | open | Add /games/games.json (game manifest) and a startup game picker; extend §10's v1 feature list with F11 |
-| owner | D13 | — | open | A startup theme picker whose choice may override the content file's theme, stored as a device preference outside session… |
-| — | C1 | — | open | git init, main branch, identity configured |
-| — | C2 | — | open | Directory scaffold per §3 + D1/D2 |
-| — | C3 | — | open | AGPL-3.0 LICENSE at repo root |
-| — | C4 | — | open | Vendor reveal.js 5.2.1 with provenance + hashes (vendor/README.md) |
-| — | C5 | — | open | .gitignore |
-| — | C6 | — | open | CLAUDE.md — project rules, the named invariants, work vocabulary |
-| — | C7 | — | open | Create public GitHub repo quiz-board-engine, push main |
-| — | C8 | — | open | Enable GitHub Pages (deploy from main, root) |
-| — | C9 | — | open | README — tokens, limits, ?game=, "Fixing JSON errors", local-server note, theme-trust warning |
-| — | C10 | — | open | Safari manual test runbook |
 | — | C11 | — | open | Safari manual test pass — human, maintainer-executed |
-| — | C12 | — | open | Demo content authoring (games/demo.json + one per game type) |
-| — | C13 | — | open | docs/runbooks/learning-track.md — the ongoing 10% study plan |
-| — | C14 | — | open | docs/runbooks/v1.0-maintainer-pass.md — the maintainer's four-hour list to v1.0 |
 
 ---
 
-27 open register rows.
+1 open register rows.
