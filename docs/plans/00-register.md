@@ -36,9 +36,9 @@ number has not been decided, however clearly it was said aloud.
 
 ## Risks (RR)
 
-| RR1 | [ci-absent] No CI. Every check in this project runs only where somebody remembers to run it. | proposed | — | — | Evidence: `ls .github/workflows` → (no workflows) | agent |
-| RR2 | [generated-orphan] A generated file with nothing regenerating it. It will go stale and be believed, because it does not look stale. | proposed | — | — | Evidence: `grep -l GENERATED docs/**/*.md; ls .github/workflows .githooks` → docs/plans/00-status.md | agent |
-| RR3 | [tests-collect-zero] Tests exist and the runner collects none of them. A suite that reports green having run nothing is worse than no suite. | proposed | — | — | Evidence: `python3 -m pytest --collect-only -q` → no tests collected in 0.01s | agent |
+| RR1 | [ci-absent] **Ratified 2026-08-31.** The owner: *"that is a huge error."* No CI. Every check in this project runs only where somebody remembers to run it. | ratified | — | — | Evidence: `ls .github/workflows` → (no workflows) | agent |
+| RR2 | [generated-orphan] **Ratified 2026-08-31.** A generated file with nothing regenerating it. It will go stale and be believed, because it does not look stale. | ratified | — | — | Evidence: `grep -l GENERATED docs/**/*.md; ls .github/workflows .githooks` → docs/plans/00-status.md | agent |
+| RR3 | [tests-collect-zero] **Ratified 2026-08-31.** Tests exist and the runner collects none of them. A suite that reports green having run nothing is worse than no suite. | ratified | — | — | Evidence: `python3 -m pytest --collect-only -q` → no tests collected in 0.01s | agent |
 
 | ID | Risk | Status | Likelihood | Impact | Mitigation | Owner | Source |
 |---|---|---|---|---|---|---|---|
@@ -78,6 +78,9 @@ days on the owner's track.
 | C12 | Demo content authoring (games/demo.json + one per game type) | — | done — 4 game json files present | — | — | `docs/plans/v1.0-build-plan.md:267` |
 | C13 | docs/runbooks/learning-track.md — the ongoing 10% study plan | — | done | — | — | `docs/plans/v1.0-build-plan.md:268` |
 | C14 | docs/runbooks/v1.0-maintainer-pass.md — the maintainer's four-hour list to v1.0 | — | done | — | — | `docs/plans/v1.0-build-plan.md:269` |
+| C15 | Add CI — build, the Safari gate, and whatever the suite becomes | P0 | open | Marty | — | closes `RR1` |
+| C16 | Regenerate `docs/plans/00-status.md` from this repo, or stop generating it here | P1 | open | Marty | — | closes `RR2` |
+| C17 | Make the test suite collect — it currently reports green having run nothing | P0 | open | Marty | — | closes `RR3` |
 
 ## Gates (G)
 
