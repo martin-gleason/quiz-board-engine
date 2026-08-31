@@ -1,5 +1,5 @@
 <!-- VENDORED from code-process-review/conventions.md — DO NOT EDIT.
-     pinned-sha256: a0934ff5a4fac45f7b06afa0b1f2b79a7a3a169b3b1e952180e9ee14c9cd3374
+     pinned-sha256: 04a7951d84183979751df356327078a6b97877437cf6ac9fa4755f712395063d
      Project-local rules belong in docs/conventions-local.md (D24).
      Fix upstream, then re-vendor: python3 scripts/vendor.py <project> -->
 
@@ -313,6 +313,27 @@ The mechanism matters: **the file-writing tool refuses to overwrite a file that 
 been read this session. Shell redirection has no such guard.** The protection existed and
 was walked around by using a different tool for the same job. Read the target first — the
 answer may already be in it, ratified, months ago.
+
+### A decision about what another system can do is not ratifiable until something has run
+
+**Ratified 2026-08-31.** Where a decision asserts that something *outside this repository*
+can do something, the command confirming it is run before ratification, and the row carries
+that command and its output.
+
+**The evidence is the observable end state, not the configuration field.** `curl` the URL
+and paste the status and first line; read the file back after writing it. A config value is
+what somebody intended. A 404 is what a user gets. This is the same gap as a green test name
+whose assertion nobody read.
+
+**The test, so the rule does not swallow everything:** does this decision assert that
+something outside this repository can do something? Most decisions are about what *we* will
+do and are untouched.
+
+**It is most needed where it feels least needed.** The case that produced this rule was not
+an obscure corner of an API — a project ratified "Pages serves a subdirectory from `main`"
+when branch-based GitHub Pages offers exactly two paths, a limit the owner already knew. An
+unfamiliar system prompts caution; a familiar one produces a confident sentence, and a
+register cannot tell confidence from knowledge.
 
 ### A claim recorded before it is verified says so in the sentence that records it
 
