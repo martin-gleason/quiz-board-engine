@@ -12,6 +12,7 @@ Standing rules for every session in this repo. Not the work itself.
 the plan; the maintainer ratifies before a delta is real.
 
 @docs/conventions.md
+@docs/conventions-local.md
 
 **Sourcing:** hybrid — `docs/conventions.md` is a pinned local copy, imported locally so a
 standalone clone still works.
