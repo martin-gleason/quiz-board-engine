@@ -36,6 +36,10 @@ number has not been decided, however clearly it was said aloud.
 
 ## Risks (RR)
 
+| RR1 | [ci-absent] No CI. Every check in this project runs only where somebody remembers to run it. | proposed | — | — | Evidence: `ls .github/workflows` → (no workflows) | agent |
+| RR2 | [generated-orphan] A generated file with nothing regenerating it. It will go stale and be believed, because it does not look stale. | proposed | — | — | Evidence: `grep -l GENERATED docs/**/*.md; ls .github/workflows .githooks` → docs/plans/00-status.md | agent |
+| RR3 | [tests-collect-zero] Tests exist and the runner collects none of them. A suite that reports green having run nothing is worse than no suite. | proposed | — | — | Evidence: `python3 -m pytest --collect-only -q` → no tests collected in 0.01s | agent |
+
 | ID | Risk | Status | Likelihood | Impact | Mitigation | Owner | Source |
 |---|---|---|---|---|---|---|---|
 
