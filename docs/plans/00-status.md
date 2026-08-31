@@ -51,7 +51,7 @@ Counted from the register itself. A register with no rows still gets a line.
 | Register | Rows | Open | Closed |
 |---|---|---|---|
 | Decisions (`D`) | 13 | 0 | 13 |
-| Risks (`RR`) | 0 | 0 | 0 |
+| Risks (`RR`) | 3 | 3 | 0 |
 | Owner items (`O`) | 0 | 0 | 0 |
 | Hooks (`H`) | 0 | 0 | 0 |
 | Mutations (`M`) | 0 | 0 | 0 |
@@ -62,6 +62,7 @@ Counted from the register itself. A register with no rows still gets a line.
 | Register | Status | Count |
 |---|---|---|
 | `D` | ratified | 13 |
+| `RR` | proposed | 3 |
 | `C` | done | 13 |
 | `C` | open | 1 |
 
@@ -78,8 +79,11 @@ Every open row in the register. Owner is the row's Owner column where the table 
 
 | Owner | ID | P | Status | Item |
 |---|---|---|---|---|
+| unassigned | RR1 | — | proposed | [ci-absent] No CI. Every check in this project runs only where somebody remembers to run it. |
+| unassigned | RR2 | — | proposed | [generated-orphan] A generated file with nothing regenerating it. It will go stale and be believed, because it does not … |
+| unassigned | RR3 | — | proposed | [tests-collect-zero] Tests exist and the runner collects none of them. A suite that reports green having run nothing is … |
 | — | C11 | — | open | Safari manual test pass — human, maintainer-executed |
 
 ---
 
-1 open register rows.
+4 open register rows.
