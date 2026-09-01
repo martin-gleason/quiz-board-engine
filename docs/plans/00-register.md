@@ -39,6 +39,8 @@ number has not been decided, however clearly it was said aloud.
 | RR1 | [ci-absent] **Ratified 2026-08-31.** The owner: *"that is a huge error."* No CI. Every check in this project runs only where somebody remembers to run it. | ratified | — | — | Evidence: `ls .github/workflows` → (no workflows) | agent |
 | RR2 | [generated-orphan] **Ratified 2026-08-31.** A generated file with nothing regenerating it. It will go stale and be believed, because it does not look stale. | ratified | — | — | Evidence: `grep -l GENERATED docs/**/*.md; ls .github/workflows .githooks` → docs/plans/00-status.md | agent |
 | RR3 | [tests-collect-zero] **Ratified 2026-08-31.** Tests exist and the runner collects none of them. A suite that reports green having run nothing is worse than no suite. | ratified | — | — | Evidence: `python3 -m pytest --collect-only -q` → no tests collected in 0.01s | agent |
+| RR4 | [test-isolation-theme] The shell suite boots the real app and inherits the browser's real `localStorage`. `withEmptyShelf` clears `qbe.session.*` and nothing else, so the F12 theme override `qbe.theme` survives into the boot under test: with `qbe.theme = marquee` set, the assertion that `themes/midnight.css` loads under `default.css` fails. A test whose result depends on who last used the browser is not evidence in either direction. | ratified | — | — | Extend the shelf helper to save/restore `qbe.theme` alongside the session keys | agent | Evidence: 369/370 in a profile with `qbe.theme = marquee`; 370/370 at `59e2651` on a clean profile |
+| RR5 | [feud-face-no-answer] A revealed `ranked-list` row shows only its point value on the board face, never its answer text. `faceValue` (`js/renderer.js:265`) returns `String(cell.value)`, and `.qbe-cell-text` (`js/renderer.js:357`) is emitted only for a cell with no `value` — the bingo shape. A feud cell has `value` and `answer` and no `prompt`, so its answer has no path to the face. The overlay shows it once and closes, leaving the board six blanks and a number, while the accessible name already says "answer shown". | ratified | — | — | Give `ranked-list` its own face composition; the fix edits theme-contract §2 and so wants a delta | agent | Evidence: board face `"38"`, aria `"…answer 1 of 6, 38 points, answer shown"` |
 
 | ID | Risk | Status | Likelihood | Impact | Mitigation | Owner | Source |
 |---|---|---|---|---|---|---|---|
@@ -82,6 +84,7 @@ days on the owner's track.
 | C16 | Regenerate `docs/plans/00-status.md` from this repo, or stop generating it here | P1 | open | Marty | — | closes `RR2` |
 | C17 | Make the test suite collect — it currently reports green having run nothing | P0 | open | Marty | — | closes `RR3` |
 | C18 | Track the v2.0 draft spec in git — `docs/specs/quiz-board-engine-spec-v2-draft-r2.md`. Draft, not frozen: v1 remains the contract until the §8 red-team gate resolves. | P2 | done | agent | — | — |
+| C19 | `docs/pr-review-log.md` — one entry per merged PR, committed to `main` after the merge. Opened with the PR #1 entry. | P2 | done | agent | — | — |
 
 ## Gates (G)
 
