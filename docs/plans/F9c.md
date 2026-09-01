@@ -5,12 +5,13 @@
 **Retrofit on:** `F9` (feud), shipped. Second pass on a shipped feature, so a retrofit letter —
 `F9b` was the answer-on-the-face fix; this is `F9c`.
 
-**Owes two deltas, neither ratified:**
+**Three ratified deltas (all 2026-09-01):**
 
 - **`D15`** — spec §10 `F9` says *"strikes/steals are host-mediated, not modeled"*. Modelling
-  strikes contradicts the frozen spec, so it needs a ratified decision before this is real. The
-  spec is not edited; `D15` records the change.
+  strikes contradicts the frozen spec. The spec is not edited; `D15` records the change. Ratifying
+  it also fixed **`X` as the strike key**, widening plan Q12's deliberately small keyboard budget.
 - **`D16`** — theme-contract §2 gains two elements and §4 gains their tokens.
+- **`D17`** — **a ranked board shows one round at a time.** Added after planning, see §2b.
 
 ---
 
@@ -28,6 +29,22 @@ Settled with the maintainer before planning:
 pot, no controlling team, no steal state machine, no automatic award. A third strike changes what
 is on screen and nothing else. This is the small version on purpose — a wrong state transition
 mid-show is visible to the whole room and hard to undo, and the show is in a week.
+
+## 2b. Why `D17` had to be folded in
+
+**The plan as first written had a hole.** Strikes are per column, but the board has no notion of a
+current round — every column renders stacked, all questions visible. So *which round's strikes does
+the centre overlay show?* There is no answer. Per-column strikes have no coherent display until an
+active round exists, which makes `D17` a prerequisite for `D15` rather than a companion to it.
+
+**And the obvious escape does not exist.** One file per round looks like a zero-cost workaround and
+is disqualifying: sessions key on `gameHash` (`js/state.js:90`), so a second file is a second
+session and **team names and scores reset between rounds**. The engine already says so on its own
+resume screen — *"saved from a different game file, so it cannot be resumed here."* Multi-round with
+a running score therefore requires one file with several columns, which forces the decision.
+
+`currentRound` is **session state, not view state**: a mid-show reload must come back to Round 3,
+and that is exactly the failure a host discovers on stage (`M13`).
 
 ## 2. The one design tension, and how it is resolved
 
@@ -72,6 +89,14 @@ board and that the count does not exceed the game type's own `strikes.count`.
 
 ## 4. Tasks
 
+**`F9c-T0` — one round at a time (`D17`). Foundational: this one IS user-visible, and it is the
+prerequisite.** *(owner: agent)*
+Draw the active column and hide the rest; persist `currentRound`; a key to advance. Hiding must
+remove the inactive rounds from focus and the accessibility tree, not merely from sight — the same
+class of defect `openCell` already solves with `inert`, and the reason `M14` exists. Checkpoint: a
+three-round board opens on Round 1, `Tab` never reaches Round 2, and a reload mid-Round-3 comes back
+to Round 3 with scores intact.
+
 **`F9c-T1` — schema and state. Foundational: delivers nothing user-visible.** *(owner: agent)*
 `strikes` in the game-type schema and the state schema, the two cross-checks, and `newSession` /
 `adopt` / `exportPayload` carrying the field. Checkpoint: a hand-written state file with
@@ -89,10 +114,10 @@ the third strike does. Checkpoint: a real board at projector size shows two mark
 they are legible from the back of a room.
 
 **`F9c-T4` — host controls.** *(owner: agent)*
-A way to add and clear a strike that a host can hit without looking: a visible control plus a key
-binding. **Open question for the gate** — the keyboard budget is deliberately small (plan Q12:
-`Escape`, `Space`/`Enter` only). Adding `X` to it is a change to that decision, so `X` is proposed,
-not assumed. Checkpoint: a full round driven by keyboard alone.
+A visible control plus a key binding for adding and clearing a strike, and for advancing the round.
+**Settled at the gate: `X` is the strike key**, widening plan Q12's budget from `Escape` /
+`Space` / `Enter`. That widening is part of `D15`, not an implementation detail. Checkpoint: a full
+round driven by keyboard alone.
 
 **`F9c-T5` — tests and mutations.** *(owner: agent)*
 Assertions in `tests/runner.js` plus the mutations below. Checkpoint: Chrome and Firefox both green,
@@ -111,6 +136,8 @@ watched the wrong thing"*, and both were found by review rather than by the suit
 | `M10` | `.qbe-strikes` renders when the game type declares no `strikes` block | a jeopardy/bingo assertion that the element is *absent*, not empty |
 | `M11` | the centre overlay is drawn but has no accessible name, so the count is invisible to a screen reader | an `aria` assertion — `F9b` shipped a face whose name claimed "answer shown" while nothing was shown |
 | `M12` | the strike marks are styled only in `default.css`, so a themed board shows nothing | the per-theme geometry suite, which boots every registered theme |
+| `M13` | `currentRound` lives in view state, so a mid-show reload returns to Round 1 | a resume assertion on a board parked on Round 3 |
+| `M14` | inactive rounds are hidden with CSS alone, so `Tab` still reaches their cells | a focus assertion — a keyboard host must not open a cell the room cannot see |
 
 **`M12` exists because of `M5`:** the render suite draws into `harnessStage()`, which carries no
 stylesheet, so it structurally cannot see a layout. Anything visual is asserted in the booted
@@ -118,8 +145,9 @@ iframe or it is not asserted at all.
 
 ## 6. Risks
 
-- **The keyboard budget** (`F9c-T4`). Plan Q12 fixed a deliberately small key set. Widening it is a
-  decision, not an implementation detail.
+- **Scope grew at the gate.** `D17` was not in the first draft of this plan; it was found by the
+  maintainer asking why multi-round boards are unintuitive. The week now carries two deltas' worth
+  of work, and `D17` is the one that must land — strikes without it have nowhere coherent to draw.
 - **Five themes, two new elements.** `M12` covers it, but the work is five files, not one.
 - **A week, with content authoring competing for the same time.** If this slips, the fallback is
   exactly today's behaviour — strikes on paper — so it degrades safely.
