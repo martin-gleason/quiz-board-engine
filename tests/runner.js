@@ -746,10 +746,24 @@ function contractProblems(stage) {
       if (values.length > 1) problems.push('a .qbe-cell has ' + values.length + ' value elements');
       if (texts.length > 1) problems.push('a .qbe-cell has ' + texts.length + ' text elements');
       if (marks.length !== 1) problems.push('a .qbe-cell has ' + marks.length + ' mark elements (§2: always present)');
-      // §2 (v1.1): a value and face text are mutually exclusive. A jeopardy cell printing its prompt
-      // on the face would spoil the question, which is the reason the rule is worth asserting.
-      if (values.length > 0 && texts.length > 0) {
-        problems.push('a .qbe-cell carries BOTH .qbe-cell-value and .qbe-cell-text — §2 makes them exclusive');
+      // §2, amended by D14: a cell never prints its QUESTION on the face but may print its ANSWER.
+      // A jeopardy cell printing its prompt would spoil the question, which is the reason the rule
+      // is worth asserting at all — so the rule is kept and narrowed rather than dropped. The one
+      // cell allowed both children is a revealed ranked-list row: answer on the left, points on the
+      // right. A HIDDEN ranked row is still forbidden both, or the reveal is given away.
+      const rankedRevealed = board.getAttribute('data-layout') === 'ranked-list'
+        && cell.getAttribute('data-state') !== 'hidden';
+      if (values.length > 0 && texts.length > 0 && !rankedRevealed) {
+        problems.push('a .qbe-cell carries BOTH .qbe-cell-value and .qbe-cell-text, and it is not a '
+          + 'revealed ranked-list row — §2 allows both only there');
+      }
+      // DOM ORDER IS LOAD-BEARING on a ranked list and nowhere else: default.css lays the row out
+      // with `justify-content: space-between`, so first child means left edge. A value emitted
+      // before its text would print "38  Their keys" — right answer, wrong board.
+      if (rankedRevealed && values.length > 0 && texts.length > 0
+        && inner.indexOf(texts[0]) > inner.indexOf(values[0])) {
+        problems.push('a revealed ranked-list row emits .qbe-cell-value BEFORE .qbe-cell-text — §2 '
+          + 'orders them answer-then-points');
       }
       for (const n of inner) {
         if (n.tagName !== 'SPAN') problems.push('cell child is <' + n.tagName.toLowerCase() + '>, expected <span>');
@@ -881,6 +895,32 @@ function hostileContent() {
 }
 
 /** A ranked list whose values are deliberately OUT of order, including a tie. */
+/**
+ * A ranked board whose top answer is the EMPTY STRING.
+ *
+ * A valid content file: `schemas.js` puts no `minLength` on a string and `validator.js` checks a
+ * required cell field for presence, not for content — so `"answer": ""` reaches the renderer. It
+ * used to put an empty `.qbe-cell-text` on the face, against theme-contract §2's "text content is
+ * never empty-but-meaningful: if a value is absent, the element is absent". The §2 contract checker
+ * counts cell children and never reads their text, so it structurally cannot catch this one; it
+ * needs its own assertion, which is why this fixture exists rather than a line in an existing one.
+ */
+function emptyAnswerRankedContent() {
+  return {
+    schemaVersion: 1, title: 'Ranked answers, one of them blank', gameType: 'feud',
+    theme: 'default', animation: 'zoom',
+    board: {
+      columns: [{
+        label: 'Name a number.',
+        cells: [
+          { answer: '', value: 50 },
+          { answer: 'twelve', value: 12 },
+        ],
+      }],
+    },
+  };
+}
+
 function unsortedRankedContent() {
   return {
     schemaVersion: 1, title: 'Unsorted ranked answers', gameType: 'feud',
@@ -1454,6 +1494,42 @@ async function runRenderSuite() {
       'overlay prompt = the survey question; overlay answer = "' + answerLine + '"; the row face now reads "'
         + (revealedValue ? revealedValue.textContent : '(nothing)') + '"');
 
+    // ---- THE ANSWER IS ON THE BOARD, NOT ONLY IN THE OVERLAY (D14) ----------------------------
+    //
+    // WHY THIS ASSERTION EXISTS, in the words of the run that found the gap: the suite already
+    // asserted the reveal three ways and every one of them passed while the board was broken. The
+    // assertion above reads `f.view.detail.answer` — the OVERLAY — and the hidden-row assertion
+    // above reads the face of a row that has not been revealed. Nothing looked at the face of a
+    // REVEALED row. The overlay closes; what the room keeps looking at is the board, and the board
+    // was showing "38" and no answer at all while the row's own accessible name said "answer shown".
+    // A sighted room could not read a board a screen-reader user could — the bingo defect of v1.1,
+    // mirrored exactly, and shipped because every test watched the moment of the reveal instead of
+    // the state it leaves behind.
+    const revealedText = topRow.button.querySelector('.qbe-cell-text');
+    record('render', 'a revealed ranked row keeps its ANSWER on the board face, not just in the overlay',
+      revealedText !== null && revealedText.textContent === 'Their keys',
+      revealedText === null
+        ? 'the row face carries no .qbe-cell-text at all — the answer exists only in the closed overlay'
+        : 'the row face reads "' + revealedText.textContent + '"');
+
+    // Order, because default.css lays the row out with `justify-content: space-between`: whichever
+    // element is emitted first sits at the left edge. Answer left, points right.
+    const revealedKids = [...topRow.button.children].map((n) => n.className);
+    record('render', 'a revealed ranked row emits the answer BEFORE the points (left, then right)',
+      revealedKids.indexOf('qbe-cell-text') !== -1
+      && revealedKids.indexOf('qbe-cell-text') < revealedKids.indexOf('qbe-cell-value'),
+      'row children in order: ' + (revealedKids.join(', ') || '(none)'));
+
+    // The other half of the same rule, and the one that keeps the fix honest: printing the answer
+    // on reveal is only correct if a row that has NOT been revealed prints nothing. Asserted on a
+    // different row than the one revealed above, so it cannot pass by accident of ordering.
+    const stillHidden = f.view.records.get('0:1');
+    const hiddenText = stillHidden.button.querySelector('.qbe-cell-text');
+    record('render', 'a hidden ranked row prints no answer either, so nothing is given away',
+      hiddenText === null,
+      hiddenText === null ? 'an unrevealed row carries no .qbe-cell-text'
+        : 'an unrevealed row already reads "' + hiddenText.textContent + '"');
+
     // The resume path, at the renderer's seam: a session that already holds `revealed` rows must
     // build them revealed, values and all, without anybody clicking anything.
     const resumedFeud = harnessStage();
@@ -1471,6 +1547,65 @@ async function runRenderSuite() {
       shown.join(',') === '0:0,0:2' && shownValues.join(',') === '15,38',
       'rebuilt from cellStates alone: rows ' + shown.join(',') + ' revealed, showing '
         + shownValues.join(' and ') + ' points');
+
+    // ---- THE SAME TWO CLAIMS, ON THE BUILD PATH RATHER THAN THE UPDATE PATH (D14) --------------
+    //
+    // WHY THIS IS A SEPARATE ASSERTION and not a duplicate of the two above. A row is BUILT hidden
+    // and gains both children on reveal, so everything asserted after a click exercises
+    // `updateBoard` and never `buildCell`. Mutation M2 proved the gap rather than argued it:
+    // swapping the two appendChild calls in `buildCell` — points before answer — left the suite at
+    // 373/373 green. A resumed board is the only place a row is built already revealed, so it is
+    // the only place `buildCell`'s ordering is observable at all. M2 fails here.
+    const resumedRow = [...resumedFeud.querySelectorAll('.qbe-cell')]
+      .find((c) => c.getAttribute('data-cell') === '0:0');
+    const resumedText = resumedRow ? resumedRow.querySelector('.qbe-cell-text') : null;
+    record('render', 'a ranked row BUILT revealed carries its answer on the face, not just one clicked open',
+      resumedText !== null && resumedText.textContent === 'Their keys',
+      resumedText === null ? 'the rebuilt row carries no .qbe-cell-text — resume drops the answer'
+        : 'the rebuilt row reads "' + resumedText.textContent + '"');
+
+    const resumedKids = resumedRow ? [...resumedRow.children].map((n) => n.className) : [];
+    record('render', 'a ranked row BUILT revealed orders answer before points, as the update path does',
+      resumedKids.indexOf('qbe-cell-text') !== -1
+      && resumedKids.indexOf('qbe-cell-text') < resumedKids.indexOf('qbe-cell-value'),
+      'rebuilt row children in order: ' + (resumedKids.join(', ') || '(none)'));
+
+    // The contract checker's own ordering rule (§2) needs a board with a REVEALED ranked row to
+    // have anything to look at; the fresh board asserted earlier is all hidden, so this is the run
+    // that actually exercises it.
+    assertContract('demo-feud.json (resumed, rows revealed)', resumedFeud);
+
+    // ---- AN EMPTY ANSWER IS ABSENT, NOT BLANK (§2) --------------------------------------------
+    //
+    // `"answer": ""` validates, so the renderer must decide. §2: absent, never empty-but-meaningful.
+    // Guarding `=== undefined` instead of truthiness put a blank <span> on the face; the contract
+    // checker counts children without reading them, so this needs its own assertion. Found by
+    // adversarial review — the suite had no fixture with an empty required string anywhere.
+    const blank = await synthBundle('empty-answer-ranked', emptyAnswerRankedContent(), 'feud');
+    if (!blank.ok) {
+      record('render', 'a ranked board with an empty answer still validates', false,
+        blank.failures.map(errors.formatFailure).join(' | '));
+    } else {
+      const blankStage = harnessStage();
+      renderer.renderBoard({
+        bundle: blank.value,
+        session: { cellStates: { '0:0': 'revealed' }, bonusCells: [] },
+        mount: blankStage,
+        handlers: {},
+      });
+      const blankRow = [...blankStage.querySelectorAll('.qbe-cell')]
+        .find((c) => c.getAttribute('data-state') === 'revealed');
+      const blankText = blankRow ? blankRow.querySelector('.qbe-cell-text') : null;
+      const blankValue = blankRow ? blankRow.querySelector('.qbe-cell-value') : null;
+      record('render', 'a revealed ranked row with an EMPTY answer omits .qbe-cell-text entirely',
+        blankRow !== null && blankText === null && blankValue !== null
+        && blankValue.textContent === '50',
+        blankRow === null ? 'no revealed row was built at all'
+          : 'text element is ' + (blankText === null ? 'absent, as §2 requires'
+            : 'PRESENT and empty — §2 promises absence instead')
+          + '; the points still read "' + (blankValue ? blankValue.textContent : '(none)') + '"');
+      assertContract('empty-answer ranked board', blankStage);
+    }
 
     // The answer and the points are ONE reveal, not two. A ranked row's number is the payoff, so a
     // build that put the value on the face at open (or left it off until a second click) would
@@ -2172,6 +2307,76 @@ async function runShellSuite() {
       frame.remove();
     }
   }
+
+  // ---- THE RANKED ROW'S GEOMETRY, UNDER REAL THEME CSS (D14) ---------------------------------
+  //
+  // WHY THIS IS HERE AND NOT IN THE RENDER SUITE. The render suite draws into `harnessStage()`,
+  // which carries NO stylesheet, so every assertion there is about DOM shape and none of them can
+  // see a layout. That left the visual half of the D14 fix untested in the literal sense:
+  // adversarial review deleted `.qbe-board[data-layout="ranked-list"] .qbe-cell-value
+  // { margin-inline-start: auto }` from default.css and the suite stayed green at 377/377 while
+  // the real board moved the points from the right edge into the middle of the row. Per
+  // conventions, a rule no mutation can kill is not covered.
+  //
+  // The mechanism the rule defends against is not obvious enough to leave unwritten:
+  // `.qbe-cell-mark` is ALWAYS present and is an in-flow static child, so a revealed ranked row has
+  // THREE flex items, and `justify-content: space-between` divides the free space into two gaps
+  // instead of pushing the points to the end. The auto margin absorbs the free space first.
+  //
+  // Rendered into the BOOTED iframe rather than the harness, because the iframe is the only
+  // document in this suite where themes/default.css is actually loaded.
+  const geomSessions = sessionKeysNow();
+  const rankedBoot = await bootShell('games/demo.json');
+  try {
+    if (rankedBoot.timedOut || !rankedBoot.win) {
+      record('shell', 'a revealed ranked row pins its points to the right edge of the row', false,
+        'the shell did not boot, so no themed document was available to measure in');
+    } else {
+      const { doc, win } = rankedBoot;
+      const feudBundle = await fileBundle('games/demo-feud.json');
+      if (!feudBundle.ok) {
+        record('shell', 'a revealed ranked row pins its points to the right edge of the row', false,
+          'games/demo-feud.json did not validate: ' + feudBundle.failures.map(errors.formatFailure).join(' | '));
+      } else {
+        const mount = doc.createElement('div');
+        doc.querySelector('.qbe-stage').appendChild(mount);
+        renderer.renderBoard({
+          bundle: feudBundle.value,
+          session: { cellStates: { '0:0': 'revealed' }, bonusCells: [] },
+          mount,
+          handlers: {},
+        });
+        const row = mount.querySelector('.qbe-cell[data-state="revealed"]');
+        const textNode = row && row.querySelector('.qbe-cell-text');
+        const valueNode = row && row.querySelector('.qbe-cell-value');
+        if (!row || !textNode || !valueNode) {
+          record('shell', 'a revealed ranked row pins its points to the right edge of the row', false,
+            'the themed board produced no revealed row with both a text and a value element');
+        } else {
+          const rowBox = row.getBoundingClientRect();
+          const textBox = textNode.getBoundingClientRect();
+          const valueBox = valueNode.getBoundingClientRect();
+          const rightGap = rowBox.right - valueBox.right;
+          const rowWidth = rowBox.width;
+          // A generous threshold on purpose: the assertion is "pinned to the end", not a pixel
+          // count. Without the rule the points land near the row's MIDDLE — the observed failure
+          // was a gap of roughly half the row — so a tenth of the row separates the two outcomes
+          // by a wide margin and survives padding and font changes.
+          const pinned = rowWidth > 0 && rightGap >= 0 && rightGap < rowWidth * 0.1;
+          record('shell', 'a revealed ranked row pins its points to the right edge of the row',
+            pinned && valueBox.left > textBox.left,
+            'row is ' + Math.round(rowWidth) + 'px wide; the points sit ' + Math.round(rightGap)
+            + 'px from its right edge (must be under ' + Math.round(rowWidth * 0.1) + 'px), and '
+            + Math.round(valueBox.left - textBox.left) + 'px to the right of the answer');
+        }
+        mount.remove();
+      }
+    }
+  } finally {
+    if (rankedBoot.frame) rankedBoot.frame.remove();
+  }
+  dropNewSessions(geomSessions);
+
   dropNewSessions(sessionsBefore);
 }
 

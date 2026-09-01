@@ -269,6 +269,42 @@ function faceValue(cell, bundle, state) {
 }
 
 /**
+ * The cell's face TEXT, or null when it has none. The companion to `faceValue`.
+ *
+ * Two cells print text on the face, for opposite reasons:
+ *
+ *   bingo        a valueless square, whose `prompt` IS its term. Not state-dependent — the term is
+ *                what the host calls out and the room matches against, so it is on the card from
+ *                the first paint.
+ *   ranked-list  a REVEALED feud row, whose `answer` is the thing the board exists to show. State-
+ *                dependent, and that is the whole point: a hidden row prints nothing, so the
+ *                reveal is not spoiled.
+ *
+ * WHY THIS EXISTS AT ALL. The contract used to make `.qbe-cell-text` and `.qbe-cell-value`
+ * mutually exclusive, and this function's absence was that rule expressed as code: a feud row has
+ * a `value`, so it got no text element, and its answer lived in the overlay only. The overlay
+ * closes. What was left on the board was six blank rows and the number 38 — while the row's own
+ * accessible name said "answer shown". A sighted room could not read a board a screen-reader user
+ * could, which is the bingo defect of v1.1 exactly, mirrored.
+ *
+ * The mutual-exclusion rule is therefore narrowed rather than dropped: a jeopardy cell still never
+ * prints its prompt on the face, because that is the QUESTION. What a revealed feud row prints is
+ * the ANSWER, which is a different thing wearing the same shape. See `D14`.
+ */
+function faceText(cell, bundle, state) {
+  if (cell.value === undefined) return cell.prompt ? String(cell.prompt) : null;
+  if (bundle.gametype.layout !== 'ranked-list') return null;
+  if (state === bundle.resolved.initialState) return null;
+  // TRUTHINESS, not `=== undefined`, and for the same reason as the bingo branch above:
+  // `schemas.js` puts no `minLength` on a string and `validator.js` checks only for the field's
+  // presence, so `"answer": ""` is a VALID content file. Guarding undefined alone put an empty
+  // `.qbe-cell-text` on the face, against §2's "text content is never empty-but-meaningful: if a
+  // value is absent, the element is absent". The contract checker counts elements and never reads
+  // their text, so it could not have caught it. Found by adversarial review, not by the suite.
+  return cell.answer ? String(cell.answer) : null;
+}
+
+/**
  * The cell's accessible name: value AND state, always (CLAUDE.md accessibility rule).
  *
  * The visible face carries a bare number; "200" read aloud, on its own, tells a screen-reader user
@@ -310,8 +346,8 @@ function accessibleName(cell, column, bundle, state, position) {
  *
  * theme-contract §2, exactly:
  *   button.qbe-cell[data-state][data-cell][data-bonus][data-locked]
+ *     .qbe-cell-text         the face text: a bingo term, or a revealed feud answer; else absent
  *     .qbe-cell-value        the point value (absent when there is none)
- *     .qbe-cell-text         the face text of a valueless cell (bingo); absent otherwise
  *     .qbe-cell-mark         the mark surface; always present, usually empty
  *
  * `type="button"` matters: inside a form-less document it changes nothing, but a stray ancestor
@@ -324,12 +360,17 @@ function accessibleName(cell, column, bundle, state, position) {
  * ("Halley's Comet") existed only in the accessible name — a board a screen-reader user could play
  * and a sighted room could not. So the contract gained a THIRD child:
  *
- *     .qbe-cell-text        present only when the cell has no `value` and does have a `prompt`
+ *     .qbe-cell-text        the face text, when the cell has any
  *
- * Present only then, on purpose. Overloading `.qbe-cell-value` would hand the designer's
- * `--value-size` clamp a 25-character string, and a jeopardy cell must never print its prompt on the
- * face — that is the question. A revealed feud row still keeps its answer in the overlay only: it
- * HAS a value, so it gets no text element, and its answer is the reveal payload rather than a label.
+ * Overloading `.qbe-cell-value` was rejected then and still is: it would hand the designer's
+ * `--value-size` clamp a 25-character string. A jeopardy cell still never prints its prompt on the
+ * face — that is the QUESTION, and printing it would give the board away.
+ *
+ * WIDENED BY `D14`. The rule was first written as "present only when the cell has no `value`",
+ * which made value and text mutually exclusive and left a revealed feud row printing its points
+ * and nothing else — see `faceText` for what that cost. The narrower rule that survives is about
+ * questions, not about values: a cell may print its ANSWER on the face and never its QUESTION.
+ * A feud row is now the one cell that carries both children.
  */
 function buildCell(doc, cell, column, bundle, session, state, position) {
   const button = el(doc, 'button', 'qbe-cell');
@@ -344,17 +385,22 @@ function buildCell(doc, cell, column, bundle, session, state, position) {
   }
   button.setAttribute('aria-label', accessibleName(cell, column, bundle, state, position));
 
+  // ORDER IS LOAD-BEARING on a ranked list and nowhere else. `default.css` lays a feud row out as
+  // `flex-direction: row; justify-content: space-between`, so the first child sits at the left edge
+  // and the last at the right: answer, then points. On a grid board the cell is a column and only
+  // one of the two elements exists anyway, so text-before-value costs nothing there.
+  const text = faceText(cell, bundle, state);
+  let textEl = null;
+  if (text !== null) {
+    textEl = el(doc, 'span', 'qbe-cell-text', text);
+    button.appendChild(textEl);
+  }
+
   const face = faceValue(cell, bundle, state);
   let valueEl = null;
   if (face !== null) {
     valueEl = el(doc, 'span', 'qbe-cell-value', face);
     button.appendChild(valueEl);
-  }
-  // The face text for a valueless cell (bingo). Not state-dependent: the term is what the host
-  // calls out and what the room matches against, so it is on the card from the first paint and
-  // `updateBoard` never has to touch it.
-  if (cell.value === undefined && cell.prompt) {
-    button.appendChild(el(doc, 'span', 'qbe-cell-text', cell.prompt));
   }
 
   // Always present, usually empty (theme-contract §2). It is a styling surface, not text: a theme
@@ -364,7 +410,7 @@ function buildCell(doc, cell, column, bundle, session, state, position) {
   mark.setAttribute('aria-hidden', 'true');
   button.appendChild(mark);
 
-  return { button, valueEl, cell, column, position };
+  return { button, valueEl, textEl, cell, column, position };
 }
 
 /**
@@ -559,13 +605,32 @@ export function updateBoard(view, { bundle, session }) {
     // The ranked-list value appears at reveal time and would have to disappear again if a session
     // reset the row, so the element is added and removed rather than emptied — theme-contract §2
     // promises an absent element rather than an empty one.
+    // The ranked-list ANSWER arrives on the same beat as its points and leaves on the same beat
+    // too, so it is maintained exactly like the value below — added and removed rather than
+    // emptied, because theme-contract §2 promises an absent element rather than an empty one.
+    // A bingo term is state-independent and `faceText` returns it in every state, so this branch
+    // never fires on a bingo card: the element built at first paint is simply left alone.
+    const text = faceText(record.cell, b, state);
+    if (text === null && record.textEl) {
+      record.textEl.remove();
+      record.textEl = null;
+    } else if (text !== null && !record.textEl) {
+      record.textEl = el(doc, 'span', 'qbe-cell-text', text);
+      // First child: answer at the left edge of the row, points at the right (see `buildCell`).
+      record.button.insertBefore(record.textEl, record.button.firstChild);
+    } else if (text !== null) {
+      record.textEl.textContent = text;
+    }
+
     const face = faceValue(record.cell, b, state);
     if (face === null && record.valueEl) {
       record.valueEl.remove();
       record.valueEl = null;
     } else if (face !== null && !record.valueEl) {
       record.valueEl = el(doc, 'span', 'qbe-cell-value', face);
-      record.button.insertBefore(record.valueEl, record.button.firstChild);
+      // After the text element when there is one, so the row reads answer-then-points.
+      record.button.insertBefore(record.valueEl,
+        record.textEl ? record.textEl.nextSibling : record.button.firstChild);
     } else if (face !== null) {
       record.valueEl.textContent = face;
     }
