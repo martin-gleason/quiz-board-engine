@@ -29,14 +29,14 @@ Status is what the unit's own plan header declares. What has landed in git is de
 
 Counted from the register itself. A register with no rows still gets a line.
 
-| Register | Rows | Open | Closed |
-|---|---|---|---|
-| Decisions (`D`) | 14 | 0 | 14 |
-| Risks (`RR`) | 6 | 0 | 6 |
-| Owner items (`O`) | 0 | 0 | 0 |
-| Hooks (`H`) | 0 | 0 | 0 |
-| Mutations (`M`) | 6 | 0 | 6 |
-| Other (C) (`C`) | 19 | 4 | 15 |
+| Register | Rows | Open | Unknown | Closed |
+|---|---|---|---|---|
+| Decisions (`D`) | 14 | 0 | 0 | 14 |
+| Risks (`RR`) | 6 | 0 | 0 | 6 |
+| Owner items (`O`) | 0 | 0 | 0 | 0 |
+| Hooks (`H`) | 0 | 0 | 0 | 0 |
+| Mutations (`M`) | 6 | 0 | 0 | 6 |
+| Other (C) (`C`) | 19 | 4 | 0 | 15 |
 
 ### By status
 
