@@ -460,6 +460,56 @@ export function setRound(view, index) {
 }
 
 /**
+ * The strike overlay (`D16`), and why it is one element with N children rather than N elements.
+ *
+ * The room reads a COUNT, not a list. Three separate marks that appear one at a time would each
+ * need their own announcement, and a screen-reader host would hear "strike, strike, strike" with
+ * no idea how many are left. So the container owns the accessible name — "2 strikes of 3" — and
+ * the marks themselves are `aria-hidden` decoration. `M11` is the mutation for exactly this: marks
+ * drawn with no name at all, which looks correct on a projector and is silent to a screen reader.
+ *
+ * `role="status"` rather than a live region of our own: a strike is a state change the host causes
+ * deliberately, and `status` announces politely without interrupting whatever is being read.
+ */
+function buildStrikes(doc, bundle) {
+  const root = el(doc, 'aside', 'qbe-strikes');
+  root.setAttribute('role', 'status');
+  root.hidden = true;
+
+  const marks = [];
+  for (let i = 0; i < bundle.gametype.strikes.count; i += 1) {
+    const mark = el(doc, 'span', 'qbe-strike-mark');
+    mark.setAttribute('aria-hidden', 'true');
+    root.appendChild(mark);
+    marks.push(mark);
+  }
+  return { root, marks, painted: -1 };
+}
+
+/**
+ * Paint the strike count for the round on screen.
+ *
+ * Hidden at zero, because an empty frame of three grey boxes sitting over the board for the whole
+ * game is worse than nothing — it reads as part of the furniture and stops being noticed the
+ * moment it matters. `data-struck` on each mark is what a theme animates.
+ */
+export function updateStrikes(view, count) {
+  const s = view.strikes;
+  if (!s) return;
+  const total = s.marks.length;
+  const n = Math.min(Math.max(Number.isInteger(count) ? count : 0, 0), total);
+  if (s.painted === n) return;
+  s.painted = n;
+
+  s.root.hidden = n === 0;
+  s.root.setAttribute('aria-label', n + (n === 1 ? ' strike of ' : ' strikes of ') + total);
+  for (let i = 0; i < total; i += 1) {
+    if (i < n) s.marks[i].setAttribute('data-struck', 'true');
+    else s.marks[i].removeAttribute('data-struck');
+  }
+}
+
+/**
  * Cells in the order they are DRAWN.
  *
  * `grid` draws document order — the author's columns are the board (spec §4.1).
@@ -582,6 +632,17 @@ export function renderBoard({ bundle, session, mount, handlers }) {
 
   const detail = buildDetail(doc);
 
+  // `D16`. The strike overlay, built ONLY when the game type declares a `strikes` block. Absent,
+  // never empty (`M10`) — a jeopardy board must not carry an empty element for a mechanic it does
+  // not have, exactly as it carries no score bar when `scoring.model` is "none".
+  const strikes = bundle.gametype.strikes ? buildStrikes(doc, bundle) : null;
+
+  // The strike band sits ABOVE the board, not over it. Drawn as an overlay at first, and that was
+  // wrong in a way only the running app showed: on a ranked list the rows are full-width and few,
+  // so a centred overlay landed squarely on the revealed answer and hid the thing the room had
+  // just been shown. A band costs the same vertical space every round instead of stealing it at
+  // the worst moment.
+  if (strikes) mount.appendChild(strikes.root);
   mount.appendChild(board);
   mount.appendChild(detail.root);
 
@@ -604,6 +665,7 @@ export function renderBoard({ bundle, session, mount, handlers }) {
     open: null, // { key, returnFocusTo } while the overlay is up
     escapeListener: null,
     currentRound: 0,
+    strikes,
   };
 
   // `D17`. A ranked board shows ONE round; a grid board shows all of its columns and always has.
@@ -1147,6 +1209,9 @@ function chromeButton(doc, action, text, ariaLabel) {
 // U+2212 MINUS SIGN, not a hyphen. On a projector at 30 feet a hyphen next to a 3-digit number is
 // a speck; the minus sign is drawn at the same width and weight as the plus.
 const MINUS = '−';
+// U+2717 BALLOT X. A character, not an image and not a CSS shape: it inherits the theme's colour
+// and size for free, it survives a projector's compression, and there is nothing to vendor.
+const STRIKE_MARK = '✗';
 
 /**
  * Draw the score bar.
@@ -1174,6 +1239,7 @@ export function renderScorePanel({ bundle, session, mount, handlers }) {
     rows: [],
     award: 0,
     activeTeam: null,
+    strikes: 0, // the ACTIVE round's strike count, for the active team's row (`D16`)
     // What is currently PAINTED, so `updateScorePanel` can tell a real change from a repaint and
     // announce only the former. Same idea as the board's `renderedStates`.
     paintedScores: [],
@@ -1227,6 +1293,13 @@ function buildTeamRows(view, session) {
 
     const score = el(doc, 'span', 'qbe-team-score', String(teams[i].score));
 
+    // `D16`. The host's copy of the round's strikes, beside whoever is on the board. Present on
+    // every team row and empty until that team is active — this is the ONE place in the contract
+    // where an empty element is correct rather than absent, because the row is a fixed grid and a
+    // element appearing mid-game would shift the score under the host's cursor.
+    const strikes = el(doc, 'span', 'qbe-team-strikes');
+    strikes.setAttribute('aria-hidden', 'true'); // the count is in the row's own accessible name
+
     const controls = el(doc, 'div', 'qbe-team-controls');
     const minus = chromeButton(doc, 'score-down', MINUS + '0');
     const plus = chromeButton(doc, 'score-up', '+0');
@@ -1235,10 +1308,11 @@ function buildTeamRows(view, session) {
 
     row.appendChild(name);
     row.appendChild(score);
+    row.appendChild(strikes);
     row.appendChild(controls);
     fragment.appendChild(row);
 
-    view.rows.push({ row, name, score, minus, plus });
+    view.rows.push({ row, name, score, strikes, minus, plus });
     view.paintedScores.push(null);
   }
   view.root.appendChild(fragment);
@@ -1267,7 +1341,23 @@ function paintTeamRows(view, teams) {
 
     if (r.name.textContent !== team.name) r.name.textContent = team.name;
     r.name.setAttribute('aria-pressed', active ? 'true' : 'false');
-    r.name.setAttribute('aria-label', team.name + ', ' + team.score + ' points');
+
+    // `D16`. Strikes belong to the ROUND and are drawn beside the team the host has marked active
+    // — see `docs/plans/F9c.md` §3, which resolves the tension between per-round strikes and a
+    // per-team display. Only the active row shows them: the same count repeated on every row would
+    // read as each team having taken them.
+    const cap = view.bundle && view.bundle.gametype && view.bundle.gametype.strikes
+      ? view.bundle.gametype.strikes.count : 0;
+    const rowStrikes = active ? Math.min(Math.max(view.strikes || 0, 0), cap) : 0;
+    if (r.strikes) {
+      const text = rowStrikes > 0 ? STRIKE_MARK.repeat(rowStrikes) : '';
+      if (r.strikes.textContent !== text) r.strikes.textContent = text;
+    }
+
+    // The strike count joins the accessible name rather than being announced separately: a host
+    // using a screen reader wants "Red Team, 70 points, 2 strikes" as one utterance, not three.
+    r.name.setAttribute('aria-label', team.name + ', ' + team.score + ' points'
+      + (rowStrikes > 0 ? ', ' + rowStrikes + (rowStrikes === 1 ? ' strike' : ' strikes') : ''));
 
     r.score.textContent = String(team.score);
     if (active) r.row.setAttribute('data-active', 'true');
@@ -1317,10 +1407,11 @@ function paintTeamRows(view, teams) {
  *     so export/import would stop round-tripping exactly — Gate 3) or a state schema delta nobody
  *     ratified. plan Q4 already says there is no turn system to persist.
  */
-export function updateScorePanel(view, { session, award, activeTeam }) {
+export function updateScorePanel(view, { session, award, activeTeam, strikes }) {
   if (!view) return;
   if (award !== undefined) view.award = award;
   if (activeTeam !== undefined) view.activeTeam = activeTeam;
+  if (strikes !== undefined) view.strikes = strikes;
 
   const teams = session && Array.isArray(session.teams) ? session.teams : [];
   if (teams.length !== view.rows.length) {
@@ -1362,6 +1453,13 @@ export function renderToolbar({ mount, handlers }) {
   // the caller signals that by passing no `onTeamsEdit`, and the button is then absent rather than
   // present-and-inert. A dead control on a projected screen is worse than a missing one: the host
   // presses it mid-game and has to work out whether the app is broken.
+  // `D15`/`D17`. Same gate as Teams… above, and for the same reason: a game type that has no
+  // strikes and no rounds passes no handler, and gets no dead control on a projected screen. The
+  // strike button is the visible twin of the `X` key — a host who has not learned the key, or who
+  // is driving from a tablet, must still be able to call a strike.
+  if (h.onStrike) root.appendChild(chromeButton(doc, 'strike', 'Strike (X)', 'Record a strike against this round'));
+  if (h.onStrikesClear) root.appendChild(chromeButton(doc, 'strikes-clear', 'Clear', 'Clear this round\'s strikes'));
+  if (h.onRoundNext) root.appendChild(chromeButton(doc, 'round-next', 'Next round ▸', 'Move the board to the next round'));
   if (h.onTeamsEdit) root.appendChild(chromeButton(doc, 'teams', 'Teams…', 'Edit the team names'));
   root.appendChild(exportBtn);
   root.appendChild(importBtn);
@@ -1373,6 +1471,9 @@ export function renderToolbar({ mount, handlers }) {
     const action = target.getAttribute('data-action');
     if (action === 'export' && h.onExport) h.onExport();
     else if (action === 'teams' && h.onTeamsEdit) h.onTeamsEdit();
+    else if (action === 'strike' && h.onStrike) h.onStrike();
+    else if (action === 'strikes-clear' && h.onStrikesClear) h.onStrikesClear();
+    else if (action === 'round-next' && h.onRoundNext) h.onRoundNext();
     else if (action === 'import') file.click();
   });
 

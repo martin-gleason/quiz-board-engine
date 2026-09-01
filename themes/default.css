@@ -409,6 +409,88 @@ body,
   margin-inline-start: auto;
 }
 
+/* ==========================================================================
+   STRIKES (D16)
+   Two surfaces: a large centre overlay for the room, and small marks beside
+   the active team for the host. Both live here in the base layer, so a theme
+   that overrides nothing still shows them — M12 is the mutation that proves
+   an override-only theme is not left blank.
+   ========================================================================== */
+
+/* The overlay sits over the middle of the board rather than in the flow. It is
+   `hidden` at zero strikes (renderer), so this never paints an empty frame —
+   three grey boxes parked over the board all game would stop being noticed
+   exactly when they start mattering. `pointer-events: none` because it is a
+   readout, not a control: the host must still be able to click the row
+   underneath it. */
+.qbe-strikes {
+  display: flex;
+  justify-content: center;
+  gap: clamp(0.5rem, 3vw, 2.5rem);
+  /* A readout, not a control: the host must never have to aim around it. */
+  pointer-events: none;
+}
+
+/* Sized off the viewport, not the cell: this is the one element on the board
+   meant to be read from the back of a room while everything else is ignored. */
+.qbe-strike-mark {
+  font-family: var(--font-display);
+  /* Big enough to read from the back of a room, capped so a three-strike band
+     never crowds the board it sits above. */
+  font-size: clamp(2rem, 8vh, 4.5rem);
+  font-weight: 700;
+  line-height: 1;
+  /* Empty until struck — the mark is drawn by ::after so the glyph is styling,
+     not content the renderer has to manage. */
+  width: 1em;
+  height: 1em;
+  border-radius: 0.15em;
+  /* The unstruck slot is a faint outline, so the room can see how many strikes
+     remain rather than only how many have been taken. */
+  border: 0.06em solid rgba(28, 26, 23, 0.18);
+}
+
+.qbe-strike-mark[data-struck="true"]::after {
+  content: "✗";
+  display: block;
+  text-align: center;
+  /* Deep red on the warm ground: 6.48:1 against --board-bg (AA large text 3:1
+     comfortably, and it is very large text). Backed by SHAPE — an empty slot
+     versus a filled one — so hue is never the only cue (theme-contract §5.3). */
+  color: #a4243b;
+}
+
+.qbe-strike-mark[data-struck="true"] {
+  border-color: #a4243b;
+  background: rgba(164, 36, 59, 0.08);
+}
+
+/* A struck mark lands rather than fading, because it punctuates a wrong answer.
+   Honoured only when the host has not asked for less motion (spec §8). */
+@media (prefers-reduced-motion: no-preference) {
+  .qbe-strike-mark[data-struck="true"] {
+    animation: qbe-strike-land var(--anim-duration) var(--anim-easing) 1;
+  }
+}
+
+@keyframes qbe-strike-land {
+  0%   { transform: scale(2.2); opacity: 0; }
+  60%  { transform: scale(0.92); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* The host's copy, in the score bar. Always present and usually empty (see
+   `buildTeamRows`), so it must occupy no space when empty — an element that
+   appears mid-game would shift the score under the host's cursor. */
+.qbe-team-strikes {
+  font-family: var(--font-display);
+  font-size: 1.1em;
+  line-height: 1;
+  letter-spacing: 0.1em;
+  color: #a4243b;
+  min-height: 1em;
+}
+
 /* The revealed ANSWER animates with its points, in all three animations (see
    §8 below, where `.qbe-cell-text` is now named alongside `.qbe-cell-value` on
    every `[data-state="revealed"]` rule). Left out, the answer snapped in at

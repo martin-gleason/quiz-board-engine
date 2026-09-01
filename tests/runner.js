@@ -607,6 +607,7 @@ function drive(bundle, stage) {
 const CONTRACT_CLASSES = new Set([
   'qbe-stage', 'qbe-scorebar', 'qbe-team', 'qbe-team-name', 'qbe-team-score',
   'qbe-board', 'qbe-column', 'qbe-column-label', 'qbe-cell', 'qbe-cell-value', 'qbe-cell-text',
+  'qbe-strikes', 'qbe-strike-mark', 'qbe-team-strikes',
   'qbe-cell-mark',
   'qbe-detail', 'qbe-detail-prompt', 'qbe-detail-answer', 'qbe-detail-actions',
   'qbe-detail-next', 'qbe-detail-close',
@@ -705,7 +706,7 @@ function contractProblems(stage) {
   const details = children.filter((n) => classOf(n) === 'qbe-detail');
   // contract v1.3: the toolbar and the pre-game overlay are stage children too.
   const chrome = children.filter((n) => classOf(n) === 'qbe-toolbar' || classOf(n) === 'qbe-setup'
-    || classOf(n) === 'qbe-wins');
+    || classOf(n) === 'qbe-wins' || classOf(n) === 'qbe-strikes');
   if (children.length !== scorebar.length + boards.length + details.length + chrome.length) {
     problems.push('the stage has children the contract does not name');
   }
@@ -1593,6 +1594,79 @@ async function runRenderSuite() {
     // have anything to look at; the fresh board asserted earlier is all hidden, so this is the run
     // that actually exercises it.
     assertContract('demo-feud.json (resumed, rows revealed)', resumedFeud);
+
+    // ---- STRIKES (D15 / D16) --------------------------------------------------------------------
+    //
+    // Two surfaces and one number. The number lives in the session, so the display assertions here
+    // are about the SURFACES agreeing with it — the cap itself is enforced in `state` and asserted
+    // in the state suite, because a cap that only exists in the drawing code would let a fourth
+    // strike into an exported file (`M7`).
+    const strikeRounds = await synthBundle('strike-rounds', threeRoundContent(), 'feud');
+    if (!strikeRounds.ok) {
+      record('render', 'a ranked board for the strike assertions validates', false,
+        strikeRounds.failures.map(errors.formatFailure).join(' | '));
+    } else {
+      const sStage = harnessStage();
+      const sView = renderer.renderBoard({
+        bundle: strikeRounds.value, session: { cellStates: {}, bonusCells: [] },
+        mount: sStage, handlers: {},
+      });
+      const overlay = sStage.querySelector('.qbe-strikes');
+
+      record('render', 'a feud board draws a strike band with one mark per allowed strike',
+        overlay !== null && overlay.querySelectorAll('.qbe-strike-mark').length === 3,
+        overlay === null ? 'no .qbe-strikes element was built at all'
+          : overlay.querySelectorAll('.qbe-strike-mark').length + ' marks for a strikes.count of 3');
+
+      // Hidden at zero: an empty frame parked over the board all game stops being noticed exactly
+      // when it starts mattering.
+      record('render', 'the strike band is hidden until there is a strike to show',
+        overlay !== null && overlay.hidden === true,
+        overlay ? 'hidden=' + overlay.hidden + ' at zero strikes' : '(no band)');
+
+      renderer.updateStrikes(sView, 2);
+      const struck = () => [...sStage.querySelectorAll('.qbe-strike-mark')]
+        .filter((m) => m.getAttribute('data-struck') === 'true').length;
+      record('render', 'two strikes mark two of the three slots and leave the third open',
+        struck() === 2 && overlay.hidden === false,
+        struck() + ' of 3 marks struck; band hidden=' + overlay.hidden);
+
+      // M11. Marks are aria-hidden decoration; the COUNT is the container's accessible name. Drawn
+      // without one, the band looks right on a projector and is silent to a screen reader — which
+      // is the same defect F9b shipped when a face claimed "answer shown" while showing nothing.
+      record('render', 'the strike band announces the count, and the marks themselves are decoration',
+        overlay.getAttribute('aria-label') === '2 strikes of 3'
+        && [...overlay.querySelectorAll('.qbe-strike-mark')].every((m) => m.getAttribute('aria-hidden') === 'true'),
+        'aria-label="' + overlay.getAttribute('aria-label') + '", marks aria-hidden: '
+        + [...overlay.querySelectorAll('.qbe-strike-mark')].every((m) => m.getAttribute('aria-hidden') === 'true'));
+
+      // Singular, because "1 strikes of 3" read aloud is exactly the kind of detail that makes a
+      // screen reader sound broken.
+      renderer.updateStrikes(sView, 1);
+      record('render', 'the announcement is singular at one strike',
+        overlay.getAttribute('aria-label') === '1 strike of 3',
+        'aria-label="' + overlay.getAttribute('aria-label') + '"');
+
+      renderer.updateStrikes(sView, 99);
+      record('render', 'the band cannot draw more marks than the game type allows',
+        struck() === 3,
+        'updateStrikes(99) struck ' + struck() + ' of 3');
+
+      // M10. A game type with no `strikes` block gets NO element — absent, not empty. Same idiom as
+      // `scoring.model: "none"` producing no score bar.
+      const noStrikeStage = harnessStage();
+      renderer.renderBoard({
+        bundle: demo.value, session: { cellStates: {}, bonusCells: [] },
+        mount: noStrikeStage, handlers: {},
+      });
+      record('render', 'a game type that declares no strikes draws no strike band at all',
+        noStrikeStage.querySelector('.qbe-strikes') === null,
+        noStrikeStage.querySelector('.qbe-strikes') === null
+          ? 'jeopardy has no strikes block and no .qbe-strikes element'
+          : 'jeopardy drew a .qbe-strikes element it has no use for');
+
+      assertContract('feud board with strikes', sStage);
+    }
 
     // ---- ONE ROUND AT A TIME (D17) ------------------------------------------------------------
     //
@@ -2488,6 +2562,37 @@ async function runShellSuite() {
             + 'px from its right edge (must be under ' + Math.round(rowWidth * 0.1) + 'px), and '
             + Math.round(valueBox.left - textBox.left) + 'px to the right of the answer');
         }
+        // ---- THE STRIKE MARKS, UNDER REAL THEME CSS (D16) ------------------------------------
+        //
+        // M12, and it SURVIVED the first time: styling the marks only in `default.css` and never
+        // measuring them left the suite green at 404/404 while a mark rendered one pixel tall. It
+        // is the same hole `M5` found — every render assertion draws into `harnessStage()`, which
+        // carries no stylesheet, so the suite cannot see a size at all. Measured here because the
+        // booted iframe is the only document in this suite where a theme is loaded.
+        const strikeMount = doc.createElement('div');
+        doc.querySelector('.qbe-stage').appendChild(strikeMount);
+        const strikeView = renderer.renderBoard({
+          bundle: feudBundle.value, session: { cellStates: {}, bonusCells: [] },
+          mount: strikeMount, handlers: {},
+        });
+        renderer.updateStrikes(strikeView, 2);
+        const band = strikeMount.querySelector('.qbe-strikes');
+        const mark = band && band.querySelector('.qbe-strike-mark');
+        if (!mark) {
+          record('shell', 'a strike mark is drawn large enough to read from the back of a room', false,
+            'the themed board produced no .qbe-strike-mark to measure');
+        } else {
+          const box = mark.getBoundingClientRect();
+          // A floor, not a pixel count: the assertion is "this is projector furniture, not body
+          // text". Unstyled it collapses to roughly a line-height; the shipped rule puts it at
+          // 2rem minimum, so 24px separates the two outcomes by a wide margin.
+          record('shell', 'a strike mark is drawn large enough to read from the back of a room',
+            box.height >= 24 && box.width >= 24,
+            'a struck mark measures ' + Math.round(box.width) + 'x' + Math.round(box.height)
+            + 'px (must be at least 24x24)');
+        }
+        strikeMount.remove();
+
         mount.remove();
       }
     }
@@ -3481,6 +3586,67 @@ async function runStateSuite() {
     } else {
       state.setCellState('0:0', 'revealed');
       state.adjustScore({ bundle: demo.value, teamIndex: 0, delta: 300 });
+
+      // ---- STRIKES IN STATE (D15) --------------------------------------------------------------
+      //
+      // M7. THE CAP IS A STATE RULE, NOT A DRAWING RULE. If the renderer clamped and `state` did
+      // not, a fourth press would leave a 4 in the session that the room never saw, that survived
+      // export, and that came back on import as a value its own schema rejects. Asserted against
+      // the SESSION, never against the marks on screen.
+      //
+      // demo.json is jeopardy, which declares no `strikes` block — so it also proves the no-op:
+      // `addStrike` on a game type without strikes must change nothing rather than throw.
+      const beforeJeopardy = canonical(state.current().strikes || {});
+      state.addStrike(demo.value, 0);
+      record('state', 'addStrike does nothing on a game type that declares no strikes',
+        canonical(state.current().strikes || {}) === beforeJeopardy,
+        'jeopardy session strikes went from ' + beforeJeopardy + ' to '
+        + canonical(state.current().strikes || {}));
+
+      // A SEPARATE SESSION, and the reason is a bug this very block caused: driving `addStrike`
+      // with the feud bundle while the JEOPARDY session was live wrote strikes into a jeopardy
+      // session, and the round-trip assertion below then failed validation — correctly, because
+      // `stateStrikesInBounds` refuses strikes on a game type that declares none. The suite caught
+      // my test, not the code. The strikes assertions therefore run on their own session and hand
+      // the shelf back exactly as they found it.
+      const jeopardySession = state.current();
+      const feudForState = await fileBundle('games/demo-feud.json');
+      if (!feudForState.ok) {
+        record('state', 'the feud bundle loads for the strike assertions', false, 'it did not');
+      } else {
+        const feudHash = await synthHash('strike-state');
+        const feudSession = state.newSession({ bundle: feudForState.value, gameHash: feudHash, teams: ['Red'] });
+        const feudAdopted = state.adopt(feudSession);
+        if (!feudAdopted.ok) {
+          record('state', 'a feud session adopts for the strike assertions', false, failureText(feudAdopted));
+        } else {
+          for (let i = 0; i < 6; i++) state.addStrike(feudForState.value, 0);
+          record('state', 'strikes cap at the game type\'s own count, in the SESSION not just on screen',
+            state.strikesFor(state.current(), 0) === 3,
+            'six calls to addStrike left the session holding '
+            + state.strikesFor(state.current(), 0) + ' (cap is 3)');
+
+          // M8. Strikes belong to a ROUND. Keyed off the board instead of the column, Round 2 would
+          // inherit Round 1's three strikes and start already lost.
+          state.addStrike(feudForState.value, 1);
+          record('state', 'strikes are per round — a second round starts from its own count',
+            state.strikesFor(state.current(), 0) === 3 && state.strikesFor(state.current(), 1) === 1,
+            'round 0 holds ' + state.strikesFor(state.current(), 0) + ', round 1 holds '
+            + state.strikesFor(state.current(), 1));
+
+          // Cleared, not zeroed: absent-means-none is the idiom everywhere else, and an exported
+          // session should not carry a row of zeroes for rounds nobody played.
+          state.clearStrikes(0);
+          record('state', 'clearing a round removes its entry rather than setting it to zero',
+            state.strikesFor(state.current(), 0) === 0
+            && !Object.prototype.hasOwnProperty.call(state.current().strikes, '0'),
+            'after clearStrikes(0) the session strikes are '
+            + canonical(state.current().strikes || {}));
+        }
+        state.discardSession(feudHash);
+        state.adopt(jeopardySession); // hand the shelf back to the round-trip assertions
+      }
+
       const live = state.current();
 
       // Forget everything in memory. Only what is really on the shelf can answer the next line.

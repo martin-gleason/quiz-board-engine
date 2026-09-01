@@ -1,6 +1,7 @@
 # F9c — strikes on the board
 
-**Status:** in progress. `F9c-T0` is built and green; `T1`–`T5` outstanding.
+**Status:** COMPLETE. `T0`–`T5` built; Chrome 405/405, Firefox 405/405; `M7`, `M8`, `M10`, `M12`,
+`M13`, `M14` all shown failing. Awaiting review and the gate.
 **Branch:** `working-strikes`
 **Retrofit on:** `F9` (feud), shipped. Second pass on a shipped feature, so a retrofit letter —
 `F9b` was the answer-on-the-face fix; this is `F9c`.

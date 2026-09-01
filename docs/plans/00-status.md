@@ -25,7 +25,7 @@ Status is what the unit's own plan header declares. What has landed in git is de
 
 | ID | Kind | Status | Milestone | P | Owner | Plan | Tasks |
 |---|---|---|---|---|---|---|---|
-| F9c | feature | in progress | — | — | — | `docs/plans/F9c.md` | 0 planned |
+| F9c | feature | COMPLETE | — | — | — | `docs/plans/F9c.md` | 0 planned |
 
 ## Registers
 
@@ -37,7 +37,7 @@ Counted from the register itself. A register with no rows still gets a line.
 | Risks (`RR`) | 6 | 0 | 0 | 6 |
 | Owner items (`O`) | 0 | 0 | 0 | 0 |
 | Hooks (`H`) | 0 | 0 | 0 | 0 |
-| Mutations (`M`) | 14 | 6 | 0 | 8 |
+| Mutations (`M`) | 14 | 0 | 0 | 14 |
 | Other (C) (`C`) | 19 | 4 | 0 | 15 |
 
 ### By status
@@ -46,8 +46,7 @@ Counted from the register itself. A register with no rows still gets a line.
 |---|---|---|
 | `D` | ratified | 17 |
 | `RR` | ratified | 6 |
-| `M` | closed | 8 |
-| `M` | open | 6 |
+| `M` | closed | 14 |
 | `C` | done | 15 |
 | `C` | open | 4 |
 
@@ -67,14 +66,8 @@ Every open row in the register. Owner is the row's Owner column where the table 
 | Marty | C15 | P0 | open | Add CI — build, the Safari gate, and whatever the suite becomes |
 | Marty | C16 | P1 | open | Regenerate docs/plans/00-status.md from this repo, or stop generating it here |
 | Marty | C17 | P0 | open | Make the test suite collect — it currently reports green having run nothing |
-| unassigned | M7 | — | open | addStrike does not cap at the game type's strikes.count — a fourth strike is recordable. |
-| unassigned | M8 | — | open | Strikes key off the board rather than the column, so Round 2 inherits Round 1's strikes. |
-| unassigned | M9 | — | open | An imported "strikes": {"0": 99} is accepted unvalidated and renders 99 marks. |
-| unassigned | M10 | — | open | .qbe-strikes renders for a game type that declares no strikes block. |
-| unassigned | M11 | — | open | The centre overlay draws marks with no accessible name, so the count is invisible to a screen reader. |
-| unassigned | M12 | — | open | The marks are styled only in default.css, so a themed board shows nothing. |
 | — | C11 | — | open | Safari manual test pass — human, maintainer-executed |
 
 ---
 
-10 open register rows.
+4 open register rows.

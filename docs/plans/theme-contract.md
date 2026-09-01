@@ -205,10 +205,21 @@ Emitted by `renderer.js` via `createElement`/`textContent` only. Indentation sho
         .qbe-team[data-active][data-team]  one per team; data-team is its zero-based index
           button.qbe-team-name             a BUTTON: pressing it marks the active team (aria-pressed)
           .qbe-team-score
+          .qbe-team-strikes                the round's strikes beside the ACTIVE team (D16); the
+                                          one element in §2 that is present-and-empty by design,
+                                          because a fixed row must not reflow mid-game
           .qbe-team-controls
             button.qbe-btn[data-action]    "score-down" then "score-up"; labelled with the amount
-      main.qbe-board[data-layout]          --qbe-column-count set as an inline custom property
-        .qbe-column
+      aside.qbe-strikes[hidden]            present only when the game type declares `strikes` (D16);
+                                          hidden at zero. A BAND ABOVE THE BOARD, not an overlay
+                                          on it: a centred overlay landed on the revealed answer.
+                                          role="status", and it owns the accessible name
+        .qbe-strike-mark[data-struck]      one per allowed strike; aria-hidden decoration
+      main.qbe-board[data-layout]          --qbe-column-count set as an inline custom property;
+                                          on ranked-list also [data-round-active][data-round-count]
+        .qbe-column[data-round]          a CATEGORY on a grid, a ROUND on a ranked list (D17).
+                                          On ranked-list every round but the active one is
+                                          `hidden` AND `inert` — set by the renderer, never CSS
           h2.qbe-column-label              omitted when the column has no label
           button.qbe-cell[data-state][data-cell][data-bonus][data-locked]
             .qbe-cell-text                 face text; a bingo term, or a REVEALED feud answer
@@ -225,8 +236,11 @@ Emitted by `renderer.js` via `createElement`/`textContent` only. Indentation sho
         .qbe-win[data-pattern]             one per completed pattern, in completion order
       footer.qbe-toolbar                   ALWAYS present, scoring or not; last NON-OVERLAY child
                                           of the stage (a setup overlay may be appended after it)
-        button.qbe-btn[data-action]        "teams", "export", "import" — "teams" is ABSENT when the
-                                          game type has no scoring (nowhere to show a team)
+        button.qbe-btn[data-action]        "strike", "strikes-clear", "round-next", "teams",
+                                          "export", "import". Each is ABSENT rather than inert
+                                          when its handler is not passed: "teams" when the game
+                                          type has no scoring, the first two when it declares no
+                                          `strikes`, "round-next" on any layout but ranked-list
         input.qbe-file[hidden]             the file picker Import opens; never visible
       .qbe-setup[data-screen]              overlay: "teams" or "resume". REMOVED when dismissed,
                                           never [hidden] (v1.6). "resume" is pre-game only, but
