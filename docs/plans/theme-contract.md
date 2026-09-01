@@ -287,6 +287,15 @@ Two consequences for a theme:
 - `.qbe-board` always exists, even for `ranked-list`; layout differences are expressed by
   `data-layout`, not by different element names.
 - Text content is never empty-but-meaningful: if a value is absent, the element is absent.
+- **A `.qbe-column` is a CATEGORY on a grid board and a ROUND on a ranked list** (`D17`). Same
+  element, same class, different meaning — which is why the renderer, not the theme, decides
+  visibility. Every column carries `data-round="<index>"` on every layout. On `ranked-list` the
+  board additionally carries `data-round-active` and `data-round-count`, and **every column except
+  the active one is `hidden` and `inert`**, set by the renderer.
+- **Do not un-hide a round from CSS.** `[hidden] { display: block }` is legal CSS and would put the
+  inactive rounds back on screen — but they stay `inert`, so their cells would be visible and
+  unclickable, and the room would be looking at the answers to a round nobody can play. Style
+  `[data-round]` freely; leave visibility alone.
 - **A cell never prints its QUESTION on the face; it may print its ANSWER.** A jeopardy cell's
   `prompt` is the question and appears only in `.qbe-detail`. A bingo square's `prompt` is its
   term, not a question, so it is on the card from the first paint. A **revealed** feud row prints

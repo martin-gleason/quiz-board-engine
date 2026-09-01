@@ -507,6 +507,10 @@ export function newSession({ bundle, gameHash, teams, bonusCells }) {
     teams: teamList,
     cellStates: {},
     bonusCells: Array.isArray(bonusCells) ? bonusCells.slice() : pickBonusCells({ bundle }),
+    // `D17`. Every new session opens on the first round. Written explicitly rather than left
+    // absent so an exported file says what it means; `undefined` is still accepted on the way in,
+    // because sessions saved before D17 have no such field and must keep loading.
+    currentRound: 0,
   };
 }
 
@@ -971,6 +975,29 @@ export function setCellState(cellKey, nextState) {
  * called. A team added at the end starts at 0; a box cleared to remove a team takes its score with
  * it, which is the same "no undo" the resume screen's Discard has and for the same reason.
  */
+/**
+ * Move the board to a round (`D17`).
+ *
+ * Clamped rather than validated-and-refused, and the two ends are clamped for different reasons.
+ * Below zero is a caller bug and there is nothing sensible to do but stop at the first round.
+ * Above the last column is the interesting one: the host is at the end of the game pressing the
+ * advance key one more time, and the honest behaviour is to STAY on the final round rather than
+ * to wrap to Round 1 or to blank the board. Wrapping would put a spent round back on the screen
+ * in front of the room and read as a reset.
+ *
+ * The clamp is also what keeps the session schema-valid without a second opinion: `currentRound`
+ * can never be written outside `0..columnCount-1`, so a session this app wrote can never fail its
+ * own `stateCurrentRoundInBounds` check on reload. Imported state gets no such courtesy — it is
+ * untrusted and goes through the validator (CLAUDE.md).
+ */
+export function setRound(bundle, index) {
+  const last = Math.max(0, Number(bundle && bundle.resolved ? bundle.resolved.columnCount : 1) - 1);
+  const next = Number.isInteger(index) ? Math.min(Math.max(index, 0), last) : 0;
+  return update((draft) => {
+    draft.currentRound = next;
+  });
+}
+
 export function setTeams(names) {
   return update((draft) => {
     const previous = Array.isArray(draft.teams) ? draft.teams : [];

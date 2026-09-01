@@ -414,6 +414,52 @@ function buildCell(doc, cell, column, bundle, session, state, position) {
 }
 
 /**
+ * Does this layout show one round at a time? (`D17`)
+ *
+ * `ranked-list` only. A jeopardy grid's columns are CATEGORIES — six of them side by side ARE the
+ * board, and hiding five would destroy the game. A ranked list's columns are ROUNDS, shown one at
+ * a time the way the show does it. Same DOM, same classes, different meaning for `columns`, which
+ * is why this is a function with a name rather than an inline layout comparison: the next reader
+ * needs to know the distinction is about semantics, not about styling.
+ */
+function roundsAreExclusive(bundle) {
+  return bundle.gametype.layout === 'ranked-list';
+}
+
+/**
+ * Put one round on screen (`D17`). No-op on a layout that shows every column.
+ *
+ * WHY `hidden` AND `inert`, RATHER THAN CSS. A theme could hide a column with `display: none` and
+ * the room would see the right thing — but the cells would still be in the accessibility tree and
+ * still reachable with `Tab`. A keyboard or screen-reader host would walk straight into Round 3
+ * and be able to open a cell the room cannot see, which is `M14` and is the same defect class
+ * `openCell` already solves with `inert` when the overlay is up.
+ *
+ * `hidden` removes the column for everybody; `inert` is belt-and-braces for engines that honour a
+ * theme's `display: block` override of `[hidden]`, which is legal CSS and would otherwise put the
+ * cells back in the focus order with nothing announcing them. On an engine without `inert` this is
+ * an inert property assignment in the other sense — no throw, no effect — and `hidden` still
+ * carries it. Feature support, never a user-agent test (CLAUDE.md constraint 5).
+ */
+export function setRound(view, index) {
+  if (!roundsAreExclusive(view.bundle)) return view.currentRound;
+  const last = Math.max(0, view.columnEls.length - 1);
+  const next = Number.isInteger(index) ? Math.min(Math.max(index, 0), last) : 0;
+
+  view.currentRound = next;
+  view.root.setAttribute('data-round-active', String(next));
+  view.root.setAttribute('data-round-count', String(view.columnEls.length));
+
+  for (let i = 0; i < view.columnEls.length; i++) {
+    const columnEl = view.columnEls[i];
+    const shown = i === next;
+    columnEl.hidden = !shown;
+    columnEl.inert = !shown;
+  }
+  return next;
+}
+
+/**
  * Cells in the order they are DRAWN.
  *
  * `grid` draws document order — the author's columns are the board (spec §4.1).
@@ -508,9 +554,14 @@ export function renderBoard({ bundle, session, mount, handlers }) {
   const cells = new Map();
   const records = new Map();
   const renderedStates = new Map();
+  const columnEls = [];
 
   for (const column of bundle.content.board.columns) {
     const columnEl = el(doc, 'div', 'qbe-column');
+    // `D17`. Every column carries its index, on every layout. A grid board never hides one, but the
+    // attribute is cheap and it is what a theme selects on to style "the round you are on".
+    columnEl.setAttribute('data-round', String(columnEls.length));
+    columnEls.push(columnEl);
     // Omitted when the column has no label (theme-contract §2: absent, never empty).
     if (column.label) columnEl.appendChild(el(doc, 'h2', 'qbe-column-label', column.label));
 
@@ -546,12 +597,20 @@ export function renderBoard({ bundle, session, mount, handlers }) {
     cells,
     records,
     renderedStates,
+    columnEls,
     detail,
     bundle,
     handlers: h,
     open: null, // { key, returnFocusTo } while the overlay is up
     escapeListener: null,
+    currentRound: 0,
   };
+
+  // `D17`. A ranked board shows ONE round; a grid board shows all of its columns and always has.
+  // Applied here, at first paint, from the SESSION — so a resumed game comes back on the round it
+  // was left on rather than on Round 1 (`M13`).
+  setRound(view, roundsAreExclusive(bundle) && session && Number.isInteger(session.currentRound)
+    ? session.currentRound : 0);
 
   board.addEventListener('click', (event) => {
     const target = event.target instanceof Element ? event.target.closest(CELL_SELECTOR) : null;

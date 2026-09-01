@@ -821,6 +821,29 @@ export function validateState({ raw, bundle }) {
     }
   }
 
+  // --- CROSS_CHECKS.stateCurrentRoundInBounds -----------------------------------------
+  // `D17`. The structural stage capped this at the COLUMN CAP (12), which is all a schema can know
+  // without the content file. Whether round 7 exists on THIS board is a contract question.
+  //
+  // It matters more than the cell-key checks above, and for a reason particular to one round being
+  // on screen at a time: an out-of-range round draws NO column at all. A host would see an empty
+  // board and read it as the app being broken, not as a session that outlived the file it was
+  // saved against — which is exactly what it is when somebody trims a round out of their content
+  // and reopens yesterday's game. `undefined` is legal and means Round 0 (see the schema note).
+  if (state.currentRound !== undefined && state.currentRound >= bundle.resolved.columnCount) {
+    contractFail(
+      file,
+      KINDS.STATE,
+      'currentRound',
+      'a round that exists on this board (' + bundle.resolved.columnCount + ' column'
+        + (bundle.resolved.columnCount === 1 ? '' : 's') + ', so 0 to '
+        + (bundle.resolved.columnCount - 1) + ')',
+      describeValue(state.currentRound),
+      'out-of-range',
+      out,
+    );
+  }
+
   if (out.length > 0) return { ok: false, failures: out };
   return { ok: true, value: state };
 }

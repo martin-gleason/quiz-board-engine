@@ -525,6 +525,24 @@ const stateV1 = obj({
       }),
     }),
     bonusCells: cellKeyList('an array of cell keys chosen by the app at session start'),
+    // `D17`. WHICH ROUND IS ON SCREEN, and it is SESSION state rather than view state on purpose:
+    // a ranked board shows one column at a time, and a host who reloads mid-show — a dropped
+    // laptop lid, a browser crash, a projector replug — must come back to the round they were on,
+    // not to Round 1 with the scores intact. That is the failure nobody finds until they are on
+    // stage, and it is `M13`.
+    //
+    // Optional, and absent means Round 0. Every session written before D17 therefore keeps
+    // working without a schemaVersion bump, which is the point of making it optional rather than
+    // required: an existing saved game must not become an error screen because the app grew a
+    // feature. Structurally it is only bounded by the column cap here; that it addresses a column
+    // this BOARD actually has is a contract check (`CROSS_CHECKS.currentRoundExists`), because
+    // only the content file knows how many columns there are.
+    currentRound: int({
+      min: 0,
+      max: LIMITS.maxColumns - 1,
+      expected: `a whole number from 0 to ${LIMITS.maxColumns - 1}`,
+      hint: 'out-of-range',
+    }),
   }),
 });
 
@@ -579,6 +597,17 @@ export const CROSS_CHECKS = Object.freeze({
     hint: 'out-of-range',
     describe: 'Each cellStates / bonusCells key must address a cell that exists on the board.',
     pathShape: 'cellStates["<c>:<r>"]',
+  }),
+  // `D17`. The structural stage caps `currentRound` at the COLUMN CAP, which is all a schema can
+  // know; that it addresses a column THIS board has is a contract question, because only the
+  // content file carries the count. Imported state is untrusted input (CLAUDE.md), and a session
+  // claiming round 7 of a three-round board must reach the error screen rather than a blank board
+  // — with one round on screen at a time, an out-of-range round renders NOTHING, which reads as a
+  // broken app rather than as bad data.
+  stateCurrentRoundInBounds: Object.freeze({
+    hint: 'out-of-range',
+    describe: 'currentRound must address a column that exists on the board.',
+    pathShape: 'currentRound',
   }),
 });
 

@@ -25,7 +25,7 @@ Status is what the unit's own plan header declares. What has landed in git is de
 
 | ID | Kind | Status | Milestone | P | Owner | Plan | Tasks |
 |---|---|---|---|---|---|---|---|
-| F9c | feature | plan, awaiting the gate | — | — | — | `docs/plans/F9c.md` | 0 planned |
+| F9c | feature | in progress | — | — | — | `docs/plans/F9c.md` | 0 planned |
 
 ## Registers
 
@@ -37,7 +37,7 @@ Counted from the register itself. A register with no rows still gets a line.
 | Risks (`RR`) | 6 | 0 | 0 | 6 |
 | Owner items (`O`) | 0 | 0 | 0 | 0 |
 | Hooks (`H`) | 0 | 0 | 0 | 0 |
-| Mutations (`M`) | 14 | 8 | 0 | 6 |
+| Mutations (`M`) | 14 | 6 | 0 | 8 |
 | Other (C) (`C`) | 19 | 4 | 0 | 15 |
 
 ### By status
@@ -46,8 +46,8 @@ Counted from the register itself. A register with no rows still gets a line.
 |---|---|---|
 | `D` | ratified | 17 |
 | `RR` | ratified | 6 |
-| `M` | closed | 6 |
-| `M` | open | 8 |
+| `M` | closed | 8 |
+| `M` | open | 6 |
 | `C` | done | 15 |
 | `C` | open | 4 |
 
@@ -73,10 +73,8 @@ Every open row in the register. Owner is the row's Owner column where the table 
 | unassigned | M10 | — | open | .qbe-strikes renders for a game type that declares no strikes block. |
 | unassigned | M11 | — | open | The centre overlay draws marks with no accessible name, so the count is invisible to a screen reader. |
 | unassigned | M12 | — | open | The marks are styled only in default.css, so a themed board shows nothing. |
-| unassigned | M13 | — | open | currentRound is held in view state instead of the session, so a mid-show reload returns to Round 1 with the scores intac… |
-| unassigned | M14 | — | open | Non-active rounds are hidden with CSS alone, so their cells stay in the accessibility tree and reachable by Tab — a keyb… |
 | — | C11 | — | open | Safari manual test pass — human, maintainer-executed |
 
 ---
 
-12 open register rows.
+10 open register rows.

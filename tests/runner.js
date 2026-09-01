@@ -905,6 +905,25 @@ function hostileContent() {
  * counts cell children and never reads their text, so it structurally cannot catch this one; it
  * needs its own assertion, which is why this fixture exists rather than a line in an existing one.
  */
+/**
+ * A three-round ranked board (`D17`). Three columns, so "one round at a time" has something to be
+ * true of — `games/demo-feud.json` has a single column and cannot distinguish a board that hides
+ * inactive rounds from one that has none to hide.
+ */
+function threeRoundContent() {
+  return {
+    schemaVersion: 1, title: 'Three rounds', gameType: 'feud',
+    theme: 'default', animation: 'fade',
+    board: {
+      columns: [
+        { label: 'Round 1', cells: [{ answer: 'Eggs', value: 40 }, { answer: 'Toast', value: 20 }] },
+        { label: 'Round 2', cells: [{ answer: 'Dog', value: 50 }, { answer: 'Fish', value: 10 }] },
+        { label: 'Round 3', cells: [{ answer: 'Soccer', value: 45 }, { answer: 'Golf', value: 15 }] },
+      ],
+    },
+  };
+}
+
 function emptyAnswerRankedContent() {
   return {
     schemaVersion: 1, title: 'Ranked answers, one of them blank', gameType: 'feud',
@@ -1574,6 +1593,106 @@ async function runRenderSuite() {
     // have anything to look at; the fresh board asserted earlier is all hidden, so this is the run
     // that actually exercises it.
     assertContract('demo-feud.json (resumed, rows revealed)', resumedFeud);
+
+    // ---- ONE ROUND AT A TIME (D17) ------------------------------------------------------------
+    //
+    // A `.qbe-column` is a CATEGORY on a grid board and a ROUND on a ranked list. The renderer, not
+    // the theme, owns which rounds are on screen, so this is asserted against the DOM rather than
+    // against CSS — and `demo-feud.json` cannot carry these assertions at all, because with one
+    // column a board that hides inactive rounds is indistinguishable from one with none to hide.
+    const rounds = await synthBundle('three-round', threeRoundContent(), 'feud');
+    if (!rounds.ok) {
+      record('render', 'a three-round ranked board validates', false,
+        rounds.failures.map(errors.formatFailure).join(' | '));
+    } else {
+      const rStage = harnessStage();
+      const rView = renderer.renderBoard({
+        bundle: rounds.value, session: { cellStates: {}, bonusCells: [] },
+        mount: rStage, handlers: {},
+      });
+      const cols = () => [...rStage.querySelectorAll('.qbe-column')];
+      const shown = () => cols().filter((c) => !c.hidden)
+        .map((c) => c.querySelector('.qbe-column-label').textContent);
+
+      record('render', 'a ranked board shows exactly one round, and it is the first',
+        shown().length === 1 && shown()[0] === 'Round 1',
+        cols().length + ' rounds built, ' + shown().length + ' on screen: ' + (shown().join(', ') || '(none)'));
+
+      // M14. Hiding with CSS alone would leave these cells in the accessibility tree and in the tab
+      // order — a keyboard host could open a cell in a round the room cannot see. `hidden` removes
+      // them for everybody and `inert` survives a theme overriding `[hidden]`, so both are asserted
+      // rather than just the one that happens to be sufficient today.
+      const offRound = cols().filter((c) => c.getAttribute('data-round') !== '0');
+      record('render', 'inactive rounds are hidden AND inert, not merely styled out of sight',
+        offRound.length === 2 && offRound.every((c) => c.hidden === true && c.inert === true),
+        offRound.map((c) => 'round ' + c.getAttribute('data-round') + ': hidden=' + c.hidden
+          + ' inert=' + c.inert).join('; '));
+
+      // The property that actually matters, tested by trying it rather than by trusting `inert`:
+      // focus a cell in a hidden round and see whether it takes.
+      const focusable = [];
+      for (const cell of rStage.querySelectorAll('.qbe-cell')) {
+        const round = cell.closest('.qbe-column').getAttribute('data-round');
+        cell.focus();
+        if (round !== '0' && rStage.ownerDocument.activeElement === cell) focusable.push(cell.getAttribute('data-cell'));
+      }
+      record('render', 'no cell in a hidden round can take focus',
+        focusable.length === 0,
+        focusable.length === 0 ? 'every off-round cell refused focus'
+          : 'these cells in hidden rounds took focus: ' + focusable.join(', '));
+
+      record('render', 'the board publishes which round is active and how many there are',
+        rView.root.getAttribute('data-round-active') === '0'
+        && rView.root.getAttribute('data-round-count') === '3',
+        'data-round-active="' + rView.root.getAttribute('data-round-active')
+        + '", data-round-count="' + rView.root.getAttribute('data-round-count') + '"');
+
+      renderer.setRound(rView, 2);
+      record('render', 'advancing the round swaps which column is on screen',
+        shown().length === 1 && shown()[0] === 'Round 3',
+        'after setRound(2): ' + (shown().join(', ') || '(none)'));
+
+      // Clamped, NOT wrapped. A host at the end of the game pressing advance once more must stay
+      // on the final round; wrapping would put a spent round back in front of the room.
+      renderer.setRound(rView, 99);
+      const clampedHigh = shown()[0];
+      renderer.setRound(rView, -5);
+      const clampedLow = shown()[0];
+      record('render', 'the round clamps at both ends rather than wrapping',
+        clampedHigh === 'Round 3' && clampedLow === 'Round 1',
+        'setRound(99) -> ' + clampedHigh + '; setRound(-5) -> ' + clampedLow);
+
+      // M13. The failure a host finds on stage: a mid-show reload that comes back to Round 1 with
+      // the scores intact. `currentRound` is session state precisely so this cannot happen.
+      const resumedStage = harnessStage();
+      renderer.renderBoard({
+        bundle: rounds.value,
+        session: { cellStates: {}, bonusCells: [], currentRound: 2 },
+        mount: resumedStage, handlers: {},
+      });
+      const resumedShown = [...resumedStage.querySelectorAll('.qbe-column')]
+        .filter((c) => !c.hidden).map((c) => c.querySelector('.qbe-column-label').textContent);
+      record('render', 'a board rebuilt from a session opens on the round it was left on',
+        resumedShown.length === 1 && resumedShown[0] === 'Round 3',
+        'session said currentRound 2; the board came back on ' + (resumedShown.join(', ') || '(nothing)'));
+
+      // A grid board's columns are CATEGORIES. Hiding five of six would destroy the game, so the
+      // round machinery must be inert on every layout but ranked-list.
+      const gridStage = harnessStage();
+      const gridView = renderer.renderBoard({
+        bundle: demo.value, session: { cellStates: {}, bonusCells: [], currentRound: 2 },
+        mount: gridStage, handlers: {},
+      });
+      const gridHidden = [...gridStage.querySelectorAll('.qbe-column')].filter((c) => c.hidden);
+      record('render', 'a grid board ignores rounds entirely — every category stays on screen',
+        gridHidden.length === 0 && gridView.root.getAttribute('data-round-active') === null,
+        gridHidden.length + ' of ' + gridStage.querySelectorAll('.qbe-column').length
+        + ' categories hidden; data-round-active is '
+        + (gridView.root.getAttribute('data-round-active') === null ? 'absent, as it must be'
+          : '"' + gridView.root.getAttribute('data-round-active') + '"'));
+
+      assertContract('three-round ranked board', rStage);
+    }
 
     // ---- AN EMPTY ANSWER IS ABSENT, NOT BLANK (§2) --------------------------------------------
     //

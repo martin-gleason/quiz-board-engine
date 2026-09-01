@@ -1,6 +1,6 @@
 # F9c — strikes on the board
 
-**Status:** plan, awaiting the gate. No code written.
+**Status:** in progress. `F9c-T0` is built and green; `T1`–`T5` outstanding.
 **Branch:** `working-strikes`
 **Retrofit on:** `F9` (feud), shipped. Second pass on a shipped feature, so a retrofit letter —
 `F9b` was the answer-on-the-face fix; this is `F9c`.
@@ -11,7 +11,7 @@
   strikes contradicts the frozen spec. The spec is not edited; `D15` records the change. Ratifying
   it also fixed **`X` as the strike key**, widening plan Q12's deliberately small keyboard budget.
 - **`D16`** — theme-contract §2 gains two elements and §4 gains their tokens.
-- **`D17`** — **a ranked board shows one round at a time.** Added after planning, see §2b.
+- **`D17`** — **a ranked board shows one round at a time.** Added after planning, see §2.
 
 ---
 
@@ -30,7 +30,7 @@ pot, no controlling team, no steal state machine, no automatic award. A third st
 is on screen and nothing else. This is the small version on purpose — a wrong state transition
 mid-show is visible to the whole room and hard to undo, and the show is in a week.
 
-## 2b. Why `D17` had to be folded in
+## 2. Why `D17` had to be folded in
 
 **The plan as first written had a hole.** Strikes are per column, but the board has no notion of a
 current round — every column renders stacked, all questions visible. So *which round's strikes does
@@ -46,7 +46,7 @@ a running score therefore requires one file with several columns, which forces t
 `currentRound` is **session state, not view state**: a mid-show reload must come back to Round 3,
 and that is exactly the failure a host discovers on stage (`M13`).
 
-## 2. The one design tension, and how it is resolved
+## 3. The one design tension, and how it is resolved
 
 The two answers pull against each other: **strikes are per column** (round-scoped), but **per-team
 marks** imply team-scoped strikes. Resolved as:
@@ -64,7 +64,7 @@ no strike ownership to keep in sync across import, and nothing new to persist.
 marks and the centre overlay carries the whole story. That is the right failure — the overlay is
 the one the room reads.
 
-## 3. State and config shape
+## 4. State and config shape
 
 **Game-type config** (`gametypes/feud.json`) gains one optional block. Configs are data selecting
 built-in behaviour (CLAUDE.md), and a count is data:
@@ -87,15 +87,16 @@ are integers `0..count`. Imported state is untrusted input (CLAUDE.md), so this 
 everything else: key pattern, integer range, and a contract check that the column exists on the
 board and that the count does not exceed the game type's own `strikes.count`.
 
-## 4. Tasks
+## 5. Tasks
 
-**`F9c-T0` — one round at a time (`D17`). Foundational: this one IS user-visible, and it is the
-prerequisite.** *(owner: agent)*
+**`F9c-T0` — one round at a time (`D17`). DONE.** *(owner: agent)*
 Draw the active column and hide the rest; persist `currentRound`; a key to advance. Hiding must
 remove the inactive rounds from focus and the accessibility tree, not merely from sight — the same
-class of defect `openCell` already solves with `inert`, and the reason `M14` exists. Checkpoint: a
-three-round board opens on Round 1, `Tab` never reaches Round 2, and a reload mid-Round-3 comes back
-to Round 3 with scores intact.
+class of defect `openCell` already solves with `inert`, and the reason `M14` exists. Checkpoint MET: a
+three-round board opens on Round 1, no off-round cell can take focus, a session carrying
+`currentRound: 2` rebuilds on Round 3, and a stored `currentRound: 7` on a three-column board
+reaches the error screen with a located message rather than drawing a blank board. Chrome
+391/391, Firefox 391/391; `M13` and `M14` both shown failing.
 
 **`F9c-T1` — schema and state. Foundational: delivers nothing user-visible.** *(owner: agent)*
 `strikes` in the game-type schema and the state schema, the two cross-checks, and `newSession` /
@@ -123,7 +124,7 @@ round driven by keyboard alone.
 Assertions in `tests/runner.js` plus the mutations below. Checkpoint: Chrome and Firefox both green,
 every mutation shown failing.
 
-## 5. Mutations planned before the code
+## 6. Mutations planned before the code
 
 Written here first, because the two blind spots `F9b` found were both *"the assertion existed and
 watched the wrong thing"*, and both were found by review rather than by the suite.
@@ -143,7 +144,7 @@ watched the wrong thing"*, and both were found by review rather than by the suit
 stylesheet, so it structurally cannot see a layout. Anything visual is asserted in the booted
 iframe or it is not asserted at all.
 
-## 6. Risks
+## 7. Risks
 
 - **Scope grew at the gate.** `D17` was not in the first draft of this plan; it was found by the
   maintainer asking why multi-round boards are unintuitive. The week now carries two deltas' worth
@@ -152,7 +153,7 @@ iframe or it is not asserted at all.
 - **A week, with content authoring competing for the same time.** If this slips, the fallback is
   exactly today's behaviour — strikes on paper — so it degrades safely.
 
-## 7. Explicitly out of scope
+## 8. Explicitly out of scope
 
 Round pot · controlling team · steal state machine · automatic awarding · strike history or undo
 beyond `clearStrikes` · fast money.
