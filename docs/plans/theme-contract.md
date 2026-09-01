@@ -292,12 +292,6 @@ Two consequences for a theme:
   term, not a question, so it is on the card from the first paint. A **revealed** feud row prints
   its `answer` in `.qbe-cell-text` AND its points in `.qbe-cell-value` — the one cell that
   carries both children. A hidden feud row prints neither, so the reveal is not spoiled.
-- **⚠ THIS AMENDMENT IS `PROPOSED`, NOT RATIFIED.** `D14` is open in `docs/plans/00-register.md`
-  and only the maintainer can ratify it. The code, the themes and the tests on `F9b` are
-  written against the narrowed rule and are green in both browsers, but **§2 is not settled
-  until `D14` is ratified** — a reader arriving here must not take the paragraph above as
-  agreed. If `D14` is rejected, this section reverts to the mutual-exclusion rule and the
-  `F9b` branch goes with it.
 - **Amended by `D14`** (2026-09-01). The rule here used to read *"`.qbe-cell-text` and
   `.qbe-cell-value` are mutually exclusive… never both"*, and a revealed feud row therefore
   printed the number `38` and no answer at all, with its accessible name announcing "answer
