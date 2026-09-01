@@ -397,6 +397,26 @@ body,
   text-align: left;
 }
 
+/* Answer hard left, points hard right (D14). `space-between` alone does NOT do
+   this: `.qbe-cell-mark` is always present and is an in-flow static child, so a
+   revealed row has THREE flex items and the free space is split into two gaps —
+   which parks the points in the middle of the row rather than at its end. The
+   mark is a zero-width styling surface, so the auto margin is what actually
+   pins the number; it absorbs the free space before `space-between` divides any.
+   Before the answer existed the row had one in-flow child besides the mark and
+   the question never came up. */
+.qbe-board[data-layout="ranked-list"] .qbe-cell-value {
+  margin-inline-start: auto;
+}
+
+/* The revealed ANSWER animates with its points, in all three animations (see
+   §8 below, where `.qbe-cell-text` is now named alongside `.qbe-cell-value` on
+   every `[data-state="revealed"]` rule). Left out, the answer snapped in at
+   opacity 1 while the number eased in over 300ms — one reveal arriving at two
+   different times. Under `flip` it was worse than untidy: `qbe-flip-face`
+   exists to keep face content hidden until the card has turned, so the answer
+   rode through the rotation on the front of a card that had not turned yet. */
+
 /* ==========================================================================
    4. CELLS AND STATES
    Cell state lives in data-state, never a class (theme-contract §2).
@@ -1274,6 +1294,7 @@ body,
   animation: qbe-flip-card var(--anim-duration) var(--anim-easing) 1;
 }
 
+.qbe-stage[data-animation="flip"] .qbe-cell[data-animate="true"][data-state="revealed"] .qbe-cell-text,
 .qbe-stage[data-animation="flip"] .qbe-cell[data-animate="true"][data-state="revealed"] .qbe-cell-value,
 .qbe-stage[data-animation="flip"] .qbe-cell[data-animate="true"][data-state="answered"] .qbe-cell-value,
 .qbe-stage[data-animation="flip"] .qbe-cell[data-animate="true"][data-state="marked"] .qbe-cell-value,
@@ -1309,6 +1330,7 @@ body,
   z-index: 2;
 }
 
+.qbe-stage[data-animation="zoom"] .qbe-cell[data-animate="true"][data-state="revealed"] .qbe-cell-text,
 .qbe-stage[data-animation="zoom"] .qbe-cell[data-animate="true"][data-state="revealed"] .qbe-cell-value,
 .qbe-stage[data-animation="zoom"] .qbe-cell[data-animate="true"][data-state="answered"] .qbe-cell-value,
 .qbe-stage[data-animation="zoom"] .qbe-cell[data-animate="true"][data-state="marked"] .qbe-cell-mark {
@@ -1337,6 +1359,7 @@ body,
     color var(--anim-duration) var(--anim-easing);
 }
 
+.qbe-stage[data-animation="fade"] .qbe-cell[data-animate="true"][data-state="revealed"] .qbe-cell-text,
 .qbe-stage[data-animation="fade"] .qbe-cell[data-animate="true"][data-state="revealed"] .qbe-cell-value,
 .qbe-stage[data-animation="fade"] .qbe-cell[data-animate="true"][data-state="answered"] .qbe-cell-value,
 .qbe-stage[data-animation="fade"] .qbe-cell[data-animate="true"][data-state="marked"] .qbe-cell-mark {

@@ -31,19 +31,21 @@ Counted from the register itself. A register with no rows still gets a line.
 
 | Register | Rows | Open | Closed |
 |---|---|---|---|
-| Decisions (`D`) | 13 | 0 | 13 |
-| Risks (`RR`) | 5 | 0 | 5 |
+| Decisions (`D`) | 14 | 1 | 13 |
+| Risks (`RR`) | 6 | 0 | 6 |
 | Owner items (`O`) | 0 | 0 | 0 |
 | Hooks (`H`) | 0 | 0 | 0 |
-| Mutations (`M`) | 0 | 0 | 0 |
+| Mutations (`M`) | 6 | 0 | 6 |
 | Other (C) (`C`) | 19 | 4 | 15 |
 
 ### By status
 
 | Register | Status | Count |
 |---|---|---|
+| `D` | proposed | 1 |
 | `D` | ratified | 13 |
-| `RR` | ratified | 5 |
+| `RR` | ratified | 6 |
+| `M` | closed | 6 |
 | `C` | done | 15 |
 | `C` | open | 4 |
 
@@ -63,8 +65,9 @@ Every open row in the register. Owner is the row's Owner column where the table 
 | Marty | C15 | P0 | open | Add CI — build, the Safari gate, and whatever the suite becomes |
 | Marty | C16 | P1 | open | Regenerate docs/plans/00-status.md from this repo, or stop generating it here |
 | Marty | C17 | P0 | open | Make the test suite collect — it currently reports green having run nothing |
+| owner | D14 | — | proposed | A cell never prints its QUESTION on the face; it may print its ANSWER. Narrows theme-contract §2's rule that .qbe-cell-t… |
 | — | C11 | — | open | Safari manual test pass — human, maintainer-executed |
 
 ---
 
-4 open register rows.
+5 open register rows.

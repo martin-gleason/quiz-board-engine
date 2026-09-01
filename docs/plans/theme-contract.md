@@ -211,8 +211,8 @@ Emitted by `renderer.js` via `createElement`/`textContent` only. Indentation sho
         .qbe-column
           h2.qbe-column-label              omitted when the column has no label
           button.qbe-cell[data-state][data-cell][data-bonus][data-locked]
+            .qbe-cell-text                 face text; a bingo term, or a REVEALED feud answer
             .qbe-cell-value                the point value; absent when the cell has none
-            .qbe-cell-text                 face text; present ONLY when the cell has no value
             .qbe-cell-mark                 the mark surface (bingo); always present, usually empty
       .qbe-detail[hidden][data-phase]      the opened-cell overlay
         .qbe-detail-prompt
@@ -287,9 +287,24 @@ Two consequences for a theme:
 - `.qbe-board` always exists, even for `ranked-list`; layout differences are expressed by
   `data-layout`, not by different element names.
 - Text content is never empty-but-meaningful: if a value is absent, the element is absent.
-- **`.qbe-cell-text` and `.qbe-cell-value` are mutually exclusive.** A cell has a point value (a
-  jeopardy cell, a feud row) or it has face text (a bingo square), never both. A jeopardy cell's
-  `prompt` is the *question* and is never printed on the face — it appears only in `.qbe-detail`.
+- **A cell never prints its QUESTION on the face; it may print its ANSWER.** A jeopardy cell's
+  `prompt` is the question and appears only in `.qbe-detail`. A bingo square's `prompt` is its
+  term, not a question, so it is on the card from the first paint. A **revealed** feud row prints
+  its `answer` in `.qbe-cell-text` AND its points in `.qbe-cell-value` — the one cell that
+  carries both children. A hidden feud row prints neither, so the reveal is not spoiled.
+- **⚠ THIS AMENDMENT IS `PROPOSED`, NOT RATIFIED.** `D14` is open in `docs/plans/00-register.md`
+  and only the maintainer can ratify it. The code, the themes and the tests on `F9b` are
+  written against the narrowed rule and are green in both browsers, but **§2 is not settled
+  until `D14` is ratified** — a reader arriving here must not take the paragraph above as
+  agreed. If `D14` is rejected, this section reverts to the mutual-exclusion rule and the
+  `F9b` branch goes with it.
+- **Amended by `D14`** (2026-09-01). The rule here used to read *"`.qbe-cell-text` and
+  `.qbe-cell-value` are mutually exclusive… never both"*, and a revealed feud row therefore
+  printed the number `38` and no answer at all, with its accessible name announcing "answer
+  shown". Themes need no change: `.qbe-board[data-layout="ranked-list"] .qbe-cell` was already
+  `flex-direction: row; justify-content: space-between`, a two-child layout waiting for a
+  second child. **DOM order is load-bearing on a ranked list**: text first (left), value second
+  (right).
 - **`.qbe-stage`'s `display` belongs to the renderer, not to a theme.** reveal.js writes it as an
   inline style from `REVEAL_CONFIG.display` (`flex`), so a theme's `display` on that element is
   inert. Style the stage's `flex-direction`, `gap`, `padding` and children freely; do not expect to
