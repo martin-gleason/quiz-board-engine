@@ -7,6 +7,7 @@
   "scoring": { "model": "accumulate", "allowNegative": false },
   "winCondition": "highest-score",
   "bonus": { "count": 0, "multiplier": 1 },
+  "strikes": { "count": 3 },
   "gridConstraints": { "uniformRows": false },
   "requiredCellFields": ["answer", "value"]
 }

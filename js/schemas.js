@@ -143,6 +143,9 @@ export const PATTERNS = Object.freeze({
   gameName: /^[A-Za-z0-9][A-Za-z0-9 _-]{0,63}$/,
   gameFile: /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\.json$/,
   cellKey: /^\d+:\d+$/, // plan Q7: "<columnIndex>:<rowIndex>", both zero-based, column first
+  // `D15`. The strikes map is keyed by COLUMN alone — strikes belong to a round, and a round is
+  // a column (`D17`). Deliberately not `cellKey`: a strike is not attached to any one answer.
+  columnKey: /^\d+$/,
   sha256Hex: /^[0-9a-f]{64}$/,
   iso8601Utc: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/,
 });
@@ -369,6 +372,19 @@ const gametypeV1 = obj({
         multiplier: num({ min: 0, max: 100, expected: 'a number between 0 and 100', hint: 'out-of-range' }),
       }),
     }),
+    // `D15`. Strikes are a GAME-TYPE economy, like bonus above and for the same reason (spec §4.2):
+    // how many strikes a round allows is a property of the game, never of one board's content.
+    //
+    // ABSENT MEANS NO STRIKES AT ALL — jeopardy and bingo simply omit it, exactly as
+    // `scoring.model: "none"` means no score bar rather than an empty one. That is why there is no
+    // `count: 0` idiom here: absence is the switch, and `M10` is the mutation that proves a game
+    // type without this block draws no strike surface.
+    strikes: obj({
+      expected: 'a strikes object',
+      fields: Object.freeze({
+        count: int({ min: 1, max: 10, expected: 'a whole number from 1 to 10', hint: 'out-of-range' }),
+      }),
+    }),
     gridConstraints: obj({
       expected: 'a gridConstraints object',
       fields: Object.freeze({
@@ -537,6 +553,20 @@ const stateV1 = obj({
     // feature. Structurally it is only bounded by the column cap here; that it addresses a column
     // this BOARD actually has is a contract check (`CROSS_CHECKS.currentRoundExists`), because
     // only the content file knows how many columns there are.
+    // `D15`. Strikes per round. Keys are column indices as strings, values are counts.
+    //
+    // The CAP is a contract check, not a structural one, for the same reason `currentRound`'s is:
+    // the schema knows the column cap but not how many strikes THIS game type allows, and only the
+    // game-type file carries that. `M9` is the mutation for the untrusted-input path — an imported
+    // `{"0": 99}` must reach the error screen, never a board wearing 99 marks.
+    strikes: Object.freeze({
+      kind: 'map',
+      keyPattern: PATTERNS.columnKey,
+      maxEntries: LIMITS.maxColumns,
+      expected: 'an object whose keys are column indices and whose values are strike counts',
+      hint: 'bad-key-format',
+      values: int({ min: 0, max: 10, expected: 'a whole number from 0 to 10', hint: 'out-of-range' }),
+    }),
     currentRound: int({
       min: 0,
       max: LIMITS.maxColumns - 1,
@@ -604,6 +634,14 @@ export const CROSS_CHECKS = Object.freeze({
   // claiming round 7 of a three-round board must reach the error screen rather than a blank board
   // — with one round on screen at a time, an out-of-range round renders NOTHING, which reads as a
   // broken app rather than as bad data.
+  // `D15`. Two questions the schema cannot answer alone: does this column exist on THIS board, and
+  // does this count fit the game type's own `strikes.count`? Both need a file the state does not
+  // carry, so both live here.
+  stateStrikesInBounds: Object.freeze({
+    hint: 'out-of-range',
+    describe: 'Each strikes key must address a column on the board, and each value must not exceed the game type\'s strikes.count.',
+    pathShape: 'strikes["<c>"]',
+  }),
   stateCurrentRoundInBounds: Object.freeze({
     hint: 'out-of-range',
     describe: 'currentRound must address a column that exists on the board.',

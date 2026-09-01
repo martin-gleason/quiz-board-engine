@@ -821,6 +821,41 @@ export function validateState({ raw, bundle }) {
     }
   }
 
+  // --- CROSS_CHECKS.stateStrikesInBounds ----------------------------------------------
+  // `D15`. Two bounds the structural stage could not check, because both need a file the state
+  // does not carry: the column must exist on THIS board, and the count must fit THIS game type's
+  // `strikes.count`. `M9` is the mutation — an imported `{"0": 99}` must reach the error screen
+  // rather than a board wearing 99 marks.
+  //
+  // A game type with no `strikes` block allows none at all, so ANY entry is out of bounds there.
+  // That is the honest reading of absence-as-the-switch: a jeopardy session carrying strikes was
+  // not written by this app against this game type, and quietly dropping the field would be the
+  // partial-render behaviour spec §5 forbids.
+  const strikeCap = bundle.gametype.strikes ? bundle.gametype.strikes.count : 0;
+  for (const key of Object.keys(state.strikes || {})) {
+    const column = Number(key);
+    if (!Number.isInteger(column) || column >= bundle.resolved.columnCount) {
+      contractFail(
+        file, KINDS.STATE, 'strikes["' + key + '"]',
+        'a column that exists on this board (' + bundle.resolved.columnCount + ' column'
+          + (bundle.resolved.columnCount === 1 ? '' : 's') + ')',
+        'the key ' + JSON.stringify(key), 'out-of-range', out,
+      );
+      continue;
+    }
+    const value = state.strikes[key];
+    if (value > strikeCap) {
+      contractFail(
+        file, KINDS.STATE, 'strikes["' + key + '"]',
+        strikeCap === 0
+          ? 'no strikes at all — the "' + bundle.gametype.id + '" game type does not use them'
+          : 'at most ' + strikeCap + ' strikes, which is what the "' + bundle.gametype.id
+            + '" game type allows',
+        describeValue(value), 'out-of-range', out,
+      );
+    }
+  }
+
   // --- CROSS_CHECKS.stateCurrentRoundInBounds -----------------------------------------
   // `D17`. The structural stage capped this at the COLUMN CAP (12), which is all a schema can know
   // without the content file. Whether round 7 exists on THIS board is a contract question.

@@ -511,6 +511,9 @@ export function newSession({ bundle, gameHash, teams, bonusCells }) {
     // absent so an exported file says what it means; `undefined` is still accepted on the way in,
     // because sessions saved before D17 have no such field and must keep loading.
     currentRound: 0,
+    // `D15`. Empty, not pre-seeded with a zero per column: absent means none, and a board that has
+    // taken no strikes should export a file that says nothing about strikes.
+    strikes: {},
   };
 }
 
@@ -996,6 +999,54 @@ export function setRound(bundle, index) {
   return update((draft) => {
     draft.currentRound = next;
   });
+}
+
+/**
+ * Strikes for one round (`D15`).
+ *
+ * `strikeCap` is the game type's own `strikes.count`, and a game type that declares no `strikes`
+ * block has a cap of ZERO — so `addStrike` on a jeopardy board is a no-op rather than a failure,
+ * the same shape `adjustScore` already uses for `scoring.model === 'none'`. A game type that does
+ * not use a mechanic simply has no control for it, and a host cannot reach one.
+ *
+ * THE CAP IS ENFORCED HERE, not in the renderer, and that is `M7`: a fourth strike must be
+ * unrecordable rather than merely undrawn. If the cap lived in the drawing code, the session would
+ * quietly carry a 4 that the room never saw, it would survive export, and it would come back on
+ * import as a state its own schema rejects.
+ */
+function strikeCap(bundle) {
+  const g = bundle && bundle.gametype;
+  return g && g.strikes && Number.isInteger(g.strikes.count) ? g.strikes.count : 0;
+}
+
+export function addStrike(bundle, column) {
+  const cap = strikeCap(bundle);
+  if (cap === 0) return current();
+  const key = String(column);
+  return update((draft) => {
+    if (!draft.strikes) draft.strikes = {};
+    const now = Number.isInteger(draft.strikes[key]) ? draft.strikes[key] : 0;
+    draft.strikes[key] = Math.min(now + 1, cap);
+  });
+}
+
+/**
+ * Wipe a round's strikes. The field is DELETED rather than set to zero, because absent-means-none
+ * is the idiom everywhere else in this file — an exported session should not carry a row of zeroes
+ * for rounds nobody played.
+ */
+export function clearStrikes(column) {
+  const key = String(column);
+  return update((draft) => {
+    if (draft.strikes) delete draft.strikes[key];
+  });
+}
+
+/** How many strikes a round currently has. Zero for a game type that does not use them. */
+export function strikesFor(session, column) {
+  if (!session || !session.strikes) return 0;
+  const n = session.strikes[String(column)];
+  return Number.isInteger(n) ? n : 0;
 }
 
 export function setTeams(names) {

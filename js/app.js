@@ -519,12 +519,59 @@ function startGame(ctx) {
     onImport: (file) => importSession(ctx, file),
   };
   if (ctx.panel) toolbarHandlers.onTeamsEdit = () => showTeamSetup(ctx, { editing: true });
+  // `D15`/`D17`. Both gates read the game type, so jeopardy and bingo get neither control — the
+  // renderer leaves a button out entirely when its handler is absent.
+  if (bundle.gametype.strikes) {
+    toolbarHandlers.onStrike = () => strikeRound(ctx);
+    toolbarHandlers.onStrikesClear = () => state.clearStrikes(currentRound(ctx));
+  }
+  if (bundle.gametype.layout === 'ranked-list') {
+    toolbarHandlers.onRoundNext = () => state.setRound(ctx.bundle, currentRound(ctx) + 1);
+  }
   ctx.toolbar = renderer.renderToolbar({ mount: stage, handlers: toolbarHandlers });
+  bindStrikeKey(ctx);
 
   // Not unsubscribed anywhere, and that is correct rather than a leak: the document holds exactly
   // one game for its whole life, and the subscriber dies with the page.
   state.subscribe((next) => repaint(ctx, next));
   repaint(ctx, session);
+}
+
+/** The round the live session is on. Zero when there is no session yet, which is the safe default. */
+function currentRound(ctx) {
+  const session = state.current();
+  return session && Number.isInteger(session.currentRound) ? session.currentRound : 0;
+}
+
+/** Record a strike against the round on screen (`D15`). */
+function strikeRound(ctx) {
+  state.addStrike(ctx.bundle, currentRound(ctx));
+}
+
+/**
+ * The `X` key (`D15`, ratified with the delta).
+ *
+ * Plan Q12 fixed a deliberately small key budget — `Escape`, `Space`, `Enter` — and this widens it
+ * by exactly one key, which is a decision the maintainer made rather than an implementation detail.
+ *
+ * THREE GUARDS, and each one is a real case rather than defensive habit:
+ *   · a game type with no `strikes` block has no strike to record;
+ *   · the overlay being up means the host is reading a prompt to the room, and `X` there would
+ *     strike a round while the answer is on screen — the detail overlay owns the keyboard while it
+ *     is open, exactly as it owns `Escape`;
+ *   · a modifier held means the host is using a browser shortcut (⌘X, Ctrl+X), not calling a
+ *     strike, and stealing Cut from a host editing a team name would be its own defect.
+ */
+function bindStrikeKey(ctx) {
+  if (!ctx.bundle.gametype.strikes) return;
+  ctx.doc.addEventListener('keydown', (event) => {
+    if (event.key !== 'x' && event.key !== 'X') return;
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    if (ctx.board && ctx.board.open) return;
+    if (ctx.screen) return; // a setup or resume overlay is up
+    event.preventDefault();
+    strikeRound(ctx);
+  });
 }
 
 /** The single repaint. `null` arrives when the live session is discarded; there is nothing to draw. */
@@ -538,11 +585,22 @@ function repaint(ctx, session) {
   // knows every win it inherited, and the renderer seeds its rail from it silently instead of
   // announcing a pile of wins the room watched happen an hour ago.
   if (ctx.wins) renderer.updateWins(ctx.wins, state.completedPatterns({ bundle: ctx.bundle, session }));
+
+  // `D15`/`D17`. The round on screen and the strikes over it are both derived from the session on
+  // every repaint, never tracked alongside it. That is what makes an IMPORTED session correct for
+  // free: a file carrying `currentRound: 2` and two strikes repaints into exactly that board with
+  // no separate import path to keep in step.
+  const round = Number.isInteger(session.currentRound) ? session.currentRound : 0;
+  if (ctx.board) {
+    renderer.setRound(ctx.board, round);
+    renderer.updateStrikes(ctx.board, state.strikesFor(session, round));
+  }
   if (ctx.panel) {
     renderer.updateScorePanel(ctx.panel, {
       session,
       award: ctx.awardKey ? state.cellAward({ bundle: ctx.bundle, session, cellKey: ctx.awardKey }) : 0,
       activeTeam: ctx.activeTeam,
+      strikes: state.strikesFor(session, round),
     });
   }
 }
