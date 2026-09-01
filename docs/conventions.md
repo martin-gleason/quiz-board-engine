@@ -1,5 +1,5 @@
 <!-- VENDORED from code-process-review/conventions.md — DO NOT EDIT.
-     pinned-sha256: 04a7951d84183979751df356327078a6b97877437cf6ac9fa4755f712395063d
+     pinned-sha256: be49aa0e6cbcdcc36f95475cc3956fd429e5917cbd6feca4d17698e0914c41f7
      Project-local rules belong in docs/conventions-local.md (D24).
      Fix upstream, then re-vendor: python3 scripts/vendor.py <project> -->
 
@@ -334,6 +334,35 @@ an obscure corner of an API — a project ratified "Pages serves a subdirectory 
 when branch-based GitHub Pages offers exactly two paths, a limit the owner already knew. An
 unfamiliar system prompts caution; a familiar one produces a confident sentence, and a
 register cannot tell confidence from knowledge.
+
+### When a rule and the need disagree, name the disagreement and ask
+
+**Ratified 2026-09-01.** The agent's other rule about questions is a limit: ask only when
+the answer is not already written down, changes what gets built, and cannot be settled by
+investigation. That rule exists because a careless question costs the owner a context
+switch in a review slot pinned to a fixed afternoon.
+
+**This is the case where asking is required rather than permitted**, and it passes all three
+tests by construction: a conflict between a rule and the evident purpose is written down
+nowhere, changes what gets built, and cannot be investigated — it is a question about what
+the owner wants.
+
+Both silent resolutions are wrong. **Follow the rule and the project suffers**; a learning
+project whose agent writes all the code teaches nobody. **Follow the need and the rule
+erodes** with nobody deciding it should — which is how twelve conventions copies became
+twelve paraphrases.
+
+So: **state both sides, say which you would pick and why, and stop.** In the owner's own
+framing — *"what is the learning floor? The owner wants to learn, but a discrepancy exists.
+Let me ask."*
+
+The case that produced this: the learning dial's language overlay says a weak language
+biases toward the floor, meaning the agent authors. The project was a SQL tutor for an owner
+learning SQL. The rule and the reason the project exists pointed in opposite directions, and
+the disagreement was worth more than either answer.
+
+**Expectations set at the gate are cheaper than expectations discovered at the review.** A
+question here costs one round trip. The alternative costs a feature.
 
 ### A claim recorded before it is verified says so in the sentence that records it
 
