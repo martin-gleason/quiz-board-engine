@@ -33,22 +33,21 @@ Counted from the register itself. A register with no rows still gets a line.
 
 | Register | Rows | Open | Unknown | Closed |
 |---|---|---|---|---|
-| Decisions (`D`) | 16 | 2 | 0 | 14 |
+| Decisions (`D`) | 17 | 0 | 0 | 17 |
 | Risks (`RR`) | 6 | 0 | 0 | 6 |
 | Owner items (`O`) | 0 | 0 | 0 | 0 |
 | Hooks (`H`) | 0 | 0 | 0 | 0 |
-| Mutations (`M`) | 12 | 6 | 0 | 6 |
+| Mutations (`M`) | 14 | 8 | 0 | 6 |
 | Other (C) (`C`) | 19 | 4 | 0 | 15 |
 
 ### By status
 
 | Register | Status | Count |
 |---|---|---|
-| `D` | proposed | 2 |
-| `D` | ratified | 14 |
+| `D` | ratified | 17 |
 | `RR` | ratified | 6 |
 | `M` | closed | 6 |
-| `M` | open | 6 |
+| `M` | open | 8 |
 | `C` | done | 15 |
 | `C` | open | 4 |
 
@@ -68,14 +67,14 @@ Every open row in the register. Owner is the row's Owner column where the table 
 | Marty | C15 | P0 | open | Add CI — build, the Safari gate, and whatever the suite becomes |
 | Marty | C16 | P1 | open | Regenerate docs/plans/00-status.md from this repo, or stop generating it here |
 | Marty | C17 | P0 | open | Make the test suite collect — it currently reports green having run nothing |
-| owner | D15 | — | proposed | Strikes are modelled in the engine; the steal stays host-mediated. Spec §10 F9 scopes feud to a reveal board and says st… |
-| owner | D16 | — | proposed | theme-contract §2 gains .qbe-strikes and .qbe-team-strikes, §4 their tokens. Follows from D15: strikes need a surface. T… |
 | unassigned | M7 | — | open | addStrike does not cap at the game type's strikes.count — a fourth strike is recordable. |
 | unassigned | M8 | — | open | Strikes key off the board rather than the column, so Round 2 inherits Round 1's strikes. |
 | unassigned | M9 | — | open | An imported "strikes": {"0": 99} is accepted unvalidated and renders 99 marks. |
 | unassigned | M10 | — | open | .qbe-strikes renders for a game type that declares no strikes block. |
 | unassigned | M11 | — | open | The centre overlay draws marks with no accessible name, so the count is invisible to a screen reader. |
 | unassigned | M12 | — | open | The marks are styled only in default.css, so a themed board shows nothing. |
+| unassigned | M13 | — | open | currentRound is held in view state instead of the session, so a mid-show reload returns to Round 1 with the scores intac… |
+| unassigned | M14 | — | open | Non-active rounds are hidden with CSS alone, so their cells stay in the accessibility tree and reachable by Tab — a keyb… |
 | — | C11 | — | open | Safari manual test pass — human, maintainer-executed |
 
 ---
