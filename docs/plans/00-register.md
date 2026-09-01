@@ -81,6 +81,7 @@ days on the owner's track.
 | C15 | Add CI — build, the Safari gate, and whatever the suite becomes | P0 | open | Marty | — | closes `RR1` |
 | C16 | Regenerate `docs/plans/00-status.md` from this repo, or stop generating it here | P1 | open | Marty | — | closes `RR2` |
 | C17 | Make the test suite collect — it currently reports green having run nothing | P0 | open | Marty | — | closes `RR3` |
+| C18 | Track the v2.0 draft spec in git — `docs/specs/quiz-board-engine-spec-v2-draft-r2.md`. Draft, not frozen: v1 remains the contract until the §8 red-team gate resolves. | P2 | done | agent | — | — |
 
 ## Gates (G)
 
