@@ -1,5 +1,5 @@
 <!-- VENDORED from code-process-review/conventions.md — DO NOT EDIT.
-     pinned-sha256: be49aa0e6cbcdcc36f95475cc3956fd429e5917cbd6feca4d17698e0914c41f7
+     pinned-sha256: 2c1c437c9606efacece90bb5110b7a9b91f018e00a9aab342b30f5e5ded70427
      Project-local rules belong in docs/conventions-local.md (D24).
      Fix upstream, then re-vendor: python3 scripts/vendor.py <project> -->
 
@@ -160,6 +160,14 @@ a design system has a numbered series, and most name the file after the product 
 `SPEC.md`. The earlier rule named `docs/specs/SPEC.md` exactly, and nine of twelve projects
 ignored it for a good reason. A rule the corpus routinely and correctly breaks is a rule
 that was written wrong; it was corrected rather than enforced.
+
+**The documentation root is `docs/`, and where a build tool claims that directory the build
+moves — not the documentation.** Ratified 2026-09-01. Quarto defaults to `_site` and an R project
+template ignores `docs/` wholesale; a project that had set `output-dir: docs` would have had its
+register written somewhere it could never be committed and wiped on the next render. The rejected
+alternative was a per-project documentation-root setting: a checker that must ask each project
+where its docs live cannot answer *"is this project compliant"* without trusting a field the
+project sets itself. These conventions are worth having because the path is the same in every repo.
 
 **The vendored copy is never edited — that is what makes it checkable.** A project's own
 rules go in `docs/conventions-local.md`, which `CLAUDE.md` `@import`s alongside the pinned
