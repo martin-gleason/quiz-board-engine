@@ -1037,6 +1037,17 @@ export function addStrike(bundle, column, teamIndex) {
   const col = String(column);
   const team = String(teamIndex);
   return update((draft) => {
+    // BOUNDED ABOVE as well as below. `validator.stateStrikesInBounds` checks the upper bound on
+    // the way IN; without the same check here the engine could write what it would refuse to read,
+    // which is exactly the shape of the defect `setTeams` above now prevents. A stale
+    // `ctx.activeTeam` pointing past a shrunken roster is the reachable path.
+    if (!Array.isArray(draft.teams) || teamIndex >= draft.teams.length) return;
+    // AND BOUNDED AGAINST THE BOARD. The column check was missing until a new assertion revalidated
+    // a session after writing to it and found strikes parked on a round `demo-feud.json` does not
+    // have — the engine writing what `stateStrikesInBounds` would refuse to read, the same defect
+    // as the team bound above and reachable by exactly one bad caller.
+    const columns = bundle.resolved ? bundle.resolved.columnCount : 0;
+    if (!Number.isInteger(column) || column < 0 || column >= columns) return;
     if (!draft.strikes) draft.strikes = {};
     if (!draft.strikes[col]) draft.strikes[col] = {};
     const now = Number.isInteger(draft.strikes[col][team]) ? draft.strikes[col][team] : 0;
@@ -1105,6 +1116,30 @@ export function setTeams(names) {
       if (was && Number.isInteger(was.score)) next[i].score = was.score;
     }
     draft.teams = next;
+
+    // STRIKES ARE CARRIED THE SAME WAY THE SCORES ABOVE ARE, and this is a data-loss fix rather
+    // than tidiness. `D18` keyed strikes by team INDEX on the argument that "`setTeams` carries
+    // scores by index for the same reason" — but scores are carried BY THIS FUNCTION, and strikes
+    // were carried by nothing. Clearing a box to drop the third of three teams left `strikes` with
+    // an entry under key "2" and a two-team roster: a document the engine had just written and
+    // `validator.stateStrikesInBounds` would then refuse to read.
+    //
+    // What that cost, driven through the real UI: the resume shelf still LISTS the session
+    // (`summaryOf` reads only the title and timestamp), the host clicks Resume, and gets the error
+    // screen. Scores, opened cells and the current round are unreachable, and the only other
+    // control on that screen is Discard. A supported edit, mid-show, and the game is gone.
+    //
+    // Trimming rather than remapping is deliberate: a team that is gone has no strikes, and the
+    // index that outlived it now belongs to somebody else, who did not earn them.
+    if (draft.strikes) {
+      for (const column of Object.keys(draft.strikes)) {
+        const perTeam = draft.strikes[column];
+        for (const teamKey of Object.keys(perTeam)) {
+          if (Number(teamKey) >= next.length) delete perTeam[teamKey];
+        }
+        if (Object.keys(perTeam).length === 0) delete draft.strikes[column];
+      }
+    }
   });
 }
 
