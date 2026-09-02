@@ -833,8 +833,13 @@ export function validateState({ raw, bundle }) {
   // partial-render behaviour spec §5 forbids.
   const strikeCap = bundle.gametype.strikes ? bundle.gametype.strikes.count : 0;
   for (const key of Object.keys(state.strikes || {})) {
+    // CANONICAL FORM, not merely numeric. `/^\d+$/` admits "00", which passes both stages and then
+    // addresses nothing: `strikesFor` reads `strikes["0"]`, so an imported session SAYING three
+    // strikes on round 0 renders zero, and the next X writes a second, separate key. Accept-or-
+    // reject is the validator's contract; silently displaying something other than what the file
+    // says is the one outcome it must not produce. Found in adversarial review.
     const column = Number(key);
-    if (!Number.isInteger(column) || column >= bundle.resolved.columnCount) {
+    if (!Number.isInteger(column) || String(column) !== key || column >= bundle.resolved.columnCount) {
       contractFail(
         file, KINDS.STATE, 'strikes["' + key + '"]',
         'a column that exists on this board (' + bundle.resolved.columnCount + ' column'

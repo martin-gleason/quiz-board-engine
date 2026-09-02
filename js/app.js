@@ -525,7 +525,10 @@ function startGame(ctx) {
     toolbarHandlers.onStrike = () => strikeRound(ctx);
     toolbarHandlers.onStrikesClear = () => state.clearStrikes(currentRound(ctx));
   }
-  if (bundle.gametype.layout === 'ranked-list') {
+  // A ONE-COLUMN RANKED BOARD HAS NOWHERE TO GO, and `games/demo-feud.json` is exactly that — so
+  // the button shipped permanently dead on the only board that had it, contradicting the rule
+  // stated in `renderToolbar` three lines above where it is built. Found in adversarial review.
+  if (bundle.gametype.layout === 'ranked-list' && bundle.resolved.columnCount > 1) {
     toolbarHandlers.onRoundNext = () => state.setRound(ctx.bundle, currentRound(ctx) + 1);
   }
   ctx.toolbar = renderer.renderToolbar({ mount: stage, handlers: toolbarHandlers });
@@ -567,6 +570,11 @@ function bindStrikeKey(ctx) {
   ctx.doc.addEventListener('keydown', (event) => {
     if (event.key !== 'x' && event.key !== 'X') return;
     if (event.metaKey || event.ctrlKey || event.altKey) return;
+    // A HELD KEY IS ONE STRIKE, NOT THIRTY. The count is capped, so auto-repeat was harmless on
+    // screen — and underneath it ran a clone, a cheap-check, a localStorage write and a full board
+    // repaint per repeat, each one bumping `updatedAt`, which is what the resume shelf sorts and
+    // prunes on. Efficiency, found in adversarial review.
+    if (event.repeat) return;
     if (ctx.board && ctx.board.open) return;
     if (ctx.screen) return; // a setup or resume overlay is up
     event.preventDefault();

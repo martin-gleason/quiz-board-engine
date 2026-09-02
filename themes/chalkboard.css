@@ -40,6 +40,12 @@
   /* --- Surface ---------------------------------------------------------- */
   /* Slate green, lifted just off black so chalk lines have air behind them. */
   --board-bg: #2a3b33;
+  /* Strikes (D16). The base layer's deep red is tuned for a LIGHT board and
+     measures under the 3:1 large-text floor on this ground — 2.74:1 on
+     midnight, 1.63:1 on chalkboard — so a dark theme has to state its own.
+     --strike-team-color is NOT overridden: the score bar is dark in every
+     shipped theme, so the base value already passes there. */
+  --strike-color: #ff8a80;        /* 5.19:1 on this theme's ground (AA large ✓) */
   --board-fg: #f2efe2;               /* 10.28:1 on --board-bg (AAA) */
   /* Roomier gutters than default: drawn boxes need whitespace to read as
      separate drawings rather than a table. */

@@ -1595,6 +1595,77 @@ async function runRenderSuite() {
     // that actually exercises it.
     assertContract('demo-feud.json (resumed, rows revealed)', resumedFeud);
 
+    // ---- THE TWO NEW CROSS-CHECKS, EXERCISED (D15 / D17) --------------------------------------
+    //
+    // WHY THIS BLOCK EXISTS. Adversarial review disabled BOTH `stateStrikesInBounds` and
+    // `stateCurrentRoundInBounds` outright — replaced the strikes loop with `for (const key of [])`
+    // and prefixed the round check with `false &&` — and the suite stayed at PASS 405/405. Two
+    // validator rules could be deleted whole without a single assertion noticing, while the
+    // register recorded them as covered. The checkpoints in the plan claimed the error screen; only
+    // the code was ever true, never the evidence.
+    //
+    // Driven through `validator.validateState` directly, with a real bundle, because that is the
+    // one seam every untrusted-state path goes through (`app.js` resume AND import both land here).
+    const feudForChecks = await fileBundle('games/demo-feud.json');
+    if (!feudForChecks.ok) {
+      record('state', 'the feud bundle loads for the cross-check assertions', false, 'it did not');
+    } else {
+      const stateDoc = (strikes, currentRound) => {
+        const data = {
+          schemaVersion: 1, appVersion: '1.0.0', gameHash: 'a'.repeat(64),
+          gameTitle: 'Cross-check probe', createdAt: '2026-09-01T10:00:00Z',
+          updatedAt: '2026-09-01T10:00:00Z', teams: [], cellStates: {}, bonusCells: [],
+        };
+        if (strikes !== undefined) data.strikes = strikes;
+        if (currentRound !== undefined) data.currentRound = currentRound;
+        return { path: 'probe', kind: KINDS.STATE, text: JSON.stringify(data), data };
+      };
+      const judge = (strikes, currentRound, bundle) =>
+        validator.validateState({ raw: stateDoc(strikes, currentRound), bundle: bundle || feudForChecks.value });
+
+      // OVER THE GAME TYPE'S CAP. Deliberately 4, not 99: 99 is refused by the STRUCTURAL `max: 10`
+      // in schemas.js and never reaches the contract stage at all — which is what the plan's own
+      // M9 got wrong. 4 is the smallest value only this cross-check can reject.
+      const over = judge({ '0': 4 });
+      record('state', 'an imported session with more strikes than the game type allows is refused',
+        !over.ok && over.failures.some((f) => f.path === 'strikes["0"]'),
+        over.ok ? 'ACCEPTED four strikes on a game type whose cap is three'
+          : over.failures.map((f) => f.path + ': ' + f.message).join(' | ').slice(0, 180));
+
+      const offBoard = judge({ '5': 1 });
+      record('state', 'an imported session with strikes on a column the board does not have is refused',
+        !offBoard.ok && offBoard.failures.some((f) => f.path === 'strikes["5"]'),
+        offBoard.ok ? 'ACCEPTED strikes on column 5 of a one-column board'
+          : offBoard.failures.map((f) => f.message).join(' | ').slice(0, 160));
+
+      // Absence is the switch, so a jeopardy session carrying ANY strike entry is out of bounds —
+      // but an EMPTY map is not an entry and must still load, or every session written before D15
+      // becomes an error screen.
+      const onJeopardy = judge({ '0': 1 }, undefined, demo.value);
+      const emptyOnJeopardy = judge({}, undefined, demo.value);
+      record('state', 'strikes on a game type that declares none are refused, but an empty map still loads',
+        !onJeopardy.ok && emptyOnJeopardy.ok,
+        'a jeopardy session with {"0":1} was ' + (onJeopardy.ok ? 'ACCEPTED' : 'refused')
+        + '; with {} it was ' + (emptyOnJeopardy.ok ? 'accepted, as it must be' : 'REFUSED'));
+
+      // A non-canonical key passes both `/^\d+$/` and `Number()`, then addresses nothing: the
+      // session SAYS three strikes on round 0 and renders zero.
+      const leadingZero = judge({ '00': 3 });
+      record('state', 'a non-canonical column key ("00") is refused rather than silently ignored',
+        !leadingZero.ok,
+        leadingZero.ok ? 'ACCEPTED "00", which strikesFor() then reads as nothing'
+          : 'refused: ' + leadingZero.failures.map((f) => f.message).join(' | ').slice(0, 150));
+
+      // D17's half. demo-feud.json has ONE column, so round 1 is already off the end.
+      const badRound = judge(undefined, 1);
+      const goodRound = judge(undefined, 0);
+      record('state', 'an imported session naming a round the board does not have is refused',
+        !badRound.ok && badRound.failures.some((f) => f.path === 'currentRound') && goodRound.ok,
+        badRound.ok ? 'ACCEPTED currentRound 1 on a one-column board'
+          : badRound.failures.map((f) => f.message).join(' | ').slice(0, 170)
+            + '; currentRound 0 was ' + (goodRound.ok ? 'accepted' : 'WRONGLY REFUSED'));
+    }
+
     // ---- STRIKES (D15 / D16) --------------------------------------------------------------------
     //
     // Two surfaces and one number. The number lives in the session, so the display assertions here
@@ -2385,14 +2456,87 @@ async function runThemeGeometrySuite() {
       return;
     }
 
+    // Read once, used by every iteration's contrast assertion. `stripCssComments` matters: the
+    // token blocks in these files carry their measured ratios in comments, and a naive regex would
+    // happily match a hex value quoted inside one.
+    const fetchText = async (path) => {
+      try {
+        const res = await fetch(path + '?v=' + Date.now(), { cache: 'no-store' });
+        return res.ok ? stripCssComments(await res.text()) : null;
+      } catch (_err) {
+        return null;
+      }
+    };
+    const baseCss = await fetchText(THEMES_DIR + 'default.css');
+
     for (const { name, file } of registered) {
-      link.setAttribute('href', THEMES_DIR + file);
+      // CACHE-BUSTED, like every other fetch in this file. Without it the iframe reuses a theme
+      // stylesheet from an earlier run, and a contrast assertion then measures the colours the
+      // file used to have — which is exactly how the first pass of the strike-contrast check
+      // reported five failures against values that were no longer on disk.
+      link.setAttribute('href', THEMES_DIR + file + '?v=' + Date.now());
       const loaded = await waitForSheet(doc, file);
       const sheets = [...doc.styleSheets].map((s) => (s.href || '(inline)').split('?')[0]);
       const baseIndex = sheets.findIndex((h) => /themes\/default\.css$/.test(h));
       const selectedIndex = sheets.map((h, i) => ({ h, i }))
         .filter(({ h }) => new RegExp('themes/' + file.replace('.', '\\.') + '$').test(h))
         .map(({ i }) => i).pop();
+      // ---- THE STRIKE MARKS, IN EVERY REGISTERED THEME (D16) -----------------------------------
+      //
+      // THIS IS WHERE M12's ASSERTION BELONGED. The one written first sat in the per-GAME block,
+      // measured a single theme, and checked only that a mark was at least 24x24 — so it closed a
+      // mutation it could not see. Adversarial review then measured the shipped colours: 1.63:1 on
+      // chalkboard, 2.45:1 on marquee, 2.74:1 on midnight, which is the theme demo-feud.json loads.
+      //
+      // COMPUTED FROM THE FILES, not from the live document, and that is the second lesson. A DOM
+      // probe was tried and produced numbers that could not both be true — 16.50:1 for a mark and
+      // 2.74:1 for its border, from one custom property — because the mark's colour lives on an
+      // `::after` pseudo-element (so `getComputedStyle(el).color` read inherited text) and because
+      // the first loop iteration races the stylesheet swap it is measuring. Reading the cascade
+      // the two files actually declare is deterministic, and it checks exactly the claim every
+      // contrast comment in `themes/default.css` makes.
+      const themeCss = await fetchText(THEMES_DIR + file);
+      const tokenOf = (prop) => {
+        const own = themeCss && themeCss.match(new RegExp(prop + ':\\s*([^;/]+)'));
+        if (own) return own[1].trim();
+        const base = baseCss && baseCss.match(new RegExp(prop + ':\\s*([^;/]+)'));
+        return base ? base[1].trim() : null;
+      };
+      const hex = (v) => (v && /^#[0-9a-fA-F]{6}$/.test(v) ? [1, 3, 5].map((i) => parseInt(v.slice(i, i + 2), 16)) : null);
+      // --strike-slot-border derives from --strike-color, so resolve one level of var().
+      const resolve = (prop) => {
+        const raw = tokenOf(prop);
+        const m = raw && raw.match(/var\(\s*(--[a-z-]+)\s*\)/);
+        return hex(m ? tokenOf(m[1]) : raw);
+      };
+
+      // NOT `board`: that name is the booted board ELEMENT in the enclosing scope, and shadowing it
+      // made `assertShellGeometry` throw on a colour array. The exception rejected the suite's
+      // promise, and the page then sat on "Running…" forever with no report — which reads as a hang
+      // rather than as a failure, and cost more time than the bug did.
+      const boardGround = hex(tokenOf('--board-bg'));
+      const scoreBg = hex(tokenOf('--score-bg'));
+      const markC = resolve('--strike-color');
+      const teamC = resolve('--strike-team-color');
+      const slotC = resolve('--strike-slot-border');
+
+      if (!boardGround || !scoreBg || !markC || !teamC || !slotC) {
+        record('shell', `theme "${name}": the strike marks meet WCAG 2.1 AA contrast`, false,
+          'a strike or ground token could not be resolved from the theme cascade');
+      } else {
+        const markRatio = contrastRatio(markC, boardGround);
+        const teamRatio = contrastRatio(teamC, scoreBg);
+        const slotRatio = contrastRatio(slotC, boardGround);
+        // The band is unambiguously large text (min 2rem); the score bar's marks compute to ~17.6px,
+        // so they carry the body-text floor. The empty slot is a non-text boundary and is
+        // load-bearing: it is how the room sees how many strikes REMAIN.
+        record('shell', `theme "${name}": the strike marks meet WCAG 2.1 AA contrast`,
+          markRatio >= 3 && teamRatio >= 4.5 && slotRatio >= 3,
+          `band mark ${markRatio.toFixed(2)}:1 on --board-bg (needs 3:1 large), score-bar mark `
+          + `${teamRatio.toFixed(2)}:1 on --score-bg (needs 4.5:1), empty slot `
+          + `${slotRatio.toFixed(2)}:1 on --board-bg (needs 3:1 non-text)`);
+      }
+
       record('shell', `theme "${name}": default.css is the base layer under themes/${file}`,
         loaded && baseIndex !== -1 && selectedIndex !== undefined && baseIndex <= selectedIndex,
         !loaded ? `themes/${file} never parsed into document.styleSheets`
@@ -2627,6 +2771,53 @@ async function runShellSuite() {
 // ---------------------------------------------------------------------------------------------
 
 /** The .qbe-* classes the renderer promises to emit, parsed out of theme-contract §2's DOM block. */
+/**
+ * WCAG 2.1 relative luminance and contrast ratio, from the sRGB formula rather than eyeballed.
+ *
+ * Exists because the F9c review measured the strike marks at 1.63:1 on chalkboard and 2.74:1 on
+ * midnight — the theme `games/demo-feud.json` actually ships on — while the suite was green. Every
+ * contrast claim in `themes/default.css` is a comment; this is the first one an assertion can check.
+ */
+function parseRgb(text) {
+  const m = String(text).match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i);
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+}
+
+function relativeLuminance(rgb) {
+  const [r, g, b] = rgb.map((v) => {
+    const c = v / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function contrastRatio(fg, bg) {
+  const a = relativeLuminance(fg);
+  const b = relativeLuminance(bg);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
+/**
+ * The GROUND a theme says an element sits on, read from the token rather than walked up the tree.
+ *
+ * An ancestor walk was tried first and is not reliable here: the probe is grafted into a booted
+ * shell whose own theme is still painting the body, so the walk returned one theme's ground while
+ * the swapped stylesheet supplied another theme's colour — the same element reported 16.50:1 for
+ * its text and 2.74:1 for its border, from a single custom property. Two numbers that cannot both
+ * be true is a broken measurement, not a finding.
+ *
+ * Reading `--board-bg` / `--score-bg` off `:root` is deterministic, and it checks the claim the
+ * theme actually makes: every contrast comment in `themes/default.css` is written against these
+ * two tokens, so this is the assertion those comments were always asking for.
+ */
+function themeGround(win, doc, token) {
+  const raw = win.getComputedStyle(doc.documentElement).getPropertyValue(token).trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(raw)) {
+    return [1, 3, 5].map((i) => parseInt(raw.slice(i, i + 2), 16));
+  }
+  return parseRgb(raw) || [255, 255, 255];
+}
+
 async function contractClasses() {
   const res = await fetch('docs/plans/theme-contract.md?v=' + Date.now(), { cache: 'no-store' });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

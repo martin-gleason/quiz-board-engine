@@ -127,6 +127,31 @@
      a 12×12 board from collapsing into unclickable slivers. */
   --cell-min-height: 2.75rem;
 
+  /* --- Strikes (D16) ---------------------------------------------------- */
+
+  /* THREE TOKENS, NOT ONE, because the two strike surfaces sit on grounds that
+     INVERT between light and dark themes. The band is on --board-bg; the score
+     bar's marks are on --score-bg, which is dark in every shipped theme. A
+     single colour cannot pass AA on both, and hard-coding one is what the F9c
+     review caught: #a4243b measured 1.63:1 on chalkboard and 2.74:1 on
+     midnight — the theme demo-feud.json actually ships on.
+
+     --strike-color is LARGE text (3:1 floor). --strike-team-color is normal
+     text (4.5:1). --strike-slot-border is a non-text boundary (3:1) and is
+     load-bearing: it is how the room sees how many strikes REMAIN. */
+  --strike-color: #a4243b;            /* 6.34:1 on this theme's ground (AA large ✓) */
+  --strike-team-color: #ff8a80;       /* 7.61:1 on --score-bg (AA body ✓) */
+
+  /* THE SLOT BORDER DERIVES FROM THE MARK COLOUR, and that is the fix rather than
+     a third value to keep in step. Three separate hand-computed borders were
+     wrong on two themes, because they were computed against --board-bg while
+     the band actually sits on the STAGE ground — and civic turns out to have a
+     dark shell behind a light board. Deriving means the slot inherits a ratio
+     an assertion already checks, so the error class cannot recur. Struck and
+     unstruck stay distinguishable by SHAPE (dashed and empty, versus solid,
+     washed and glyphed), never by colour alone — theme-contract §5.3. */
+  --strike-slot-border: var(--strike-color);
+
   /* --- Typography ------------------------------------------------------- */
 
   /* System stacks only. A remote font would break both the offline guarantee
@@ -417,18 +442,28 @@ body,
    an override-only theme is not left blank.
    ========================================================================== */
 
-/* The overlay sits over the middle of the board rather than in the flow. It is
+/* A BAND ABOVE THE BOARD, in the flow. It was built as a centred overlay and
+   that was wrong in a way only the running app showed: on a ranked list the
+   rows are full-width and few, so it landed squarely on the revealed answer.
    `hidden` at zero strikes (renderer), so this never paints an empty frame —
-   three grey boxes parked over the board all game would stop being noticed
-   exactly when they start mattering. `pointer-events: none` because it is a
-   readout, not a control: the host must still be able to click the row
-   underneath it. */
+   three grey boxes above the board all game would stop being noticed exactly
+   when they start mattering. `pointer-events: none` because it is a readout,
+   not a control. */
 .qbe-strikes {
   display: flex;
   justify-content: center;
   gap: clamp(0.5rem, 3vw, 2.5rem);
   /* A readout, not a control: the host must never have to aim around it. */
   pointer-events: none;
+  /* THE BAND CARRIES THE BOARD'S GROUND, and this is a correctness fix rather than decoration.
+     Without it the band inherits whatever the SHELL paints, which is not the same colour in every
+     theme — civic has a light board inside a dark shell — so "the marks pass AA on --board-bg"
+     was a claim about a ground the band did not actually sit on, and no fixed mark colour could
+     be right for both. Painting the board's own ground makes the documented claim true by
+     construction, and the per-theme contrast assertion then measures the thing it names. */
+  background: var(--board-bg);
+  padding: clamp(0.25rem, 1vh, 0.75rem);
+  border-radius: var(--cell-radius);
 }
 
 /* Sized off the viewport, not the cell: this is the one element on the board
@@ -447,22 +482,24 @@ body,
   border-radius: 0.15em;
   /* The unstruck slot is a faint outline, so the room can see how many strikes
      remain rather than only how many have been taken. */
-  border: 0.06em solid rgba(28, 26, 23, 0.18);
+  border: 0.06em dashed var(--strike-slot-border);
 }
 
 .qbe-strike-mark[data-struck="true"]::after {
   content: "✗";
   display: block;
   text-align: center;
-  /* Deep red on the warm ground: 6.48:1 against --board-bg (AA large text 3:1
-     comfortably, and it is very large text). Backed by SHAPE — an empty slot
-     versus a filled one — so hue is never the only cue (theme-contract §5.3). */
-  color: #a4243b;
+  /* Backed by SHAPE — an empty slot versus a filled one — so hue is never the
+     only cue (theme-contract §5.3). */
+  color: var(--strike-color);
 }
 
 .qbe-strike-mark[data-struck="true"] {
-  border-color: #a4243b;
-  background: rgba(164, 36, 59, 0.08);
+  border-style: solid;
+  border-color: var(--strike-color);
+  /* color-mix keeps the wash tied to whatever a theme set, instead of baking a
+     second copy of the default red that would not follow an override. */
+  background: color-mix(in srgb, var(--strike-color) 12%, transparent);
 }
 
 /* A struck mark lands rather than fading, because it punctuates a wrong answer.
@@ -487,7 +524,7 @@ body,
   font-size: 1.1em;
   line-height: 1;
   letter-spacing: 0.1em;
-  color: #a4243b;
+  color: var(--strike-team-color);
   min-height: 1em;
 }
 

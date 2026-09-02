@@ -35,6 +35,12 @@
   /* Deep indigo, not black: house-lights-down, and it lets the answered
      panel go genuinely darker than the ground. */
   --board-bg: #0d1633;
+  /* Strikes (D16). The base layer's deep red is tuned for a LIGHT board and
+     measures under the 3:1 large-text floor on this ground — 2.74:1 on
+     midnight, 1.63:1 on chalkboard — so a dark theme has to state its own.
+     --strike-team-color is NOT overridden: the score bar is dark in every
+     shipped theme, so the base value already passes there. */
+  --strike-color: #ff8a80;        /* 7.80:1 on this theme's ground (AA large ✓) */
   --board-fg: #f3ead1;               /* 14.84:1 on --board-bg (AAA) */
 
   /* --- Cells ------------------------------------------------------------ */
