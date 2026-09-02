@@ -1255,7 +1255,7 @@ export function renderScorePanel({ bundle, session, mount, handlers }) {
     rows: [],
     award: 0,
     activeTeam: null,
-    strikes: 0, // the ACTIVE round's strike count, for the active team's row (`D16`)
+    strikes: [], // per-team strike counts for the round on screen (`D18`)
     // What is currently PAINTED, so `updateScorePanel` can tell a real change from a repaint and
     // announce only the former. Same idea as the board's `renderedStates`.
     paintedScores: [],
@@ -1358,13 +1358,14 @@ function paintTeamRows(view, teams) {
     if (r.name.textContent !== team.name) r.name.textContent = team.name;
     r.name.setAttribute('aria-pressed', active ? 'true' : 'false');
 
-    // `D16`. Strikes belong to the ROUND and are drawn beside the team the host has marked active
-    // — see `docs/plans/F9c.md` §3, which resolves the tension between per-round strikes and a
-    // per-team display. Only the active row shows them: the same count repeated on every row would
-    // read as each team having taken them.
+    // `D18`. EVERY row shows its OWN strikes now. Under `D16` the round's count was drawn beside
+    // whichever team was active, which could not say whose strikes those were — the maintainer
+    // looked at the built board and asked for them pinned to a team. `view.strikes` is therefore a
+    // per-team array rather than one number.
     const cap = view.bundle && view.bundle.gametype && view.bundle.gametype.strikes
       ? view.bundle.gametype.strikes.count : 0;
-    const rowStrikes = active ? Math.min(Math.max(view.strikes || 0, 0), cap) : 0;
+    const counts = Array.isArray(view.strikes) ? view.strikes : [];
+    const rowStrikes = Math.min(Math.max(counts[i] || 0, 0), cap);
     if (r.strikes) {
       const text = rowStrikes > 0 ? STRIKE_MARK.repeat(rowStrikes) : '';
       if (r.strikes.textContent !== text) r.strikes.textContent = text;
@@ -1474,6 +1475,10 @@ export function renderToolbar({ mount, handlers }) {
   // strike button is the visible twin of the `X` key — a host who has not learned the key, or who
   // is driving from a tablet, must still be able to call a strike.
   if (h.onStrike) root.appendChild(chromeButton(doc, 'strike', 'Strike (X)', 'Record a strike against this round'));
+  // `D18`. Undo sits beside Strike because that is where the host's hand already is after a
+  // mis-press, and it is a separate control from Clear on purpose: Clear wipes the round for every
+  // team, Undo takes back ONE strike from the team on the board.
+  if (h.onStrikeUndo) root.appendChild(chromeButton(doc, 'strike-undo', 'Undo strike', 'Take back the last strike from the active team'));
   if (h.onStrikesClear) root.appendChild(chromeButton(doc, 'strikes-clear', 'Clear', 'Clear this round\'s strikes'));
   if (h.onRoundNext) root.appendChild(chromeButton(doc, 'round-next', 'Next round ▸', 'Move the board to the next round'));
   if (h.onTeamsEdit) root.appendChild(chromeButton(doc, 'teams', 'Teams…', 'Edit the team names'));
@@ -1488,6 +1493,7 @@ export function renderToolbar({ mount, handlers }) {
     if (action === 'export' && h.onExport) h.onExport();
     else if (action === 'teams' && h.onTeamsEdit) h.onTeamsEdit();
     else if (action === 'strike' && h.onStrike) h.onStrike();
+    else if (action === 'strike-undo' && h.onStrikeUndo) h.onStrikeUndo();
     else if (action === 'strikes-clear' && h.onStrikesClear) h.onStrikesClear();
     else if (action === 'round-next' && h.onRoundNext) h.onRoundNext();
     else if (action === 'import') file.click();

@@ -1610,11 +1610,16 @@ async function runRenderSuite() {
     if (!feudForChecks.ok) {
       record('state', 'the feud bundle loads for the cross-check assertions', false, 'it did not');
     } else {
+      // TWO TEAMS on the probe session, because `D18`'s inner bound is checked against the teams
+      // the session carries — with an empty roster every strike entry is out of bounds and the
+      // cap assertion below could never reach the check it names.
       const stateDoc = (strikes, currentRound) => {
         const data = {
           schemaVersion: 1, appVersion: '1.0.0', gameHash: 'a'.repeat(64),
           gameTitle: 'Cross-check probe', createdAt: '2026-09-01T10:00:00Z',
-          updatedAt: '2026-09-01T10:00:00Z', teams: [], cellStates: {}, bonusCells: [],
+          updatedAt: '2026-09-01T10:00:00Z',
+          teams: [{ name: 'Red', score: 0 }, { name: 'Blue', score: 0 }],
+          cellStates: {}, bonusCells: [],
         };
         if (strikes !== undefined) data.strikes = strikes;
         if (currentRound !== undefined) data.currentRound = currentRound;
@@ -1626,13 +1631,13 @@ async function runRenderSuite() {
       // OVER THE GAME TYPE'S CAP. Deliberately 4, not 99: 99 is refused by the STRUCTURAL `max: 10`
       // in schemas.js and never reaches the contract stage at all — which is what the plan's own
       // M9 got wrong. 4 is the smallest value only this cross-check can reject.
-      const over = judge({ '0': 4 });
+      const over = judge({ '0': { '0': 4 } });
       record('state', 'an imported session with more strikes than the game type allows is refused',
-        !over.ok && over.failures.some((f) => f.path === 'strikes["0"]'),
+        !over.ok && over.failures.some((f) => f.path === 'strikes["0"]["0"]'),
         over.ok ? 'ACCEPTED four strikes on a game type whose cap is three'
           : over.failures.map((f) => f.path + ': ' + f.message).join(' | ').slice(0, 180));
 
-      const offBoard = judge({ '5': 1 });
+      const offBoard = judge({ '5': { '0': 1 } });
       record('state', 'an imported session with strikes on a column the board does not have is refused',
         !offBoard.ok && offBoard.failures.some((f) => f.path === 'strikes["5"]'),
         offBoard.ok ? 'ACCEPTED strikes on column 5 of a one-column board'
@@ -1641,7 +1646,7 @@ async function runRenderSuite() {
       // Absence is the switch, so a jeopardy session carrying ANY strike entry is out of bounds —
       // but an EMPTY map is not an entry and must still load, or every session written before D15
       // becomes an error screen.
-      const onJeopardy = judge({ '0': 1 }, undefined, demo.value);
+      const onJeopardy = judge({ '0': { '0': 1 } }, undefined, demo.value);
       const emptyOnJeopardy = judge({}, undefined, demo.value);
       record('state', 'strikes on a game type that declares none are refused, but an empty map still loads',
         !onJeopardy.ok && emptyOnJeopardy.ok,
@@ -1650,11 +1655,21 @@ async function runRenderSuite() {
 
       // A non-canonical key passes both `/^\d+$/` and `Number()`, then addresses nothing: the
       // session SAYS three strikes on round 0 and renders zero.
-      const leadingZero = judge({ '00': 3 });
+      const leadingZero = judge({ '00': { '0': 3 } });
       record('state', 'a non-canonical column key ("00") is refused rather than silently ignored',
         !leadingZero.ok,
         leadingZero.ok ? 'ACCEPTED "00", which strikesFor() then reads as nothing'
           : 'refused: ' + leadingZero.failures.map((f) => f.message).join(' | ').slice(0, 150));
+
+      // `D18`. The inner bound is the TEAM, checked against the roster this session carries.
+      // A session naming team 5 of a two-team game is the same stale-import class as a cell key
+      // on a board that has since shrunk: left unchecked the count sits there invisibly and
+      // reappears the moment a sixth team is added.
+      const offRoster = judge({ '0': { '5': 1 } });
+      record('state', 'an imported session with strikes against a team that does not exist is refused',
+        !offRoster.ok && offRoster.failures.some((f) => f.path === 'strikes["0"]["5"]'),
+        offRoster.ok ? 'ACCEPTED strikes against team 5 of a two-team session'
+          : offRoster.failures.map((f) => f.message).join(' | ').slice(0, 170));
 
       // D17's half. demo-feud.json has ONE column, so round 1 is already off the end.
       const badRound = judge(undefined, 1);
@@ -3811,25 +3826,69 @@ async function runStateSuite() {
         if (!feudAdopted.ok) {
           record('state', 'a feud session adopts for the strike assertions', false, failureText(feudAdopted));
         } else {
-          for (let i = 0; i < 6; i++) state.addStrike(feudForState.value, 0);
+          // `D18`: a strike belongs to a TEAM. The feud session above carries one team, index 0.
+          for (let i = 0; i < 6; i++) state.addStrike(feudForState.value, 0, 0);
           record('state', 'strikes cap at the game type\'s own count, in the SESSION not just on screen',
-            state.strikesFor(state.current(), 0) === 3,
+            state.strikesFor(state.current(), 0, 0) === 3,
             'six calls to addStrike left the session holding '
-            + state.strikesFor(state.current(), 0) + ' (cap is 3)');
+            + state.strikesFor(state.current(), 0, 0) + ' (cap is 3)');
 
           // M8. Strikes belong to a ROUND. Keyed off the board instead of the column, Round 2 would
           // inherit Round 1's three strikes and start already lost.
-          state.addStrike(feudForState.value, 1);
+          state.addStrike(feudForState.value, 1, 0);
           record('state', 'strikes are per round — a second round starts from its own count',
-            state.strikesFor(state.current(), 0) === 3 && state.strikesFor(state.current(), 1) === 1,
-            'round 0 holds ' + state.strikesFor(state.current(), 0) + ', round 1 holds '
-            + state.strikesFor(state.current(), 1));
+            state.strikesFor(state.current(), 0, 0) === 3 && state.strikesFor(state.current(), 1, 0) === 1,
+            'round 0 holds ' + state.strikesFor(state.current(), 0, 0) + ', round 1 holds '
+            + state.strikesFor(state.current(), 1, 0));
 
-          // Cleared, not zeroed: absent-means-none is the idiom everywhere else, and an exported
-          // session should not carry a row of zeroes for rounds nobody played.
+          // ---- D18: PINNED TO A TEAM, AND UNDOABLE ---------------------------------------------
+          //
+          // The host's rule is click the team, THEN press X. With nobody marked there is nobody to
+          // charge the strike to, so it must do nothing at all rather than fall to team 0 — which
+          // is what "pinned to a specific team" has to mean if it means anything.
+          const beforeNoTeam = canonical(state.current().strikes || {});
+          state.addStrike(feudForState.value, 1, null);
+          state.addStrike(feudForState.value, 1, undefined);
+          record('state', 'a strike with no active team is a no-op, not a strike against team 0',
+            canonical(state.current().strikes || {}) === beforeNoTeam,
+            'strikes went from ' + beforeNoTeam + ' to ' + canonical(state.current().strikes || {}));
+
+          // Two teams, so "pinned" is observable: charging team 1 must not move team 0.
+          state.setTeams(['Red', 'Blue']);
+          state.addStrike(feudForState.value, 1, 1);
+          record('state', 'a strike lands on the team it was charged to and no other',
+            state.strikesFor(state.current(), 1, 0) === 1 && state.strikesFor(state.current(), 1, 1) === 1,
+            'round 1: team 0 holds ' + state.strikesFor(state.current(), 1, 0)
+            + ', team 1 holds ' + state.strikesFor(state.current(), 1, 1));
+
+          // ONE PRESS UNDOES ONE STRIKE. An undo that wiped the row would turn a one-key slip into
+          // a three-key one in the other direction, in front of the room, with no undo for the undo.
+          state.addStrike(feudForState.value, 0, 0); // round 0 team 0 is at the cap of 3 already
+          state.undoStrike(feudForState.value, 0, 0);
+          record('state', 'undo takes back exactly one strike, not the whole row',
+            state.strikesFor(state.current(), 0, 0) === 2,
+            'a team on 3 strikes, after one undo, holds ' + state.strikesFor(state.current(), 0, 0));
+
+          // At zero the entry is DELETED, so an exported session carries no row for a team that
+          // never took one — absent-means-none, as everywhere else in this file.
+          state.undoStrike(feudForState.value, 1, 1);
+          const round1 = (state.current().strikes || {})['1'] || {};
+          record('state', 'undoing a team\'s last strike removes the entry rather than zeroing it',
+            !Object.prototype.hasOwnProperty.call(round1, '1') && round1['0'] === 1,
+            'round 1 now reads ' + canonical(round1));
+
+          // Undo on a team with nothing to take back must not go negative or invent a key.
+          const beforeFloor = canonical(state.current().strikes || {});
+          state.undoStrike(feudForState.value, 2, 0);
+          record('state', 'undo on a team with no strikes changes nothing',
+            canonical(state.current().strikes || {}) === beforeFloor,
+            'strikes stayed ' + canonical(state.current().strikes || {}));
+
+          // Cleared, not zeroed: the between-rounds reset wipes EVERY team, which is what makes it
+          // a different control from undo.
           state.clearStrikes(0);
           record('state', 'clearing a round removes its entry rather than setting it to zero',
-            state.strikesFor(state.current(), 0) === 0
+            state.strikesFor(state.current(), 0, 0) === 0
             && !Object.prototype.hasOwnProperty.call(state.current().strikes, '0'),
             'after clearStrikes(0) the session strikes are '
             + canonical(state.current().strikes || {}));
