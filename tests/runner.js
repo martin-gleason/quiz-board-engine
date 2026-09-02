@@ -5336,6 +5336,8 @@ async function runEditorSuite() {
   // runs suites in sequence — inheriting a previous suite's board would make the first assertion
   // pass or fail for reasons that are nothing to do with it.
   model.title = '';
+  model.pickerName = '';
+  model.note = null;
   model.rounds = [editor.__editor.emptyRound()];
   model.filename = 'my-board.json';
 
@@ -5348,11 +5350,19 @@ async function runEditorSuite() {
 
   // M25. Asserted on the CONTROL, not on the model: a tool that hands you a broken file has not
   // saved you the work, it has only moved when you find out — in front of a room.
-  record('editor', 'an incomplete board cannot be exported, and the control says why',
+  //
+  // ASSERTED ON VISIBLE TEXT, not on `title`. The first version tested `downloadBtn.title`, which is
+  // mouse-hover only — and a disabled button is out of the tab order — so "the control says why" was
+  // asserted against a channel no keyboard or screen-reader host ever receives. Review caught the
+  // assertion passing for a reason other than the one it states.
+  const reasonEl = stage.querySelector('.ed-export-reason');
+  record('editor', 'an incomplete board cannot be exported, and says why in visible text',
     downloadBtn !== undefined && downloadBtn.disabled === true
-    && /Fix the problems/.test(downloadBtn.title) && /ed-verdict bad/.test(verdict.className),
+    && reasonEl !== null && reasonEl.hidden === false && /Fix the problems/.test(reasonEl.textContent)
+    && /ed-verdict bad/.test(verdict.className),
     downloadBtn === undefined ? 'no export control was drawn'
-      : 'disabled=' + downloadBtn.disabled + ', title="' + downloadBtn.title + '"');
+      : 'disabled=' + downloadBtn.disabled + ', visible reason: "'
+        + (reasonEl ? (reasonEl.hidden ? '(hidden)' : reasonEl.textContent) : '(none)') + '"');
 
   // The problems are the APP'S OWN PROSE, not a second vocabulary invented here. A host who reads
   // "expected a non-empty string of at most 80 characters" in the editor reads the same sentence on
@@ -5378,14 +5388,37 @@ async function runEditorSuite() {
   // M24. THE BYTES THAT WERE JUDGED ARE THE BYTES THAT DOWNLOAD. Validating an object and
   // serialising separately leaves room for the two to differ, which produces a green editor and a
   // red error screen. Re-judging the STRING is what closes that gap, so the assertion re-judges it.
-  const reJudged = editor.judge(support, validText);
-  const parsedBack = JSON.parse(validText);
-  record('editor', 'the exported text is the thing that was validated, and survives a round trip',
-    reJudged.ok === true && parsedBack.gameType === 'feud'
-    && parsedBack.board.columns[0].cells.length === 2
+  //
+  // THE BYTES THE DOWNLOAD PATH WOULD ACTUALLY USE. The first version of this assertion called
+  // `toFileText()` itself and re-judged that — which could not tell "the Blob gets the judged bytes"
+  // from "the Blob gets a constant". Review proved it by replacing the download argument with a
+  // literal and getting 444/444 green. The editor now holds ONE judged string and the click hands
+  // that same string to the Blob, so the assertion reads that variable.
+  model.pickerName = 'Suite board';
+  editor.__editor.refresh();
+  await settle();
+  //
+  // THE REAL BUTTON IS PRESSED. Asserting on `judgedText` alone still could not see the click
+  // handler, which is exactly what review mutated — so the export path is driven end to end and the
+  // bytes are captured where they reach the Blob. The anchor's own `click` is stubbed for the
+  // duration so the run does not write a file to whoever's Downloads folder is running the suite.
+  const judged = editor.__editor.judgedText();
+  const realAnchorClick = HTMLAnchorElement.prototype.click;
+  HTMLAnchorElement.prototype.click = function noop() {};
+  try {
+    downloadBtn.click();
+  } finally {
+    HTMLAnchorElement.prototype.click = realAnchorClick;
+  }
+  const shipped = editor.__editor.lastDownloaded();
+  const reJudged = shipped === null ? { ok: false } : editor.judge(support, shipped);
+  const parsedBack = shipped === null ? {} : JSON.parse(shipped);
+  record('editor', 'pressing Download hands over exactly the bytes that were judged',
+    shipped !== null && shipped === judged && reJudged.ok === true
     && parsedBack.board.columns[0].label === 'Name a thing worth testing.',
-    reJudged.ok ? 'the exported string re-validates and parses back to the authored board'
-      : 'the exported string does NOT re-validate');
+    shipped === null ? 'the download path produced nothing'
+      : shipped !== judged ? 'the DOWNLOADED bytes differ from the judged bytes'
+        : 'the pressed button handed over the judged string, and it re-validates');
 
   // An absent label is absent, not "". §2's rule everywhere else in this repo, and the editor is
   // where a blank field would most naturally become an empty string.
@@ -5395,6 +5428,77 @@ async function runEditorSuite() {
     !Object.prototype.hasOwnProperty.call(blankLabel.board.columns[0], 'label'),
     'the column serialises as: ' + JSON.stringify(blankLabel.board.columns[0]).slice(0, 90));
   model.rounds[0].label = 'Name a thing worth testing.';
+
+  // ---- THE MANIFEST LINE IS A SECOND ARTEFACT, AND IT WAS THE CRITICAL --------------------------
+  //
+  // The editor prints a games.json line and tells the host to paste it. It used to build that line
+  // as `"<title>": "<file>"`, and a board TITLE is not a manifest KEY: a title is any 80 characters,
+  // a key is `PATTERNS.gameName` (ASCII letters, digits, space, dash, underscore). The repo proves
+  // they differ — `demo-feud-rounds.json` is titled with an em dash and games.json lists it under an
+  // ASCII name — so opening a shipped board produced a line the manifest validator refuses. And a
+  // manifest has no partial render either: ONE bad key takes the picker down for EVERY board.
+  //
+  // Asserted by validating a games.json BUILT FROM THE EDITOR'S OWN LINE, because the property that
+  // matters is "the thing it told you to paste actually works", which only the validator can say.
+  const pickerCases = [
+    { name: 'Ranked Answers - Three Rounds', want: null },
+    { name: 'Quiz Board Engine Demo \u2014 Three Rounds', want: 'refused' }, // em dash: a real title
+    { name: 'Round 1: "Best" Quiz', want: 'refused' }, // quote: the line would not even be JSON
+    { name: '', want: 'refused' },
+  ];
+  const pickerWrong = pickerCases.filter((c) => {
+    const problem = editor.__editor.pickerNameProblem(c.name);
+    return c.want === null ? problem !== null : problem === null;
+  });
+  record('editor', 'a picker name games.json could not hold is refused before it is offered',
+    pickerWrong.length === 0,
+    pickerWrong.length === 0 ? 'all ' + pickerCases.length + ' names judged correctly'
+      : 'judged wrongly: ' + pickerWrong.map((c) => JSON.stringify(c.name)).join(', '));
+
+  // The line itself must parse and then VALIDATE as a manifest. A hand-concatenated line broke on a
+  // quote in the name; JSON.stringify on both halves is what makes it a fact rather than a hope.
+  //
+  // THE TITLE AND THE PICKER NAME MUST DIFFER HERE, or the assertion cannot tell them apart. The
+  // first version set both to the same ASCII string, so reverting the code to concatenate the TITLE
+  // still produced a valid line and the mutation survived. This title is the real one from
+  // `games/demo-feud-rounds.json`: an em dash, which is legal in a title and illegal in a key.
+  model.title = 'Quiz Board Engine Demo \u2014 Three Rounds';
+  model.pickerName = 'Suite board';
+  model.filename = 'suite-board.json';
+  editor.__editor.refresh();
+  await settle();
+  const line = stage.querySelector('.ed-manifest-line').textContent;
+  let manifestVerdict = null;
+  try {
+    const manifestData = JSON.parse('{"schemaVersion":1,"games":{' + line + '}}');
+    manifestVerdict = validator.validateDocument({
+      kind: KINDS.GAMES,
+      raw: { path: 'games/games.json', kind: KINDS.GAMES, text: JSON.stringify(manifestData), data: manifestData },
+    });
+  } catch (err) {
+    manifestVerdict = { ok: false, failures: [{ message: 'the line is not JSON: ' + err.message }] };
+  }
+  record('editor', 'the games.json line it tells you to paste is itself a valid manifest entry',
+    manifestVerdict.ok === true && !/\u2014/.test(line),
+    'line: ' + line + ' — ' + (manifestVerdict.ok && !/\u2014/.test(line) ? 'validates as a manifest'
+      : 'REFUSED: ' + (manifestVerdict.failures || []).map((f) => f.message).join(' | ').slice(0, 140)));
+
+  // ---- _note SURVIVES A ROUND TRIP -------------------------------------------------------------
+  //
+  // `_note` is the project's sanctioned comment mechanism (CLAUDE.md constraint 4) and the validator
+  // strips it, so nothing downstream would ever have reported it missing. Opening a documented
+  // board, changing a point value and exporting used to delete its documentation silently.
+  model.note = 'TOP LEVEL NOTE';
+  model.rounds[0].note = 'ROUND NOTE';
+  editor.__editor.refresh();
+  await settle();
+  const withNotes = JSON.parse(editor.toFileText());
+  record('editor', 'a board\'s _note comments survive an open-and-export round trip',
+    withNotes._note === 'TOP LEVEL NOTE' && withNotes.board.columns[0]._note === 'ROUND NOTE',
+    'top-level _note ' + (withNotes._note ? 'kept' : 'LOST') + ', column _note '
+    + (withNotes.board.columns[0]._note ? 'kept' : 'LOST'));
+  model.note = null;
+  model.rounds[0].note = null;
 
   // M23. The editor must not judge for itself. Thirteen rounds is one over `LIMITS.maxColumns`, and
   // the ONLY thing that knows that number is the schema — so a board the editor waved through here

@@ -110,6 +110,24 @@
   .ed-problems { margin: .5rem 0 0; padding-left: 1.2rem; }
   .ed-problems li { margin: .35rem 0; }
 
+  /* The export reason is VISIBLE text, not a title attribute: `title` is mouse-hover only and a
+     disabled button is out of the tab order, so the reason reached nobody who needed it most. */
+  .ed-export-reason { margin: .5rem 0 0; color: var(--ed-bad); max-width: 46rem; }
+  .ed-open-message { margin: .5rem 0 0; max-width: 46rem; }
+
+  /* Announced, never shown. The verdict panel repaints on every keystroke, so the panel itself
+     cannot carry aria-live without reading the whole problem list aloud per character; this speaks
+     only when the verdict flips. Clipped rather than display:none, which removes it from the
+     accessibility tree entirely and would announce nothing. */
+  .ed-live {
+    position: absolute;
+    width: 1px; height: 1px;
+    margin: -1px; padding: 0; border: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
   .ed-manifest { margin-top: 1rem; }
   .ed-manifest-line {
     display: inline-block;

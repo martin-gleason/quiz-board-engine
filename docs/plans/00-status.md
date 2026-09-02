@@ -35,10 +35,10 @@ Counted from the register itself. A register with no rows still gets a line.
 | Register | Rows | Open | Unknown | Closed |
 |---|---|---|---|---|
 | Decisions (`D`) | 19 | 0 | 0 | 19 |
-| Risks (`RR`) | 8 | 0 | 0 | 8 |
+| Risks (`RR`) | 10 | 0 | 0 | 10 |
 | Owner items (`O`) | 0 | 0 | 0 | 0 |
 | Hooks (`H`) | 0 | 0 | 0 | 0 |
-| Mutations (`M`) | 27 | 0 | 0 | 27 |
+| Mutations (`M`) | 28 | 0 | 0 | 28 |
 | Other (C) (`C`) | 19 | 4 | 0 | 15 |
 
 ### By status
@@ -47,8 +47,8 @@ Counted from the register itself. A register with no rows still gets a line.
 |---|---|---|
 | `D` | ratified | 19 |
 | `RR` | closed | 1 |
-| `RR` | ratified | 7 |
-| `M` | closed | 27 |
+| `RR` | ratified | 9 |
+| `M` | closed | 28 |
 | `C` | done | 15 |
 | `C` | open | 4 |
 
