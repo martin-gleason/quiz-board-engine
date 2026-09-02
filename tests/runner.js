@@ -26,6 +26,7 @@ import * as errors from '../js/errors.js';
 // transitive source audit below — the invariant suite now CONFIRMS that reachability rather than
 // assuming it.
 import * as renderer from '../js/renderer.js';
+import * as editor from '../editor/editor.js';
 // F6/F7/F10 additions. Importing state.js here does the same two jobs the renderer import does: the
 // state and bonus suites drive the REAL module (never a copy of its arithmetic), and the import is
 // also what pulls js/state.js into the transitive source audit below, so its forbidden-API and SPDX
@@ -3138,6 +3139,10 @@ async function runThemeSuite() {
 const ENTRY_SOURCES = [
   'index.html', // the app shell — its inline module leads to app.js and everything it draws
   'tests/index.html', // this suite's own page
+  'editor/index.html', // F13, delta D19 — a SECOND page of our own code, and therefore a second
+  // place every named invariant applies. Added as an ENTRY rather than as a file so the transitive
+  // walk covers editor.js and anything it ever imports: `M27` exists precisely because a new
+  // directory is where a rule quietly stops being enforced.
   'tools/firefox-run-tests.py', // the Firefox driver: SPDX only in practice, but it is source
 ];
 
@@ -5312,6 +5317,122 @@ async function runWinsSuite() {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Editor suite (F13, delta D19)
+// ---------------------------------------------------------------------------------------------
+//
+// THE EDITOR IS A SECOND FRONT DOOR TO THE SAME RULES, and the whole point of its design is that it
+// does not have its own copy of them — it imports `validator`. So the assertion that matters most is
+// not "does the editor work" but "can the editor ever hand you a board the engine refuses". Every
+// check below is pointed at that seam.
+//
+// Driven through the real page: `boot(mount)` builds the actual screen into the harness, so the
+// export control's `disabled` state is the real one rather than a model flag standing in for it.
+async function runEditorSuite() {
+  const settle = () => new Promise((r) => setTimeout(r, 30));
+  const stage = harnessStage();
+  const model = editor.__editor.model;
+
+  // A known-empty starting point. `boot` renders whatever the module singleton holds, and this file
+  // runs suites in sequence — inheriting a previous suite's board would make the first assertion
+  // pass or fail for reasons that are nothing to do with it.
+  model.title = '';
+  model.rounds = [editor.__editor.emptyRound()];
+  model.filename = 'my-board.json';
+
+  await editor.boot(stage);
+  await settle();
+
+  const downloadBtn = [...stage.querySelectorAll('button')]
+    .find((b) => b.textContent === 'Download board');
+  const verdict = stage.querySelector('.ed-verdict');
+
+  // M25. Asserted on the CONTROL, not on the model: a tool that hands you a broken file has not
+  // saved you the work, it has only moved when you find out — in front of a room.
+  record('editor', 'an incomplete board cannot be exported, and the control says why',
+    downloadBtn !== undefined && downloadBtn.disabled === true
+    && /Fix the problems/.test(downloadBtn.title) && /ed-verdict bad/.test(verdict.className),
+    downloadBtn === undefined ? 'no export control was drawn'
+      : 'disabled=' + downloadBtn.disabled + ', title="' + downloadBtn.title + '"');
+
+  // The problems are the APP'S OWN PROSE, not a second vocabulary invented here. A host who reads
+  // "expected a non-empty string of at most 80 characters" in the editor reads the same sentence on
+  // the error screen if a board ever does fail there.
+  record('editor', 'the editor reports problems in the same words the error screen uses',
+    /expected/.test(verdict.textContent) && /found/.test(verdict.textContent),
+    'the verdict reads: ' + verdict.textContent.replace(/\s+/g, ' ').slice(0, 120));
+
+  // Fill it in through the MODEL and re-judge, then check the control followed.
+  model.title = 'Suite board';
+  model.rounds = [{
+    label: 'Name a thing worth testing.',
+    answers: [{ answer: 'The thing you wrote', value: 40 }, { answer: 'The thing you assumed', value: 20 }],
+  }];
+  const support = await editor.__editor.loadSupport();
+  const validText = editor.toFileText();
+  const validVerdict = editor.judge(support, validText);
+  record('editor', 'a complete board is judged valid by the engine\'s own validator',
+    validVerdict.ok === true,
+    validVerdict.ok ? 'validateBundle accepted the authored board'
+      : 'REFUSED: ' + (validVerdict.failures || []).map((f) => f.path).join(', '));
+
+  // M24. THE BYTES THAT WERE JUDGED ARE THE BYTES THAT DOWNLOAD. Validating an object and
+  // serialising separately leaves room for the two to differ, which produces a green editor and a
+  // red error screen. Re-judging the STRING is what closes that gap, so the assertion re-judges it.
+  const reJudged = editor.judge(support, validText);
+  const parsedBack = JSON.parse(validText);
+  record('editor', 'the exported text is the thing that was validated, and survives a round trip',
+    reJudged.ok === true && parsedBack.gameType === 'feud'
+    && parsedBack.board.columns[0].cells.length === 2
+    && parsedBack.board.columns[0].label === 'Name a thing worth testing.',
+    reJudged.ok ? 'the exported string re-validates and parses back to the authored board'
+      : 'the exported string does NOT re-validate');
+
+  // An absent label is absent, not "". §2's rule everywhere else in this repo, and the editor is
+  // where a blank field would most naturally become an empty string.
+  model.rounds[0].label = '';
+  const blankLabel = JSON.parse(editor.toFileText());
+  record('editor', 'a blank survey question is omitted from the file, never written as ""',
+    !Object.prototype.hasOwnProperty.call(blankLabel.board.columns[0], 'label'),
+    'the column serialises as: ' + JSON.stringify(blankLabel.board.columns[0]).slice(0, 90));
+  model.rounds[0].label = 'Name a thing worth testing.';
+
+  // M23. The editor must not judge for itself. Thirteen rounds is one over `LIMITS.maxColumns`, and
+  // the ONLY thing that knows that number is the schema — so a board the editor waved through here
+  // would prove it had started keeping its own rules.
+  const tooMany = [];
+  for (let i = 0; i < 13; i++) {
+    tooMany.push({ label: 'Round ' + (i + 1), answers: [{ answer: 'a', value: 1 }] });
+  }
+  const wasRounds = model.rounds;
+  model.rounds = tooMany;
+  const overCap = editor.judge(support, editor.toFileText());
+  model.rounds = wasRounds;
+  record('editor', 'a board over the column cap is refused by the validator, not waved through',
+    overCap.ok === false && (overCap.failures || []).some((f) => /columns/.test(f.path)),
+    overCap.ok ? 'ACCEPTED 13 rounds against a cap of ' + LIMITS.maxColumns
+      : 'refused: ' + (overCap.failures || []).map((f) => f.path).join(', '));
+
+  // M26. A name the manifest cannot hold is a board the picker can never reach, so it is refused
+  // while the host can still change it — including the traversal shapes, since this string is
+  // proposed to a human who will paste it into games.json.
+  const names = {
+    'my-board.json': null, 'round-two_2.json': null,
+    '../evil.json': 'refused', 'notes.txt': 'refused', 'has space.json': 'refused',
+    '': 'refused', 'games/x.json': 'refused',
+  };
+  const wrong = Object.keys(names).filter((n) => {
+    const problem = editor.filenameProblem(n);
+    return names[n] === null ? problem !== null : problem === null;
+  });
+  record('editor', 'only a filename games.json could actually hold is accepted',
+    wrong.length === 0,
+    wrong.length === 0 ? 'all ' + Object.keys(names).length + ' names judged correctly'
+      : 'judged wrongly: ' + wrong.map((n) => JSON.stringify(n)).join(', '));
+
+  stage.remove();
+}
+
+// ---------------------------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------------------------
 
@@ -5371,6 +5492,7 @@ export async function run(mount) {
   // F11/F12. After the state suite because it uses `withEmptyShelf` and the same shelf helpers,
   // and before the invariants, which only read source text.
   await runStartupSuite();
+  await runEditorSuite();
   await runInvariantSuite();
 
   mount.textContent = '';

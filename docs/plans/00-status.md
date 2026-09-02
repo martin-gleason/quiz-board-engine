@@ -26,7 +26,7 @@ Status is what the unit's own plan header declares. What has landed in git is de
 | ID | Kind | Status | Milestone | P | Owner | Plan | Tasks |
 |---|---|---|---|---|---|---|---|
 | F9c | feature | REOPENED by `D18` — strikes are pinned to a team and gain an undo | — | — | — | `docs/plans/F9c.md` | 0 planned |
-| F13 | feature | plan, awaiting the gate | — | — | — | `docs/plans/F13.md` | 0 planned |
+| F13 | feature | built | — | — | — | `docs/plans/F13.md` | 0 planned |
 
 ## Registers
 
@@ -34,22 +34,21 @@ Counted from the register itself. A register with no rows still gets a line.
 
 | Register | Rows | Open | Unknown | Closed |
 |---|---|---|---|---|
-| Decisions (`D`) | 19 | 1 | 0 | 18 |
+| Decisions (`D`) | 19 | 0 | 0 | 19 |
 | Risks (`RR`) | 8 | 0 | 0 | 8 |
 | Owner items (`O`) | 0 | 0 | 0 | 0 |
 | Hooks (`H`) | 0 | 0 | 0 | 0 |
-| Mutations (`M`) | 22 | 0 | 0 | 22 |
+| Mutations (`M`) | 27 | 0 | 0 | 27 |
 | Other (C) (`C`) | 19 | 4 | 0 | 15 |
 
 ### By status
 
 | Register | Status | Count |
 |---|---|---|
-| `D` | proposed | 1 |
-| `D` | ratified | 18 |
+| `D` | ratified | 19 |
 | `RR` | closed | 1 |
 | `RR` | ratified | 7 |
-| `M` | closed | 22 |
+| `M` | closed | 27 |
 | `C` | done | 15 |
 | `C` | open | 4 |
 
@@ -69,9 +68,8 @@ Every open row in the register. Owner is the row's Owner column where the table 
 | Marty | C15 | P0 | open | Add CI — build, the Safari gate, and whatever the suite becomes |
 | Marty | C16 | P1 | open | Regenerate docs/plans/00-status.md from this repo, or stop generating it here |
 | Marty | C17 | P0 | open | Make the test suite collect — it currently reports green having run nothing |
-| owner | D19 | — | proposed | A board editor ships as a separate page, /editor/, scoped to feud. The editor is absent from spec v1 entirely; the only … |
 | — | C11 | — | open | Safari manual test pass — human, maintainer-executed |
 
 ---
 
-5 open register rows.
+4 open register rows.
