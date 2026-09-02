@@ -506,8 +506,6 @@ export function updateStrikes(view, count) {
   const total = s.marks.length;
   const n = Math.min(Math.max(Number.isInteger(count) ? count : 0, 0), total);
   if (s.painted === n) return;
-  const first = s.painted === -1;
-  const was = first ? 0 : s.painted;
   s.painted = n;
 
   const phrase = n + (n === 1 ? ' strike of ' : ' strikes of ') + total;
@@ -518,11 +516,12 @@ export function updateStrikes(view, count) {
     else s.marks[i].removeAttribute('data-struck');
   }
 
-  // Announced only when the count RISES. A strike is an event; a round reset back to zero, or a
-  // repaint that happens to arrive at the same board, is not — and `first` guards the seeding
-  // paint of a resumed session, which must not read out strikes the room watched an hour ago.
-  // Same reasoning as the win rail's `silent` seeding.
-  if (!first && n > was) announce(phrase, s.root.ownerDocument || document);
+  // NO ANNOUNCEMENT FROM HERE. This function runs on every repaint, so announcing "the count rose"
+  // meant that after `D18` merely switching the active team spoke a strike that never happened,
+  // and an undo — the whole point of `D18` — spoke nothing, because the count fell. Both found in
+  // review. `app.js` announces from the two host actions that ARE strike events; a paint is not
+  // one. `first`/`was` stay because the early return above still needs to know a real change from
+  // a repaint.
 }
 
 /**
@@ -1474,11 +1473,19 @@ export function renderToolbar({ mount, handlers }) {
   // strikes and no rounds passes no handler, and gets no dead control on a projected screen. The
   // strike button is the visible twin of the `X` key — a host who has not learned the key, or who
   // is driving from a tablet, must still be able to call a strike.
-  if (h.onStrike) root.appendChild(chromeButton(doc, 'strike', 'Strike (X)', 'Record a strike against this round'));
+  // The accessible name says TEAM, not round: `D18` moved the strike onto a team, and a name left
+  // describing the superseded contract tells a screen-reader host the one thing that changed.
+  const strikeBtn = h.onStrike
+    ? chromeButton(doc, 'strike', 'Strike (X)', 'Record a strike against the active team')
+    : null;
+  if (strikeBtn) root.appendChild(strikeBtn);
   // `D18`. Undo sits beside Strike because that is where the host's hand already is after a
   // mis-press, and it is a separate control from Clear on purpose: Clear wipes the round for every
   // team, Undo takes back ONE strike from the team on the board.
-  if (h.onStrikeUndo) root.appendChild(chromeButton(doc, 'strike-undo', 'Undo strike', 'Take back the last strike from the active team'));
+  const undoBtn = h.onStrikeUndo
+    ? chromeButton(doc, 'strike-undo', 'Undo strike', 'Take back the last strike from the active team')
+    : null;
+  if (undoBtn) root.appendChild(undoBtn);
   if (h.onStrikesClear) root.appendChild(chromeButton(doc, 'strikes-clear', 'Clear', 'Clear this round\'s strikes'));
   if (h.onRoundNext) root.appendChild(chromeButton(doc, 'round-next', 'Next round ▸', 'Move the board to the next round'));
   if (h.onTeamsEdit) root.appendChild(chromeButton(doc, 'teams', 'Teams…', 'Edit the team names'));
@@ -1506,7 +1513,33 @@ export function renderToolbar({ mount, handlers }) {
   });
 
   mount.appendChild(root);
-  return { root, destroy: () => root.remove() };
+  return {
+    root,
+    /**
+     * Enable or disable the two strike controls, with a name that says WHY (`D18`).
+     *
+     * Same rule the score buttons follow: a control that silently does nothing is worse on a
+     * projected screen than one that is visibly unavailable, because the host presses it and then
+     * has to work out whether the app is broken. Strike is inert until a team is marked; Undo is
+     * inert until that team has one to take back.
+     */
+    setStrikeEnabled(hasActiveTeam, hasStrikes) {
+      if (strikeBtn) {
+        strikeBtn.disabled = !hasActiveTeam;
+        strikeBtn.title = hasActiveTeam
+          ? 'Record a strike against the active team'
+          : 'Click a team name first — a strike belongs to a team';
+      }
+      if (undoBtn) {
+        undoBtn.disabled = !hasActiveTeam || !hasStrikes;
+        undoBtn.title = !hasActiveTeam
+          ? 'Click a team name first — a strike belongs to a team'
+          : hasStrikes ? 'Take back the last strike from the active team'
+            : 'The active team has no strikes to take back';
+      }
+    },
+    destroy: () => root.remove(),
+  };
 }
 
 /** The shared pre-game overlay shell: scrim, panel, title, note, body, actions. */

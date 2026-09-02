@@ -555,12 +555,40 @@ function currentRound(ctx) {
  * drawn, which is the honest outcome: there is no one to charge the strike to.
  */
 function strikeRound(ctx) {
-  state.addStrike(ctx.bundle, currentRound(ctx), ctx.activeTeam);
+  const round = currentRound(ctx);
+  const before = state.strikesFor(state.current(), round, ctx.activeTeam);
+  state.addStrike(ctx.bundle, round, ctx.activeTeam);
+  announceStrikes(ctx, round, before);
 }
 
 /** Take one strike back from the active team (`D18`). */
 function undoStrikeForRound(ctx) {
-  state.undoStrike(ctx.bundle, currentRound(ctx), ctx.activeTeam);
+  const round = currentRound(ctx);
+  const before = state.strikesFor(state.current(), round, ctx.activeTeam);
+  state.undoStrike(ctx.bundle, round, ctx.activeTeam);
+  announceStrikes(ctx, round, before);
+}
+
+/**
+ * Speak a strike change, and ONLY a real one.
+ *
+ * The announcement used to live in `renderer.updateStrikes`, which fires on every repaint — so
+ * after `D18` merely switching the active team announced "2 strikes of 3" when no strike had
+ * happened, and the undo that `D18` was ratified to add announced nothing at all, because the count
+ * went DOWN. Both were found in review.
+ *
+ * Announcing from here fixes both by construction: this runs on the two host actions that are
+ * strike events, and nowhere else. A no-op — `X` with nobody marked, or an undo at zero — leaves
+ * the count unchanged and says nothing, which is correct: there is nothing to report.
+ */
+function announceStrikes(ctx, round, before) {
+  if (!ctx.bundle.gametype.strikes) return;
+  const after = state.strikesFor(state.current(), round, ctx.activeTeam);
+  if (after === before) return;
+  const total = ctx.bundle.gametype.strikes.count;
+  const team = (state.current().teams || [])[ctx.activeTeam];
+  renderer.announce((team ? team.name + ', ' : '')
+    + after + (after === 1 ? ' strike of ' : ' strikes of ') + total, ctx.doc);
 }
 
 /**
@@ -610,6 +638,14 @@ function repaint(ctx, session) {
   // every repaint, never tracked alongside it. That is what makes an IMPORTED session correct for
   // free: a file carrying `currentRound: 2` and two strikes repaints into exactly that board with
   // no separate import path to keep in step.
+  // A ROSTER EDIT CAN STRAND `ctx.activeTeam` PAST THE END. `setTeams` now trims the strikes of a
+  // removed team, but the view state pointing at them is separate and was left behind: the centre
+  // band went on showing a departed team's count to the room while every score row showed nothing,
+  // and `X` went on recording against them. Clamped on every repaint rather than only in the edit
+  // handler, so an imported session with fewer teams is covered by the same line.
+  const roster = Array.isArray(session.teams) ? session.teams.length : 0;
+  if (ctx.activeTeam !== null && ctx.activeTeam >= roster) ctx.activeTeam = null;
+
   const round = Number.isInteger(session.currentRound) ? session.currentRound : 0;
   if (ctx.board) {
     renderer.setRound(ctx.board, round);
@@ -628,6 +664,15 @@ function repaint(ctx, session) {
       activeTeam: ctx.activeTeam,
       strikes: perTeamStrikes,
     });
+  }
+
+  // A DISABLED BUTTON IS HONEST; a button that silently does nothing is not — the rule `renderer`
+  // already applies to the score buttons, which disable until there is an award to give. `X` and
+  // both strike controls are no-ops until a team is marked, and that is the state after EVERY
+  // reload, since `activeTeam` is view state and is never persisted.
+  if (ctx.toolbar && ctx.toolbar.setStrikeEnabled) {
+    ctx.toolbar.setStrikeEnabled(ctx.activeTeam !== null,
+      state.strikesFor(session, round, ctx.activeTeam) > 0);
   }
 }
 

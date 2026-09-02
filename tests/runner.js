@@ -1751,6 +1751,87 @@ async function runRenderSuite() {
           ? 'jeopardy has no strikes block and no .qbe-strikes element'
           : 'jeopardy drew a .qbe-strikes element it has no use for');
 
+      // ---- THE VISIBLE HALF OF D18, WHICH HAD NO ASSERTION AT ALL --------------------------------
+      //
+      // Adversarial review deleted four separate pieces of `D18`'s rendering and the suite stayed
+      // at 422/422: every row painting team 0's count, the undo button never rendered, the band
+      // ignoring the active team, and the `strikesFor` max fallback returning 0. Every assertion
+      // `D18` shipped lived in the state and cross-check groups; none reached the renderer. The
+      // sentence actually ratified — "every team row shows its OWN count rather than only the
+      // active one" — was untested, and the PRE-`D18` renderer would have passed.
+      const panelStage = harnessStage();
+      const panel = renderer.renderScorePanel({
+        bundle: strikeRounds.value,
+        session: { teams: [{ name: 'Red', score: 0 }, { name: 'Blue', score: 0 }], cellStates: {}, bonusCells: [] },
+        mount: panelStage,
+        handlers: {},
+      });
+      renderer.updateScorePanel(panel, {
+        session: { teams: [{ name: 'Red', score: 0 }, { name: 'Blue', score: 0 }], cellStates: {}, bonusCells: [] },
+        activeTeam: 0,
+        strikes: [2, 1],
+      });
+      const rowMarks = [...panelStage.querySelectorAll('.qbe-team-strikes')].map((n) => n.textContent);
+      record('render', 'each team row draws ITS OWN strike count, not the active team\'s',
+        rowMarks.length === 2 && rowMarks[0] === '✗✗' && rowMarks[1] === '✗',
+        'rows drew ' + JSON.stringify(rowMarks) + ' for per-team counts [2, 1]');
+
+      // The count joins the team's own accessible name, so a screen-reader host hears one utterance
+      // per team rather than a detached number.
+      const blueName = panelStage.querySelector('.qbe-team[data-team="1"] .qbe-team-name');
+      record('render', 'a team\'s strike count joins that team\'s accessible name',
+        /Blue, 0 points, 1 strike$/.test(blueName.getAttribute('aria-label') || ''),
+        'Blue announces "' + blueName.getAttribute('aria-label') + '"');
+
+      // The toolbar control D18 was ratified to add, and the gate that keeps it honest.
+      const tbStage = harnessStage();
+      const tb = renderer.renderToolbar({
+        mount: tbStage,
+        handlers: { onStrike() {}, onStrikeUndo() {}, onStrikesClear() {}, onExport() {}, onImport() {} },
+      });
+      const undoBtn = tbStage.querySelector('[data-action="strike-undo"]');
+      const strikeBtn = tbStage.querySelector('[data-action="strike"]');
+      record('render', 'the toolbar carries an undo control when the game type has strikes',
+        undoBtn !== null && strikeBtn !== null,
+        'strike button ' + (strikeBtn ? 'present' : 'MISSING') + ', undo button '
+        + (undoBtn ? 'present' : 'MISSING'));
+
+      // A control that silently does nothing is worse than one visibly unavailable — the rule the
+      // score buttons already follow. With no team marked, both strike controls are inert.
+      //
+      // GUARDED, because an assertion must fail RED rather than throw. Mutating the undo button out
+      // of existence made the line below dereference null, which rejected the suite's promise and
+      // showed as a hang — the same failure mode a shadowed variable produced earlier in this file.
+      // A mutation that kills the runner proves nothing; it has to produce a report.
+      if (!strikeBtn || !undoBtn) {
+        record('render', 'the strike controls disable when they would do nothing, and say why', false,
+          'the toolbar did not render both strike controls, so their enabled state could not be measured');
+      } else {
+      tb.setStrikeEnabled(false, false);
+      const offState = { strike: strikeBtn.disabled, undo: undoBtn.disabled, why: strikeBtn.title };
+      tb.setStrikeEnabled(true, false);
+      const noStrikes = { strike: strikeBtn.disabled, undo: undoBtn.disabled };
+      tb.setStrikeEnabled(true, true);
+      const armed = { strike: strikeBtn.disabled, undo: undoBtn.disabled };
+      record('render', 'the strike controls disable when they would do nothing, and say why',
+        offState.strike === true && offState.undo === true && /Click a team name/.test(offState.why)
+        && noStrikes.strike === false && noStrikes.undo === true
+        && armed.strike === false && armed.undo === false,
+        'no team: strike disabled=' + offState.strike + ' undo disabled=' + offState.undo
+        + ' ("' + offState.why + '"); team with none: undo disabled=' + noStrikes.undo
+        + '; team with strikes: undo disabled=' + armed.undo);
+      }
+
+      // The band follows the ACTIVE team, and its documented fallback is the round's highest count
+      // — the only honest single number for a round several teams have played, and it must never
+      // under-report. `strikesFor` with no team index is that fallback.
+      const twoTeamSession = { strikes: { '0': { '0': 3, '1': 1 } } };
+      record('render', 'strikesFor reports a team\'s own count, and the round\'s highest with no team',
+        state.strikesFor(twoTeamSession, 0, 0) === 3 && state.strikesFor(twoTeamSession, 0, 1) === 1
+        && state.strikesFor(twoTeamSession, 0) === 3,
+        'team 0: ' + state.strikesFor(twoTeamSession, 0, 0) + ', team 1: '
+        + state.strikesFor(twoTeamSession, 0, 1) + ', no team: ' + state.strikesFor(twoTeamSession, 0));
+
       assertContract('feud board with strikes', sStage);
     }
 
@@ -2292,6 +2373,11 @@ function bootShell(gamePath, options) {
   // stylesheet, since the override is applied at mountTheme time inside app.js and nothing else can
   // observe it. `options.pickTheme` is a theme NAME to choose in the picker before pressing Start.
   const pickTheme = (options && options.pickTheme) || null;
+  // `options.pickGame` is a FILENAME to select in the picker. Added because the theme-override
+  // assertion silently depended on `games/demo.json` being the manifest's FIRST entry — the picker
+  // checks its first radio — so reordering the manifest broke a test about themes. A test that
+  // cares which board it boots must say which.
+  const pickGame = (options && options.pickGame) || null;
   return new Promise((resolve) => {
     const frame = document.createElement('iframe');
     // 1200x900 so the density clamps land in the same range a classroom projector uses; the frame is
@@ -2335,6 +2421,13 @@ function bootShell(gamePath, options) {
           // the host could not have chosen it either, and the assertion must fail rather than be
           // routed around.
           if (select && offered) select.value = pickTheme;
+        }
+        if (pickGame) {
+          const radio = [...startup.querySelectorAll('input[name="qbe-game"]')]
+            .find((r) => r.getAttribute('data-file') === pickGame);
+          // Through the real control: a board the host could not have selected must fail the
+          // assertion rather than be routed around.
+          if (radio) radio.checked = true;
         }
         const begin = startup.querySelector('.qbe-btn[data-action="begin"]');
         if (begin) begin.click();
@@ -3355,7 +3448,7 @@ async function runStartupSuite() {
   // VALUE, the href would show it.
   const prefBefore = state.readThemePreference();
   const sessionsBeforePick = sessionKeysNow();
-  const picked = await bootShell(null, { pickTheme: 'chalkboard' });
+  const picked = await bootShell(null, { pickTheme: 'chalkboard', pickGame: 'demo.json' });
   try {
     const link = picked.doc ? picked.doc.getElementById('qbe-theme') : null;
     const href = link ? (link.getAttribute('href') || '').split('?')[0] : null;
@@ -3816,7 +3909,11 @@ async function runStateSuite() {
       // my test, not the code. The strikes assertions therefore run on their own session and hand
       // the shelf back exactly as they found it.
       const jeopardySession = state.current();
-      const feudForState = await fileBundle('games/demo-feud.json');
+      // THE THREE-ROUND BOARD, because these assertions are about strikes being PER ROUND and
+      // `demo-feud.json` has one column. Written against the single-round board they were quietly
+      // parking strikes on a round that does not exist — invisible until `addStrike` gained its
+      // column bound and started refusing them. A per-round test needs a board with rounds.
+      const feudForState = await fileBundle('games/demo-feud-rounds.json');
       if (!feudForState.ok) {
         record('state', 'the feud bundle loads for the strike assertions', false, 'it did not');
       } else {
@@ -3883,6 +3980,57 @@ async function runStateSuite() {
           record('state', 'undo on a team with no strikes changes nothing',
             canonical(state.current().strikes || {}) === beforeFloor,
             'strikes stayed ' + canonical(state.current().strikes || {}));
+
+          // ---- REMOVING A TEAM MUST NOT STRAND ITS STRIKES (the critical) ---------------------
+          //
+          // THE ENGINE MUST NOT WRITE A DOCUMENT IT WILL REFUSE TO READ. `D18` keyed strikes by team
+          // index on the argument that `setTeams` carries scores by index "for the same reason" —
+          // but scores are carried BY `setTeams`, and strikes were carried by nothing. Clearing a
+          // box to drop the third of three teams left an entry under key "2" beside a two-team
+          // roster, which is precisely what `stateStrikesInBounds` rejects.
+          //
+          // Driven through the real UI, that cost the host their game: the resume shelf still lists
+          // the session, Resume lands on the error screen, and Discard is the only other control.
+          // Scores, opened cells and the current round, gone, from a supported mid-show edit.
+          //
+          // Asserted by REVALIDATING the session after the edit, not merely by inspecting the
+          // object: the property that matters is "still loadable", and only the validator can say.
+          // A CLEAN SLATE, because the assertions above deliberately left strikes on round 1 — and
+          // `demo-feud.json` has ONE column, so those were parked on a round the board does not
+          // have. Revalidating exposed that, which is how `addStrike` gained its column bound; the
+          // setup here states what it needs rather than inheriting whatever ran before it.
+          state.clearStrikes(0);
+          state.clearStrikes(1);
+          state.setTeams(['Red', 'Blue', 'Green']);
+          state.addStrike(feudForState.value, 0, 2);
+          state.addStrike(feudForState.value, 0, 0);
+          const beforeDrop = canonical(state.current().strikes || {});
+          state.setTeams(['Red', 'Blue']); // the host clears the third box
+          const afterDrop = state.current();
+          const revalidated = validator.validateState({
+            raw: { path: 'probe', kind: KINDS.STATE, text: JSON.stringify(afterDrop), data: JSON.parse(JSON.stringify(afterDrop)) },
+            bundle: feudForState.value,
+          });
+          record('state', 'removing a team drops its strikes, so the session it writes still loads',
+            revalidated.ok
+            && !Object.prototype.hasOwnProperty.call((afterDrop.strikes || {})['0'] || {}, '2')
+            && state.strikesFor(afterDrop, 0, 0) === 1,
+            'strikes went ' + beforeDrop + ' -> ' + canonical(afterDrop.strikes || {})
+            + '; the session revalidates: ' + (revalidated.ok ? 'yes'
+              : 'NO — ' + revalidated.failures.map((f) => f.path).join(', ')));
+
+          // The surviving team keeps what it earned. Trimming must not become "wipe the round".
+          record('state', 'a team that survives a roster edit keeps its own strikes',
+            state.strikesFor(state.current(), 0, 0) === 1,
+            'team 0 held 1 before the edit and holds ' + state.strikesFor(state.current(), 0, 0) + ' after');
+
+          // Defence in depth: even asked directly, the engine must not write past the roster.
+          state.addStrike(feudForState.value, 0, 5);
+          record('state', 'a strike against an index the roster does not have is never written',
+            !Object.prototype.hasOwnProperty.call((state.current().strikes || {})['0'] || {}, '5'),
+            'round 0 reads ' + canonical((state.current().strikes || {})['0'] || {}));
+
+          state.setTeams(['Red']);
 
           // Cleared, not zeroed: the between-rounds reset wipes EVERY team, which is what makes it
           // a different control from undo.
