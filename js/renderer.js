@@ -468,12 +468,19 @@ export function setRound(view, index) {
  * the marks themselves are `aria-hidden` decoration. `M11` is the mutation for exactly this: marks
  * drawn with no name at all, which looks correct on a projector and is silent to a screen reader.
  *
- * `role="status"` rather than a live region of our own: a strike is a state change the host causes
- * deliberately, and `status` announces politely without interrupting whatever is being read.
+ * WHY THIS ELEMENT IS NOT ITSELF THE LIVE REGION, though it was built as one first. A live region
+ * announces its CHANGED TEXT CONTENT. Every mark here is `aria-hidden` and carries no text at all —
+ * the glyph is CSS generated content — so the band's text never changes, and an `aria-label` is a
+ * NAME rather than announced content. Set `role="status"` on it and a screen-reader host is told
+ * nothing whatsoever when a strike lands. Caught in adversarial review, and the tell is that the
+ * band looked completely correct on a projector while being silent.
+ *
+ * So the announcement goes through `announce()` — the same `.qbe-live` region F8's win rail uses,
+ * which theme-contract §5.9 protects and which exists precisely so a visual change and its spoken
+ * form are two channels rather than one element trying to be both.
  */
 function buildStrikes(doc, bundle) {
   const root = el(doc, 'aside', 'qbe-strikes');
-  root.setAttribute('role', 'status');
   root.hidden = true;
 
   const marks = [];
@@ -499,14 +506,23 @@ export function updateStrikes(view, count) {
   const total = s.marks.length;
   const n = Math.min(Math.max(Number.isInteger(count) ? count : 0, 0), total);
   if (s.painted === n) return;
+  const first = s.painted === -1;
+  const was = first ? 0 : s.painted;
   s.painted = n;
 
+  const phrase = n + (n === 1 ? ' strike of ' : ' strikes of ') + total;
   s.root.hidden = n === 0;
-  s.root.setAttribute('aria-label', n + (n === 1 ? ' strike of ' : ' strikes of ') + total);
+  s.root.setAttribute('aria-label', phrase);
   for (let i = 0; i < total; i += 1) {
     if (i < n) s.marks[i].setAttribute('data-struck', 'true');
     else s.marks[i].removeAttribute('data-struck');
   }
+
+  // Announced only when the count RISES. A strike is an event; a round reset back to zero, or a
+  // repaint that happens to arrive at the same board, is not — and `first` guards the seeding
+  // paint of a resumed session, which must not read out strikes the room watched an hour ago.
+  // Same reasoning as the win rail's `silent` seeding.
+  if (!first && n > was) announce(phrase, s.root.ownerDocument || document);
 }
 
 /**

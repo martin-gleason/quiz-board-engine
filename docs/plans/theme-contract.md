@@ -433,6 +433,9 @@ top of it, never a replacement for it. See §7.
 | `--value-size` | point-value font size (use `clamp()`; boards vary 1–12 columns) |
 | `--value-color` | point-value color |
 | `--cell-text-size` | `.qbe-cell-text` font size — a whole term, not 3 digits, so cap it lower than `--value-size` |
+| `--strike-color` | the `✗` glyph and the struck slot's rim (`D16`). **LARGE text: 3:1 against `--board-bg`.** The band paints `--board-bg` itself, so that ground is the real one in every theme, not an approximation of it |
+| `--strike-team-color` | the score bar's per-team marks. **Body text: 4.5:1 against `--score-bg`**, which is dark in every shipped theme — which is why this is a SECOND token rather than a reuse of `--strike-color`: the two surfaces sit on grounds that invert between light and dark themes, and one value cannot pass on both |
+| `--strike-slot-border` | the unplayed slot's rim. Defaults to `var(--strike-color)` and a theme should leave it alone: three hand-computed values were wrong on two themes. It is load-bearing — it is how the room sees how many strikes REMAIN — so it carries the non-text 3:1 floor |
 | `--column-label-bg` / `--column-label-text` / `--column-label-size` | column header |
 
 **Column-label typography is deliberately NOT tokenised** (case, tracking, rule, weight). It was

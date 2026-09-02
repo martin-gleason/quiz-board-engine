@@ -67,6 +67,12 @@
   /* Not #000. A hair of blue keeps the black from looking like a dead signal,
      and gives the panel rims something to sit against. */
   --board-bg: #060911;
+  /* Strikes (D16). The base layer's deep red is tuned for a LIGHT board and
+     measures under the 3:1 large-text floor on this ground — 2.74:1 on
+     midnight, 1.63:1 on chalkboard — so a dark theme has to state its own.
+     --strike-team-color is NOT overridden: the score bar is dark in every
+     shipped theme, so the base value already passes there. */
+  --strike-color: #ff8a80;        /* 8.72:1 on this theme's ground (AA large ✓) */
   --board-fg: #e4eaf7;               /* 16.50:1 on --board-bg (AAA ✓) */
   /* Tighter than default's gutter: the board should read as one instrument
      panel with seams, not as separate cards on a surface. */
