@@ -1887,7 +1887,11 @@ export function renderResumeScreen({ sessions, gameHash, mount, handlers }) {
 
   for (let i = 0; i < list.length; i++) {
     const summary = list[i];
-    const resumable = summary.gameHash === gameHash;
+    // `RR8`. Two ways a row is not resumable, and they are different facts: the hash says it belongs
+    // to another board, and `blockedReason` says the composition root asked the validator and it
+    // said no. The renderer does not judge either — it is handed both and draws them.
+    const wrongBoard = summary.gameHash !== gameHash;
+    const resumable = !wrongBoard && !summary.blockedReason;
     const row = el(doc, 'div', 'qbe-session');
     row.setAttribute('data-session', String(i));
 
@@ -1897,9 +1901,16 @@ export function renderResumeScreen({ sessions, gameHash, mount, handlers }) {
         doc,
         'div',
         'qbe-session-meta',
-        // A non-resumable row is either another game entirely or the same game after an edit — from
-        // the hash alone the two are indistinguishable, so the copy says only what is certainly true.
-        describeSession(summary) + (resumable ? '' : ' · saved from a different game file, so it cannot be resumed here'),
+        // A wrong-board row is either another game entirely or the same game after an edit — from
+        // the hash alone the two are indistinguishable, so the copy says only what is certainly
+        // true. A BLOCKED row is a different message: this is the host's board, and it is the app
+        // that cannot load it. Saying so plainly matters more than it looks — the host is deciding
+        // whether to discard a game, and "you cannot resume this" without a reason reads as
+        // something they did.
+        describeSession(summary)
+          + (wrongBoard ? ' · saved from a different game file, so it cannot be resumed here' : '')
+          + (!wrongBoard && summary.blockedReason
+            ? ' · this saved game cannot be opened: ' + summary.blockedReason : ''),
       ),
     );
     if (resumable) {

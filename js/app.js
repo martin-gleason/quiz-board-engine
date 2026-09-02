@@ -353,10 +353,43 @@ function startFresh(ctx) {
 // this module is the only place allowed to join them.
 
 /** The resume / discard / new screen. Redrawn rather than patched when a row is discarded. */
+/**
+ * Can this saved session actually be loaded? (`RR8`)
+ *
+ * WHY THE SHELF HAS TO ASK. `summaryOf` reads a session's title and timestamp and nothing else, so
+ * a row was offered on the strength of two fields while everything the app would refuse on went
+ * unchecked. The failure that produced this rule: a mid-show roster edit stranded a strike on a
+ * departed team, `stateStrikesInBounds` then refused the session, and the host got the error screen
+ * on Resume with Discard as the only other control — their scores, opened cells and current round
+ * gone. The mutator bug is fixed, but the CLASS is not: no mutator runs the validator, so any
+ * future one can write a document this screen would still cheerfully offer.
+ *
+ * So the shelf stops trusting itself and asks the validator, on the one row it could actually
+ * resume. Judging stays in `validator` and drawing stays in `renderer`; this is the composition
+ * root, which is the only place that holds both plus the bundle.
+ *
+ * Cost is one parse and one structural walk of a few-KB document, once, on a screen the host is
+ * already reading — against the alternative of finding out by losing a game in front of a room.
+ */
+function resumeBlockedReason(ctx, gameHash) {
+  const loaded = state.loadSession(gameHash);
+  if (!loaded.ok) return 'the saved data could not be read';
+  const checked = validator.validateState({ raw: loaded.value, bundle: ctx.bundle });
+  if (checked.ok) return null;
+  // The PATH, not the prose: "strikes[\"0\"][\"2\"]" tells a maintainer where to look, and the host
+  // only needs to know the row is dead and why it is not their fault.
+  const where = checked.failures[0] && checked.failures[0].path;
+  return 'it no longer matches this board' + (where ? ' (' + where + ')' : '');
+}
+
 function showResume(ctx, sessions) {
   if (ctx.screen) ctx.screen.destroy();
+  // Only the row whose hash matches is offerable at all; the rest already say why not.
+  const annotated = sessions.map((s) => (s.gameHash === ctx.gameHash
+    ? Object.assign({}, s, { blockedReason: resumeBlockedReason(ctx, s.gameHash) })
+    : s));
   ctx.screen = renderer.renderResumeScreen({
-    sessions,
+    sessions: annotated,
     gameHash: ctx.gameHash,
     mount: ctx.stage,
     handlers: {

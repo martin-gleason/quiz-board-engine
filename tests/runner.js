@@ -2176,6 +2176,58 @@ function runSetupScreenChecks(bundle) {
     discarded.length === 1 && discarded[0] === 'c'.repeat(64),
     'onDiscard fired ' + discarded.length + ' time(s)');
 
+  // ---- A SESSION THAT WILL NOT LOAD IS NEVER OFFERED (RR8) -----------------------------------
+  //
+  // `summaryOf` reads a session's title and timestamp and nothing else, so a row was offered on the
+  // strength of two fields while everything the app would refuse on went unchecked. What that cost,
+  // reproduced end to end before it was fixed: a mid-show roster edit stranded a strike on a
+  // departed team, the validator refused the session, and the host got the error screen on Resume
+  // with Discard as the only other control — scores, opened cells and current round gone.
+  //
+  // The mutator bug is fixed. The CLASS is not: no mutator runs the validator, so a future one can
+  // still write a document this screen would offer. So the screen stops trusting itself. `app.js`
+  // asks the validator and hands down `blockedReason`; the renderer draws it and withholds Resume.
+  const blockedStage = harnessStage();
+  renderer.renderResumeScreen({
+    sessions: [{
+      gameHash: 'd'.repeat(64), gameTitle: 'Period 2', updatedAt: '2026-08-16T20:41:00Z',
+      teamCount: 2, blockedReason: 'it no longer matches this board (strikes["0"]["7"])',
+    }],
+    gameHash: 'd'.repeat(64),
+    mount: blockedStage,
+    handlers: { onDiscard() {}, onResume() {} },
+  });
+  const blockedRow = blockedStage.querySelector('.qbe-session');
+  const blockedMeta = blockedRow ? blockedRow.querySelector('.qbe-session-meta').textContent : '';
+  record('render', 'a saved session that will not load offers no Resume button',
+    blockedRow !== null && blockedRow.querySelector('[data-action="resume"]') === null
+    && blockedRow.querySelector('[data-action="discard"]') !== null,
+    blockedRow === null ? 'no row was drawn at all'
+      : 'buttons drawn: ' + [...blockedRow.querySelectorAll('.qbe-btn')]
+        .map((b) => b.getAttribute('data-action')).join(', '));
+
+  // The REASON matters as much as withholding the button. The host is deciding whether to discard a
+  // game; "you cannot resume this" with no reason reads as something they did wrong, and the path
+  // is what makes it reportable.
+  record('render', 'a blocked session says it is the app that cannot open it, and why',
+    /cannot be opened/.test(blockedMeta) && /strikes\["0"\]\["7"\]/.test(blockedMeta)
+    && !/different game file/.test(blockedMeta),
+    'the row reads: ' + blockedMeta);
+
+  // And the two states stay distinct: a wrong-board row is not the app failing, and must keep its
+  // own copy rather than inheriting this one.
+  const otherStage = harnessStage();
+  renderer.renderResumeScreen({
+    sessions: [{ gameHash: 'e'.repeat(64), gameTitle: 'Another board', updatedAt: '2026-08-16T20:41:00Z', teamCount: 1 }],
+    gameHash: 'f'.repeat(64),
+    mount: otherStage,
+    handlers: { onDiscard() {}, onResume() {} },
+  });
+  const otherMeta = otherStage.querySelector('.qbe-session-meta').textContent;
+  record('render', 'a row for a different board still says so, and not that the app is broken',
+    /different game file/.test(otherMeta) && !/cannot be opened/.test(otherMeta),
+    'the row reads: ' + otherMeta);
+
   // Arming a confirmation and then reaching for Resume must not leave the row armed behind you.
   discardBtn.click();
   resumeStage.querySelector('[data-action="resume"]').click();
