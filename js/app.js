@@ -523,6 +523,7 @@ function startGame(ctx) {
   // renderer leaves a button out entirely when its handler is absent.
   if (bundle.gametype.strikes) {
     toolbarHandlers.onStrike = () => strikeRound(ctx);
+    toolbarHandlers.onStrikeUndo = () => undoStrikeForRound(ctx);
     toolbarHandlers.onStrikesClear = () => state.clearStrikes(currentRound(ctx));
   }
   // A ONE-COLUMN RANKED BOARD HAS NOWHERE TO GO, and `games/demo-feud.json` is exactly that — so
@@ -546,9 +547,20 @@ function currentRound(ctx) {
   return session && Number.isInteger(session.currentRound) ? session.currentRound : 0;
 }
 
-/** Record a strike against the round on screen (`D15`). */
+/**
+ * Record a strike against the ACTIVE TEAM in the round on screen (`D15`, `D18`).
+ *
+ * `ctx.activeTeam` is null until the host clicks a team name, and `state.addStrike` treats that as
+ * a no-op — the host's rule is click the team, then press X. Nothing is announced and nothing is
+ * drawn, which is the honest outcome: there is no one to charge the strike to.
+ */
 function strikeRound(ctx) {
-  state.addStrike(ctx.bundle, currentRound(ctx));
+  state.addStrike(ctx.bundle, currentRound(ctx), ctx.activeTeam);
+}
+
+/** Take one strike back from the active team (`D18`). */
+function undoStrikeForRound(ctx) {
+  state.undoStrike(ctx.bundle, currentRound(ctx), ctx.activeTeam);
 }
 
 /**
@@ -601,14 +613,20 @@ function repaint(ctx, session) {
   const round = Number.isInteger(session.currentRound) ? session.currentRound : 0;
   if (ctx.board) {
     renderer.setRound(ctx.board, round);
-    renderer.updateStrikes(ctx.board, state.strikesFor(session, round));
+    // `D18`. The centre band shows THE TEAM ON THE BOARD. With nobody marked it falls back to the
+    // round's highest count, which is the only honest single number for a round several teams have
+    // played and never under-reports — but the per-team rows below are then the real answer.
+    renderer.updateStrikes(ctx.board, state.strikesFor(session, round, ctx.activeTeam));
   }
   if (ctx.panel) {
+    const teamCount = Array.isArray(session.teams) ? session.teams.length : 0;
+    const perTeamStrikes = [];
+    for (let i = 0; i < teamCount; i += 1) perTeamStrikes.push(state.strikesFor(session, round, i));
     renderer.updateScorePanel(ctx.panel, {
       session,
       award: ctx.awardKey ? state.cellAward({ bundle: ctx.bundle, session, cellKey: ctx.awardKey }) : 0,
       activeTeam: ctx.activeTeam,
-      strikes: state.strikesFor(session, round),
+      strikes: perTeamStrikes,
     });
   }
 }

@@ -563,9 +563,20 @@ const stateV1 = obj({
       kind: 'map',
       keyPattern: PATTERNS.columnKey,
       maxEntries: LIMITS.maxColumns,
-      expected: 'an object whose keys are column indices and whose values are strike counts',
+      expected: 'an object whose keys are column indices and whose values are per-team strike counts',
       hint: 'bad-key-format',
-      values: int({ min: 0, max: 10, expected: 'a whole number from 0 to 10', hint: 'out-of-range' }),
+      // `D18`: TWO levels — column, then team. A strike belongs to a team within a round, so the
+      // inner key is a team INDEX, which is the only identity a team has (`setTeams` carries scores
+      // by index across a rename for the same reason). No schemaVersion bump: `strikes` has never
+      // shipped outside this branch, so no released file carries the flat shape this replaces.
+      values: Object.freeze({
+        kind: 'map',
+        keyPattern: PATTERNS.columnKey,
+        maxEntries: LIMITS.maxTeams,
+        expected: 'an object whose keys are team indices and whose values are strike counts',
+        hint: 'bad-key-format',
+        values: int({ min: 0, max: 10, expected: 'a whole number from 0 to 10', hint: 'out-of-range' }),
+      }),
     }),
     currentRound: int({
       min: 0,
@@ -639,8 +650,8 @@ export const CROSS_CHECKS = Object.freeze({
   // carry, so both live here.
   stateStrikesInBounds: Object.freeze({
     hint: 'out-of-range',
-    describe: 'Each strikes key must address a column on the board, and each value must not exceed the game type\'s strikes.count.',
-    pathShape: 'strikes["<c>"]',
+    describe: 'Each strikes key must address a column on the board, each inner key a team that exists, and each count must not exceed the game type\'s strikes.count.',
+    pathShape: 'strikes["<c>"]["<t>"]',
   }),
   stateCurrentRoundInBounds: Object.freeze({
     hint: 'out-of-range',

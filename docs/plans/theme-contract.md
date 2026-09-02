@@ -205,8 +205,10 @@ Emitted by `renderer.js` via `createElement`/`textContent` only. Indentation sho
         .qbe-team[data-active][data-team]  one per team; data-team is its zero-based index
           button.qbe-team-name             a BUTTON: pressing it marks the active team (aria-pressed)
           .qbe-team-score
-          .qbe-team-strikes                the round's strikes beside the ACTIVE team (D16); the
-                                          one element in §2 that is present-and-empty by design,
+          .qbe-team-strikes                THIS team's strikes in the round on screen (D18 — under
+                                          D16 it carried the round's count beside the active team,
+                                          which could not say whose strikes they were). The one
+                                          element in §2 that is present-and-empty by design,
                                           because a fixed row must not reflow mid-game
           .qbe-team-controls
             button.qbe-btn[data-action]    "score-down" then "score-up"; labelled with the amount
@@ -236,7 +238,8 @@ Emitted by `renderer.js` via `createElement`/`textContent` only. Indentation sho
         .qbe-win[data-pattern]             one per completed pattern, in completion order
       footer.qbe-toolbar                   ALWAYS present, scoring or not; last NON-OVERLAY child
                                           of the stage (a setup overlay may be appended after it)
-        button.qbe-btn[data-action]        "strike", "strikes-clear", "round-next", "teams",
+        button.qbe-btn[data-action]        "strike", "strike-undo", "strikes-clear", "round-next",
+                                          "teams",
                                           "export", "import". Each is ABSENT rather than inert
                                           when its handler is not passed: "teams" when the game
                                           type has no scoring, the first two when it declares no

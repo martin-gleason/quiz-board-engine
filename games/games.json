@@ -4,6 +4,7 @@
   "games": {
     "General Knowledge": "demo.json",
     "Trivia Bingo": "demo-bingo.json",
-    "Ranked Answers": "demo-feud.json"
+    "Ranked Answers": "demo-feud.json",
+    "Ranked Answers - Three Rounds": "demo-feud-rounds.json"
   }
 }

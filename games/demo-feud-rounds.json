@@ -1,0 +1,42 @@
+{
+  "_note": "DEMO MULTI-ROUND RANKED BOARD (D17). Three columns, so each column is a ROUND: the board shows one at a time and the host advances with the toolbar. This file exists because D17's whole user value was unreachable from shipped content — demo-feud.json has a single column, so the round machinery and the 'Next round' control could not be exercised from any board in the repo. Strikes (D15) are per round, so this is also the only board on which 'a round resets clean' is visible. Every survey question and point value below is INVENTED for the demo: no real survey was consulted and none is implied.",
+  "schemaVersion": 1,
+  "title": "Quiz Board Engine Demo — Three Rounds",
+  "gameType": "feud",
+  "theme": "midnight",
+  "animation": "fade",
+  "board": {
+    "columns": [
+      {
+        "label": "Round 1 — Name something people forget to pack for a holiday.",
+        "cells": [
+          { "answer": "A toothbrush", "value": 34 },
+          { "answer": "A phone charger", "value": 27 },
+          { "answer": "Sunscreen", "value": 18 },
+          { "answer": "An umbrella", "value": 12 },
+          { "answer": "Their passport", "value": 9 }
+        ]
+      },
+      {
+        "label": "Round 2 — Name a reason someone is late to work.",
+        "cells": [
+          { "answer": "Traffic", "value": 41 },
+          { "answer": "Slept through the alarm", "value": 29 },
+          { "answer": "Missed the bus", "value": 15 },
+          { "answer": "Could not find their keys", "value": 10 },
+          { "answer": "The dog got out", "value": 5 }
+        ]
+      },
+      {
+        "label": "Round 3 — Name something you find in a kitchen drawer.",
+        "cells": [
+          { "answer": "Spoons", "value": 38 },
+          { "answer": "Takeaway menus", "value": 22 },
+          { "answer": "Batteries", "value": 17 },
+          { "answer": "A tape measure", "value": 14 },
+          { "answer": "Rubber bands", "value": 9 }
+        ]
+      }
+    ]
+  }
+}

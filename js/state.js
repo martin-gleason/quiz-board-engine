@@ -1019,34 +1019,81 @@ function strikeCap(bundle) {
   return g && g.strikes && Number.isInteger(g.strikes.count) ? g.strikes.count : 0;
 }
 
-export function addStrike(bundle, column) {
+/**
+ * Record a strike against a TEAM in a round (`D18`).
+ *
+ * `teamIndex` null or absent is a NO-OP, and that is the decision rather than an oversight: after
+ * `D18` a strike belongs to somebody, so with nobody marked there is no one to charge it to. The
+ * host's rule is click the team, then press X — pressing X first must do nothing visible rather
+ * than quietly charge whoever happens to be first in the list.
+ *
+ * THE CAP IS ENFORCED HERE, not in the renderer (`M7`): clamping only where the marks are drawn
+ * would leave a fourth strike in the session that the room never saw, that survived export, and
+ * that came back on import as a value its own schema rejects.
+ */
+export function addStrike(bundle, column, teamIndex) {
   const cap = strikeCap(bundle);
-  if (cap === 0) return current();
-  const key = String(column);
+  if (cap === 0 || !Number.isInteger(teamIndex) || teamIndex < 0) return current();
+  const col = String(column);
+  const team = String(teamIndex);
   return update((draft) => {
     if (!draft.strikes) draft.strikes = {};
-    const now = Number.isInteger(draft.strikes[key]) ? draft.strikes[key] : 0;
-    draft.strikes[key] = Math.min(now + 1, cap);
+    if (!draft.strikes[col]) draft.strikes[col] = {};
+    const now = Number.isInteger(draft.strikes[col][team]) ? draft.strikes[col][team] : 0;
+    draft.strikes[col][team] = Math.min(now + 1, cap);
   });
 }
 
 /**
- * Wipe a round's strikes. The field is DELETED rather than set to zero, because absent-means-none
- * is the idiom everywhere else in this file — an exported session should not carry a row of zeroes
- * for rounds nobody played.
+ * Take one strike back (`D18`).
+ *
+ * ONE PRESS UNDOES ONE STRIKE, deliberately, rather than clearing the team's row. The maintainer's
+ * reason for asking is accidental strikes, and an undo that wiped three at once would turn a
+ * one-key slip into a three-key one in the other direction — in front of the room, with no undo
+ * for the undo. At zero the entry is DELETED rather than left as a zero, so an exported session
+ * carries no row for a team that never took one; absent-means-none is the idiom everywhere else.
  */
-export function clearStrikes(column) {
-  const key = String(column);
+export function undoStrike(bundle, column, teamIndex) {
+  if (strikeCap(bundle) === 0 || !Number.isInteger(teamIndex) || teamIndex < 0) return current();
+  const col = String(column);
+  const team = String(teamIndex);
   return update((draft) => {
-    if (draft.strikes) delete draft.strikes[key];
+    const perTeam = draft.strikes && draft.strikes[col];
+    if (!perTeam || !Number.isInteger(perTeam[team])) return;
+    const next = perTeam[team] - 1;
+    if (next > 0) perTeam[team] = next;
+    else delete perTeam[team];
+    if (Object.keys(perTeam).length === 0) delete draft.strikes[col];
   });
 }
 
-/** How many strikes a round currently has. Zero for a game type that does not use them. */
-export function strikesFor(session, column) {
-  if (!session || !session.strikes) return 0;
-  const n = session.strikes[String(column)];
-  return Number.isInteger(n) ? n : 0;
+/** Wipe a round's strikes for EVERY team — the between-rounds reset, not an undo. */
+export function clearStrikes(column) {
+  const col = String(column);
+  return update((draft) => {
+    if (draft.strikes) delete draft.strikes[col];
+  });
+}
+
+/**
+ * How many strikes a team has in a round. Zero for a game type that does not use them.
+ *
+ * `teamIndex` omitted returns the round's HIGHEST count across teams, which is what the centre band
+ * falls back to when the host has marked nobody: it is the only honest single number to show for a
+ * round owned by several teams, and it never under-reports.
+ */
+export function strikesFor(session, column, teamIndex) {
+  const perTeam = session && session.strikes ? session.strikes[String(column)] : null;
+  if (!perTeam) return 0;
+  if (Number.isInteger(teamIndex)) {
+    const n = perTeam[String(teamIndex)];
+    return Number.isInteger(n) ? n : 0;
+  }
+  let highest = 0;
+  for (const k of Object.keys(perTeam)) {
+    if (Number.isInteger(perTeam[k]) && perTeam[k] > highest) highest = perTeam[k];
+  }
+  return highest;
 }
 
 export function setTeams(names) {

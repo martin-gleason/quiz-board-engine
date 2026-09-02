@@ -1,6 +1,6 @@
 # F9c — strikes on the board
 
-**Status:** COMPLETE. `T0`–`T5` built; Chrome 405/405, Firefox 405/405; `M7`, `M8`, `M10`, `M12`,
+**Status:** REOPENED by `D18` — strikes are pinned to a team and gain an undo. Was: COMPLETE. `T0`–`T5` built; Chrome 405/405, Firefox 405/405; `M7`, `M8`, `M10`, `M12`,
 `M13`, `M14` all shown failing. Awaiting review and the gate.
 **Branch:** `working-strikes`
 **Retrofit on:** `F9` (feud), shipped. Second pass on a shipped feature, so a retrofit letter —
@@ -52,8 +52,16 @@ and that is exactly the failure a host discovers on stage (`M13`).
 The two answers pull against each other: **strikes are per column** (round-scoped), but **per-team
 marks** imply team-scoped strikes. Resolved as:
 
-> **Strikes belong to the round. The score bar draws the round's strikes beside the team the host
-> has marked active.**
+> ~~**Strikes belong to the round. The score bar draws the round's strikes beside the team the host
+> has marked active.**~~
+>
+> **SUPERSEDED BY `D18` (2026-09-02).** Strikes belong to a **team within a round**. Every team row
+> shows its own count; the centre band shows the team on the board; a strike with no active team is
+> a no-op. The `(column, team)` matrix this section was written to avoid is now the requirement —
+> the maintainer looked at the built board and said the strikes had to be pinned to a team. The
+> reasoning below is kept rather than deleted, because it is the record of what was traded away and
+> why: what it bought was one field and no matrix, and what it cost was a board that could not say
+> WHOSE strikes those were.
 
 This is why it works rather than being a fudge: `activeTeam` already exists (`js/app.js:310`,
 `renderer.js:1207`) and is **transient view state, deliberately not in the session** — "whose turn

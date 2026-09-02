@@ -833,7 +833,7 @@ export function validateState({ raw, bundle }) {
   // partial-render behaviour spec §5 forbids.
   const strikeCap = bundle.gametype.strikes ? bundle.gametype.strikes.count : 0;
   for (const key of Object.keys(state.strikes || {})) {
-    // CANONICAL FORM, not merely numeric. `/^\d+$/` admits "00", which passes both stages and then
+    // CANONICAL FORM, not merely numeric. `/^\\d+$/` admits "00", which passes both stages and then
     // addresses nothing: `strikesFor` reads `strikes["0"]`, so an imported session SAYING three
     // strikes on round 0 renders zero, and the next X writes a second, separate key. Accept-or-
     // reject is the validator's contract; silently displaying something other than what the file
@@ -848,16 +848,38 @@ export function validateState({ raw, bundle }) {
       );
       continue;
     }
-    const value = state.strikes[key];
-    if (value > strikeCap) {
-      contractFail(
-        file, KINDS.STATE, 'strikes["' + key + '"]',
-        strikeCap === 0
-          ? 'no strikes at all — the "' + bundle.gametype.id + '" game type does not use them'
-          : 'at most ' + strikeCap + ' strikes, which is what the "' + bundle.gametype.id
-            + '" game type allows',
-        describeValue(value), 'out-of-range', out,
-      );
+
+    // `D18`. The inner level is a TEAM index, and it is checked against the teams this session
+    // actually carries — not against the 12-team cap, which is all the schema could know. A session
+    // naming team 3 of a two-team game is the same class of stale-import defect as a cell key on a
+    // board that has since shrunk, and it must be caught for the same reason: the count would
+    // otherwise sit in the session forever, invisible, and reappear if a third team were added.
+    const perTeam = state.strikes[key];
+    for (const teamKey of Object.keys(perTeam)) {
+      const teamIndex = Number(teamKey);
+      const path = 'strikes["' + key + '"]["' + teamKey + '"]';
+      if (!Number.isInteger(teamIndex) || String(teamIndex) !== teamKey || teamIndex >= state.teams.length) {
+        contractFail(
+          file, KINDS.STATE, path,
+          state.teams.length === 0
+            ? 'no strikes at all — this session has no teams to charge one to'
+            : 'a team that exists in this session (' + state.teams.length + ' team'
+              + (state.teams.length === 1 ? '' : 's') + ', so 0 to ' + (state.teams.length - 1) + ')',
+          'the key ' + JSON.stringify(teamKey), 'out-of-range', out,
+        );
+        continue;
+      }
+      const value = perTeam[teamKey];
+      if (value > strikeCap) {
+        contractFail(
+          file, KINDS.STATE, path,
+          strikeCap === 0
+            ? 'no strikes at all — the "' + bundle.gametype.id + '" game type does not use them'
+            : 'at most ' + strikeCap + ' strikes, which is what the "' + bundle.gametype.id
+              + '" game type allows',
+          describeValue(value), 'out-of-range', out,
+        );
+      }
     }
   }
 
