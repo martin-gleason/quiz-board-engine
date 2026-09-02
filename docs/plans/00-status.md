@@ -17,7 +17,7 @@ Named, never numbered (`D2`). **No source read here marks a milestone as the cur
 
 | Milestone | Decisions landing here | Units |
 |---|---|---|
-| — | 0 | F9c |
+| — | 0 | F13, F9c |
 
 ## Features and chores
 
@@ -26,6 +26,7 @@ Status is what the unit's own plan header declares. What has landed in git is de
 | ID | Kind | Status | Milestone | P | Owner | Plan | Tasks |
 |---|---|---|---|---|---|---|---|
 | F9c | feature | REOPENED by `D18` — strikes are pinned to a team and gain an undo | — | — | — | `docs/plans/F9c.md` | 0 planned |
+| F13 | feature | plan, awaiting the gate | — | — | — | `docs/plans/F13.md` | 0 planned |
 
 ## Registers
 
@@ -33,7 +34,7 @@ Counted from the register itself. A register with no rows still gets a line.
 
 | Register | Rows | Open | Unknown | Closed |
 |---|---|---|---|---|
-| Decisions (`D`) | 18 | 0 | 0 | 18 |
+| Decisions (`D`) | 19 | 1 | 0 | 18 |
 | Risks (`RR`) | 8 | 0 | 0 | 8 |
 | Owner items (`O`) | 0 | 0 | 0 | 0 |
 | Hooks (`H`) | 0 | 0 | 0 | 0 |
@@ -44,6 +45,7 @@ Counted from the register itself. A register with no rows still gets a line.
 
 | Register | Status | Count |
 |---|---|---|
+| `D` | proposed | 1 |
 | `D` | ratified | 18 |
 | `RR` | closed | 1 |
 | `RR` | ratified | 7 |
@@ -67,8 +69,9 @@ Every open row in the register. Owner is the row's Owner column where the table 
 | Marty | C15 | P0 | open | Add CI — build, the Safari gate, and whatever the suite becomes |
 | Marty | C16 | P1 | open | Regenerate docs/plans/00-status.md from this repo, or stop generating it here |
 | Marty | C17 | P0 | open | Make the test suite collect — it currently reports green having run nothing |
+| owner | D19 | — | proposed | A board editor ships as a separate page, /editor/, scoped to feud. The editor is absent from spec v1 entirely; the only … |
 | — | C11 | — | open | Safari manual test pass — human, maintainer-executed |
 
 ---
 
-4 open register rows.
+5 open register rows.
