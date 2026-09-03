@@ -1818,6 +1818,25 @@ export function renderStartupScreen({ games, themes, themePref, mount, handlers 
   // test helper click the wrong thing six months from now.
   ui.actions.appendChild(chromeButton(doc, 'begin', 'Start', 'Start the selected board'));
 
+  // `D20`. THE ROUTE TO THE EDITOR, and it is a real `<a href>` rather than a button with a click
+  // handler. A link is the platform's own affordance for going somewhere else: middle-click and
+  // ⌘-click open it in a new tab, the browser shows the destination on hover, and a screen reader
+  // announces it as a link rather than as a control that mysteriously navigates. Nothing here is
+  // rebuilt that the platform already does (CLAUDE.md accessibility rule).
+  //
+  // NOT A FORK SCREEN IN FRONT OF THE PICKER. This is the entry point every game passes through, so
+  // an extra "what would you like to do?" step would cost a click on every single start, in front of
+  // a room, to serve the rarer case. The picker stays the fast path and authoring sits beside it.
+  //
+  // The game still never LOADS the editor — `D19`'s isolation is about code, and a link shares no
+  // module. If the editor is broken, this navigates to a broken page and the board is untouched.
+  const aside = el(doc, 'p', 'qbe-startup-aside');
+  aside.appendChild(doc.createTextNode('Need a board that does not exist yet? '));
+  const editorLink = el(doc, 'a', 'qbe-startup-editor', 'Write a new set of questions');
+  editorLink.href = 'editor/';
+  aside.appendChild(editorLink);
+  ui.body.appendChild(aside);
+
   ui.root.addEventListener('click', (event) => {
     const target = event.target instanceof Element ? event.target.closest('button') : null;
     if (!target || !ui.root.contains(target)) return;

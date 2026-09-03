@@ -277,6 +277,9 @@ Emitted by `renderer.js` via `createElement`/`textContent` only. Indentation sho
         .qbe-startup-theme                 the look choice
           label.qbe-startup-label
           select.qbe-startup-select        first option is "use this game's theme", value ""
+        p.qbe-startup-aside                the route to the authoring page (D20)
+          a.qbe-startup-editor             a real LINK to editor/, not a button — so ⌘-click and
+                                          middle-click work and a screen reader says "link"
       .qbe-setup-actions
         button.qbe-btn[data-action]        "begin"
 ```

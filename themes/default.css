@@ -1152,6 +1152,27 @@ body,
   font-size: clamp(0.95rem, 1.3vw, 1.15rem);
 }
 
+/* D20. The route to the authoring page. Sized as a real second option, not as
+   fine print: a host who needs it is looking for it, and one who does not
+   should be able to ignore it without it shouting. The link keeps the default
+   underline — removing it would leave colour as the only cue that it is a link,
+   which is the same hue-alone failure §5.3 forbids for cell states. */
+.qbe-startup-aside {
+  margin: 1.25rem 0 0;
+  padding-top: 1rem;
+  /* Derived from a DEFINED token, not an invented one. `--cell-border-color` does not exist —
+     the token audit caught it as INERT, which is exactly what that check is for: a custom
+     property nobody defines silently does nothing, and the rule would have been invisible. */
+  border-top: 1px solid color-mix(in srgb, var(--board-fg) 25%, transparent);
+  font-size: .95em;
+}
+
+.qbe-startup-editor {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+
 /* A label wrapping its own input: the whole row is the click target, and the
    association needs no `for`/`id` pair to go wrong. */
 .qbe-field {

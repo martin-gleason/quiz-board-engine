@@ -26,7 +26,7 @@ Status is what the unit's own plan header declares. What has landed in git is de
 | ID | Kind | Status | Milestone | P | Owner | Plan | Tasks |
 |---|---|---|---|---|---|---|---|
 | F9c | feature | REOPENED by `D18` — strikes are pinned to a team and gain an undo | — | — | — | `docs/plans/F9c.md` | 0 planned |
-| F13 | feature | built | — | — | — | `docs/plans/F13.md` | 0 planned |
+| F13 | feature | built and reviewed | — | — | — | `docs/plans/F13.md` | 0 planned |
 
 ## Registers
 
@@ -34,7 +34,7 @@ Counted from the register itself. A register with no rows still gets a line.
 
 | Register | Rows | Open | Unknown | Closed |
 |---|---|---|---|---|
-| Decisions (`D`) | 19 | 0 | 0 | 19 |
+| Decisions (`D`) | 20 | 0 | 0 | 20 |
 | Risks (`RR`) | 10 | 0 | 0 | 10 |
 | Owner items (`O`) | 0 | 0 | 0 | 0 |
 | Hooks (`H`) | 0 | 0 | 0 | 0 |
@@ -45,7 +45,7 @@ Counted from the register itself. A register with no rows still gets a line.
 
 | Register | Status | Count |
 |---|---|---|
-| `D` | ratified | 19 |
+| `D` | ratified | 20 |
 | `RR` | closed | 1 |
 | `RR` | ratified | 9 |
 | `M` | closed | 28 |

@@ -621,6 +621,8 @@ const CONTRACT_CLASSES = new Set([
   'qbe-setup', 'qbe-setup-panel', 'qbe-setup-title', 'qbe-setup-note', 'qbe-setup-body',
   'qbe-setup-actions', 'qbe-field', 'qbe-field-input',
   'qbe-session', 'qbe-session-title', 'qbe-session-meta',
+  // D20: the startup screen's route to the authoring page.
+  'qbe-startup-aside', 'qbe-startup-editor',
   // contract v1.5 (F8): the win rail. A completed pattern is an announcement to the room, so it is
   // DOM the design collaborator has to be able to style — which is why it went into the published
   // contract before it went into the renderer, and why it is transcribed here like everything else.
@@ -2176,6 +2178,45 @@ function runSetupScreenChecks(bundle) {
   record('render', 'the second press of Discard is the one that discards',
     discarded.length === 1 && discarded[0] === 'c'.repeat(64),
     'onDiscard fired ' + discarded.length + ' time(s)');
+
+  // ---- THE STARTUP PICKER POINTS AT THE EDITOR (D20) -------------------------------------------
+  //
+  // The editor shipped under `D19` with nothing in the app pointing at it, so a host had to know the
+  // URL. Asserted as a real LINK with a real href, not merely "an element exists": the point of
+  // using `<a href>` rather than a button is that the platform gives ⌘-click, middle-click, hover
+  // preview and the word "link" to a screen reader for free — a button with a click handler that
+  // navigates looks identical here and loses all four.
+  const startupStage = harnessStage();
+  renderer.renderStartupScreen({
+    games: [{ name: 'A board', file: 'demo.json' }],
+    themes: [{ name: 'midnight', file: 'midnight.css' }],
+    themePref: null,
+    mount: startupStage,
+    handlers: { onStart() {} },
+  });
+  const editorLink = startupStage.querySelector('.qbe-startup-editor');
+  record('startup', 'the picker offers a route to the editor, as a real link',
+    editorLink !== null && editorLink.tagName === 'A'
+    && /(^|\/)editor\/$/.test(editorLink.getAttribute('href') || '')
+    && editorLink.textContent.trim() !== '',
+    editorLink === null ? 'no route to the editor is offered at all'
+      : '<' + editorLink.tagName.toLowerCase() + ' href="' + editorLink.getAttribute('href')
+        + '">' + editorLink.textContent + '</' + editorLink.tagName.toLowerCase() + '>');
+
+  // It must not become the primary action. The board list is what the host came for, and `begin`
+  // stays the one button in the actions row.
+  const startupActions = [...startupStage.querySelectorAll('.qbe-setup-actions .qbe-btn')]
+    .map((b) => b.getAttribute('data-action'));
+  record('startup', 'the editor route does not become a competing primary action',
+    startupActions.length === 1 && startupActions[0] === 'begin'
+    && startupStage.querySelector('.qbe-setup-actions .qbe-startup-editor') === null,
+    'actions row holds: ' + startupActions.join(', '));
+
+  // NOT `assertContract` here: that function validates a STAGE — board, detail overlay, score bar —
+  // and the startup picker is the one screen drawn outside `.reveal` with its own §2 block. Pointing
+  // it at this screen reported the picker's own documented classes as undocumented, which is the
+  // check being right and the caller being wrong.
+  startupStage.remove();
 
   // ---- A SESSION THAT WILL NOT LOAD IS NEVER OFFERED (RR8) -----------------------------------
   //
