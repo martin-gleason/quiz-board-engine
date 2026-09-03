@@ -1,8 +1,3 @@
-<!-- VENDORED from code-process-review/conventions.md — DO NOT EDIT.
-     pinned-sha256: c5bfb6a570e6453cdd1a55fcbd1aba19420b8cf7b96b2ab9c42e61de61b5946b
-     Project-local rules belong in docs/conventions-local.md (D24).
-     Fix upstream, then re-vendor: python3 scripts/vendor.py <project> -->
-
 # Conventions — baseline
 
 **This file is the source of truth.** A project vendors a pinned copy to
@@ -374,6 +369,33 @@ when branch-based GitHub Pages offers exactly two paths, a limit the owner alrea
 unfamiliar system prompts caution; a familiar one produces a confident sentence, and a
 register cannot tell confidence from knowledge.
 
+### Validate every artefact, not just the primary one
+
+**Ratified 2026-09-03 (`D46`).** A feature can judge its main output rigorously and still emit a
+*second* artefact that nothing checks.
+
+The case: a board editor built so it could not lie — it imported the real validator rather than
+restating a single rule, refused to export while the board was invalid, and reported problems in the
+engine's own words. It then printed a one-line manifest entry and told the host to paste it into a
+config file. That line was hand-concatenated from the wrong field and never escaped. For the
+project's own demo board it produced a key the manifest validator refuses; with a quotation mark in
+the name it produced something that was not JSON at all. The config had no partial-render path
+either, so one bad key would have taken the whole picker down — for every board, not just the new
+one.
+
+Everything that made the primary output trustworthy was absent from the secondary one, in the same
+file, written the same afternoon.
+
+**The test:** does this feature produce anything a human is told to paste, copy, commit or run —
+a config line, a command, a snippet, a filename, a URL? Each of those is an output, and each needs
+the same treatment the main one gets: validated by the thing that will consume it, and asserted on
+**as the artefact**, not as the model that generated it. The assertion that caught this one builds a
+config file out of the generated line and validates *that*.
+
+**Why it hides:** attention follows the interesting problem. The board was the interesting problem.
+The line was a detail on the way out, and details on the way out are not reviewed with the same eyes
+as the thing the feature is *about*.
+
 ### When a rule and the need disagree, name the disagreement and ask
 
 **Ratified 2026-09-01.** The agent's other rule about questions is a limit: ask only when
@@ -420,6 +442,32 @@ returning `title='ratified'` for every decision row and marking an open item clo
 because every assertion hand-built its own object and the only two that touched the parser asked
 "is the list non-empty" and "does every item have a title", both of which the bug satisfies. A
 thirty-two-finding review said the parser was broken; **not one asked why the suite disagreed.**
+
+**Name the mutation, then RUN it, before the row is written.** Ratified 2026-09-03 (`D46`), after
+five assertions in three days passed while unable to detect the behaviour they named. Each was
+written in good faith, each read correctly, and each was proven toothless only by breaking the
+shipped code underneath it:
+
+| what escaped | the suite said |
+|---|---|
+| a CSS rule deleted outright | green |
+| a mark rendering four pixels tall | green |
+| every team's row painting another team's count | green |
+| the download button shipping bytes nobody had validated — **twice**, because the first two fixes both re-derived the bytes they expected instead of reading the download path | green |
+| the generated manifest line built from the wrong field — the assertion used a value that was *accidentally* valid for both | green |
+
+Three patterns, and none of them is exotic:
+
+- **An assertion that re-derives its expected value cannot see the path that produces the real one.**
+  Read the output where it leaves the system, not by recomputing what it ought to be.
+- **An assertion placed in the wrong loop tests the wrong population.** A per-theme rule checked
+  once, against one theme, is not checked.
+- **A fixture that satisfies both the right and the wrong implementation distinguishes nothing.**
+  Choose inputs where the two answers differ, or the test is a tautology with a green tick.
+
+So the register row is not "closed" until a mutation has been applied to the shipped code and the
+suite has been *seen* to fail, with the count recorded. `caught at 446/447` is evidence.
+`prevented by construction` is an argument, and an argument is what these five all were.
 
 The rule that follows: **a test that has never been shown to fail is not evidence.** At least one
 mutation per behaviour the tests are supposed to protect, recorded as `M<n>` with the named test
