@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "gameType": "feud",
+  "board": {
+    "columns": [
+      {
+        "cells": [
+          {
+            "answer": "Cyrus",
+            "value": 20
+          },
+          {
+            "answer": "Jesus",
+            "value": 15
+          },
+          {
+            "answer": "Delvan",
+            "value": 10
+          },
+          {
+            "answer": "Marty",
+            "value": 20
+          }
+        ],
+        "label": "Who loves you, and who do you love?"
+      }
+    ]
+  },
+  "title": "New Test Board",
+  "theme": "civic",
+  "animation": "zoom"
+}

@@ -3,6 +3,7 @@
   "schemaVersion": 1,
   "games": {
     "Ranked Answers - Three Rounds": "demo-feud-rounds.json",
+    "New Test Board": "test-board-one.json",
     "General Knowledge": "demo.json",
     "Trivia Bingo": "demo-bingo.json",
     "Ranked Answers": "demo-feud.json"
