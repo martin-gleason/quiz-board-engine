@@ -1,4 +1,5 @@
 {
+  "_note": "DEMO CONTENT, FICTIONAL. The answers are the canonical placeholder names (Alice, Bob, Carol, Dave) and the point values are invented — no real survey was consulted and no real person is named. This repo is public and CLAUDE.md requires demo content to be fictional or public-domain, which is why the first draft of this board was rewritten.",
   "schemaVersion": 1,
   "gameType": "feud",
   "board": {
@@ -6,19 +7,19 @@
       {
         "cells": [
           {
-            "answer": "Cyrus",
+            "answer": "Alice",
             "value": 20
           },
           {
-            "answer": "Jesus",
+            "answer": "Bob",
             "value": 15
           },
           {
-            "answer": "Delvan",
+            "answer": "Carol",
             "value": 10
           },
           {
-            "answer": "Marty",
+            "answer": "Dave",
             "value": 20
           }
         ],
