@@ -1,3 +1,8 @@
+<!-- VENDORED from turing-review/conventions.md — DO NOT EDIT.
+     pinned-sha256: 0b7b70d4b12799f431657d10cc1308ed99b0d2fc8cfbfc40029d2dfd37235362
+     Project-local rules belong in docs/conventions-local.md (D24).
+     Fix upstream, then re-vendor: python3 scripts/vendor.py <project> -->
+
 # Conventions — baseline
 
 **This file is the source of truth.** A project vendors a pinned copy to
@@ -138,16 +143,17 @@ that risk is real and the hybrid is not optional.
 
 ## Documents
 
-Six standing documents, plus a plan and a review per unit of work.
+Seven standing documents, plus a plan and a review per unit of work.
 
 | # | Path | Holds | Changes |
 |---|---|---|---|
 | 1 | `CLAUDE.md` | standing rules; `@import`s conventions | when the process changes |
 | 2 | `docs/conventions.md` | this file, vendored and pinned | upstream only |
-| 3 | `docs/specs/` | **the vision sentence**, `FR`/`NFR`, hook intentions. One spec or several, named for the product. | **never — it is the baseline** |
-| 4 | `docs/plans/00-register.md` | every register, one `##` each | append-only |
-| 5 | `docs/plans/00-status.md` | the state of the project as one chart | **generated, never hand-written** |
-| 6 | `docs/conventions-local.md` | conventions true of **this project only**. *Optional* — a project with no rules of its own does not need the file. | freely, by the project |
+| 3 | `docs/intents/` | **`intent.md` — the proto-spec.** Problem, proposed outcome, affected users and systems, constraints, open questions. Written before a spec exists, approved by the owner before it advances (`D49`). ***Optional*** — a project that predates `D49`, or one whose intent was never written down, is not out of compliance for the absence of a file nobody has yet had reason to create. | **never — it is a baseline too** |
+| 4 | `docs/specs/` | **the vision sentence**, `FR`/`NFR`, hook intentions. One spec or several, named for the product. | **never — it is the baseline** |
+| 5 | `docs/plans/00-register.md` | every register, one `##` each | append-only |
+| 6 | `docs/plans/00-status.md` | the state of the project as one chart | **generated, never hand-written** |
+| 7 | `docs/conventions-local.md` | conventions true of **this project only**. *Optional* — a project with no rules of its own does not need the file. | freely, by the project |
 
 **A project's specs live in `docs/specs/`, and the directory is the rule — not a filename.**
 A project may hold one spec or several: a home-automation project has a spec per subsystem,
@@ -179,6 +185,33 @@ lives in the register.
 
 **Documents are separated by lifecycle, not by topic.** Things that change at the same
 rate, for the same reason, by the same hand, belong in the same file.
+
+### Intent comes before the spec, and it is where the problem is written down
+
+**Ratified 2026-09-04 (`D49`)**, from Anthropic's *AI-native SDLC playbook*. `intent.md` is
+a **proto-spec**: what is wanted, why, and under which constraints, written before anything
+is designed. Problem · Proposed outcome · Affected users and systems · Constraints · Open
+questions. **No formal language is required** — the originator describes the problem in
+their own words, with Claude, and **the owner approves it before it advances.**
+
+It earns its place by holding the one thing nothing else in the chain records. A spec says
+what will be built and a register says what was decided; **neither says what hurt.** A
+project whose problem statement exists only in a chat transcript is one whose next
+maintainer cannot tell a requirement from a habit.
+
+**It lives in `docs/intents/`, not the playbook's root-level `intent/`.** The documentation
+root is `docs/` (`D35`) and directories are lowercase and plural. The divergence from the
+source is deliberate and recorded rather than quietly reconciled.
+
+**It is a baseline, like the spec.** It is not updated to match reality; a change in what is
+wanted is a `D<n>`, and the register holds it.
+
+**Rework is edits to it after the first spec commit** for the same change — a lagging
+indicator, cheap to compute from git, and one of the very few things about *planning* that
+is checkable at all. Proposed as `D50`, not ratified: this corpus has no intent yet, so the
+number has never been taken, and a measurement nobody has run is not ratifiable.
+
+---
 
 ### The spec is a baseline, and it carries one sentence
 
