@@ -1,5 +1,5 @@
 <!-- VENDORED from turing-review/conventions.md — DO NOT EDIT.
-     pinned-sha256: 0b7b70d4b12799f431657d10cc1308ed99b0d2fc8cfbfc40029d2dfd37235362
+     pinned-sha256: 18383d5a620c9a32588eb9a673fbd12b485aa8d35c19a80042ee0201ec4f92f4
      Project-local rules belong in docs/conventions-local.md (D24).
      Fix upstream, then re-vendor: python3 scripts/vendor.py <project> -->
 
@@ -274,22 +274,28 @@ agent that starts ruling rather than testing has stopped being Turing.
 
 ## Working loop
 
-Three effort modes. **All three are set by the owner. The agent cannot turn any of them on** —
-a rule that tells an agent to "run ultrareview" is broken on contact.
+Three effort modes. **All three are set by the owner. The agent cannot turn Ultrathink or
+ultrareview on**, and it turns ultracode on only under a standing instruction the owner wrote into
+`CLAUDE.md` — a rule that tells an agent to "run ultrareview" is broken on contact; a sentence in
+`CLAUDE.md` telling it to run the build as a Workflow is not (`cathil:D36`).
 
 | Mode | How it is set | What it does |
 |---|---|---|
 | **Ultrathink** | the owner types `ultrathink` in the prompt | deeper reasoning, that turn only. No other phrasing triggers it. |
-| **ultracode** | `/effort ultracode`, `--effort ultracode`, or the owner types `ultracode` | xhigh reasoning **plus multi-agent orchestration**. A setting, not a phase. |
+| **ultracode** | `/effort ultracode`, `--effort ultracode`, the owner types `ultracode`, **or a standing instruction in `CLAUDE.md` (or a skill) telling the agent to run the build as a Workflow** — the owner writes that sentence once and it authorises every gate | xhigh reasoning **plus multi-agent orchestration**. A setting, not a phase. |
 | **ultrareview** | the owner runs `/code-review ultra` | multi-agent cloud review with independent verification. **Billed, $5–25 a run.** Claude does not start one on its own. |
 
 The loop, with who acts:
 
 1. **Plan — Ultrathink.** Re-read the spec *and the register*, batch clarifying questions,
    paraphrase back, write `docs/plans/F<N>.md`. **Wait for the yes.** *(owner sets the mode)*
-2. **Build — ultracode, multiple agents.** Fan out across independent components; one agent per
-   component, each owning its own files. **Every agent proves its own work by breaking it first**
-   and reports failure honestly rather than claiming success. *(owner sets the mode)*
+2. **Build — ultracode, as a Workflow. The sentence in the project's `CLAUDE.md` that says so is
+   the standing authorisation:** when a gate is crossed and the unit has two or more independent
+   tasks, the agent runs the build with the Workflow tool — one agent per component, each owning
+   its own files; fan out, verify each, integrate. **Every agent proves its own work by breaking it
+   first** and reports failure honestly rather than claiming success. A unit whose tasks are
+   strictly sequential may run serially, and the plan says so. *(owner sets the policy once, in
+   `CLAUDE.md`; the agent fires it at every gate — `cathil:D36`)*
 3. **Adversarial review — mandatory.** In-session, the agent runs the review itself as a
    workflow. `ultrareview` is the owner's escalation and only the owner can fire it.
 4. **Verify with evidence.** A command returns pass and the output is in the PR.
@@ -302,6 +308,41 @@ the dial counts who holds the pen, not how many hands. A `human`-owned task is n
 service restricts ultracode to its security-load-bearing surfaces and uses standard mode for CRUD,
 "so rigor rises without drowning the review track." That is a cost decision the owner is entitled
 to make. Narrowing needs a `D<n>`; drifting does not count.
+
+### Every project has a harness, and the process ships the contract rather than the harness
+
+**Ratified 2026-09-05 (`F8`).** A harness is not a tool and not a language. It is whatever
+answers these five, in whatever the project is written in:
+
+| Capability | Why it is required |
+|---|---|
+| **run** the checks and report a **count** | an exit code cannot show a suite that stopped running |
+| a **floor** the count may not fall below | a shrinking suite is blind, not clean |
+| at least one **mutation**, with the test that catches it named | a test never shown to fail is not evidence |
+| a **pre-commit** that runs after the last edit | gates satisfied in advance and then edited past are not gates |
+| a way to **prove a check by breaking it** | a hook that has never failed is a hook nobody knows works |
+
+**The process does not ship a harness, and must not.** A shipped harness would be written in
+one language and worth nothing to the others, and copying one upstream instrument into every
+project recreates exactly the drift this pinning exists to detect. The contract travels; the
+implementation is the project's, and building it is its **first chore**.
+
+**Two declarations, and they live apart because they change at different rates.**
+
+- **The stack — language, framework, runner, layout, CI — is named in the spec.** It is
+  baseline: a different language or a different runner is a `D<n>`, not a tidy-up. Without
+  it a harness declaration has nothing to point at, and a reader cannot tell a correct
+  command from a leftover.
+- **The commands are declared in `docs/conventions-local.md` under `## Harness`** — `run`,
+  `count`, `floor`, `mutate`, `precommit`. A path moves and no decision was made, so these
+  belong outside the baseline. Putting them in the spec would force it to be edited to match
+  reality, which is the failure the immutable-spec rule exists to prevent.
+
+**Declaration is what makes one process reach five languages.** An upstream checker cannot
+know how to test a Swift package. It can run a command a Swift project names, in that
+project's directory, and report what happened.
+
+---
 
 ### The six review dimensions
 
