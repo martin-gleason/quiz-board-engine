@@ -1,0 +1,183 @@
+{
+  "schemaVersion": 1,
+  "gameType": "feud",
+  "board": {
+    "columns": [
+      {
+        "cells": [
+          {
+            "answer": "Elon Musk",
+            "value": 52
+          },
+          {
+            "answer": "Sam Altman",
+            "value": 18
+          },
+          {
+            "answer": "Jeff Bezos",
+            "value": 12
+          },
+          {
+            "answer": "All of them!",
+            "value": 11
+          },
+          {
+            "answer": "Rupert Murdock",
+            "value": 7
+          }
+        ],
+        "label": "Who is the worst Billionaire?"
+      },
+      {
+        "cells": [
+          {
+            "answer": "Income Taxes (Right Answer)",
+            "value": 53
+          },
+          {
+            "answer": "Sales Tax",
+            "value": 24
+          },
+          {
+            "answer": "Dispersement from the Feds",
+            "value": 6
+          },
+          {
+            "answer": "Weed/Booze/Gaming",
+            "value": 6
+          },
+          {
+            "answer": "Property Taxes",
+            "value": 6
+          }
+        ],
+        "label": "What is Illinois' primary source of revenue?"
+      },
+      {
+        "cells": [
+          {
+            "answer": "Any bus going south",
+            "value": 59
+          },
+          {
+            "answer": "The 79 (79th Street)",
+            "value": 18
+          },
+          {
+            "answer": "The 8 (Halsted)",
+            "value": 6
+          },
+          {
+            "answer": "49",
+            "value": 6
+          }
+        ],
+        "label": "Which CTA bus line needs the most investment?"
+      },
+      {
+        "cells": [
+          {
+            "answer": "10%",
+            "value": 59
+          },
+          {
+            "answer": "5%",
+            "value": 23
+          },
+          {
+            "answer": "2 - 3 %",
+            "value": 11
+          },
+          {
+            "answer": "8%",
+            "value": 6
+          }
+        ],
+        "label": "What percentage of the Illinois Budget should be used on Housing?"
+      },
+      {
+        "cells": [
+          {
+            "answer": ".44%",
+            "value": 65
+          },
+          {
+            "answer": "1%",
+            "value": 23
+          },
+          {
+            "answer": "10%",
+            "value": 6
+          },
+          {
+            "answer": ".01%",
+            "value": 6
+          }
+        ],
+        "label": "What percentage of the Illinois Budget ( was used on housing programs?"
+      },
+      {
+        "cells": [
+          {
+            "answer": "Too Many",
+            "value": 71
+          },
+          {
+            "answer": "12",
+            "value": 12
+          },
+          {
+            "answer": "13",
+            "value": 6
+          },
+          {
+            "answer": "14",
+            "value": 6
+          }
+        ],
+        "label": "How many billionaires are there in Illinois?"
+      },
+      {
+        "cells": [
+          {
+            "answer": "Affordable Housing",
+            "value": 35
+          },
+          {
+            "answer": "Health Care ",
+            "value": 24
+          },
+          {
+            "answer": "Education",
+            "value": 24
+          },
+          {
+            "answer": "Policing",
+            "value": 17
+          }
+        ],
+        "label": "Name the most important state budget priority!"
+      },
+      {
+        "cells": [
+          {
+            "answer": "10%",
+            "value": 41
+          },
+          {
+            "answer": "5%",
+            "value": 35
+          },
+          {
+            "answer": "< 5%",
+            "value": 12
+          }
+        ],
+        "label": "How much of the Illinois budget goes to law enforcement and policing?"
+      }
+    ]
+  },
+  "title": "Revenue Feud",
+  "theme": "marquee",
+  "animation": "flip"
+}
