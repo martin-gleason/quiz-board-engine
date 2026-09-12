@@ -101,6 +101,7 @@ days on the owner's track.
 | C18 | Track the v2.0 draft spec in git — `docs/specs/quiz-board-engine-spec-v2-draft-r2.md`. Draft, not frozen: v1 remains the contract until the §8 red-team gate resolves. | P2 | done | agent | — | — |
 | C19 | `docs/pr-review-log.md` — one entry per merged PR, committed to `main` after the merge. Opened with the PR #1 entry. | P2 | done | agent | — | — |
 | C20 | Survey CSV → board generator (post-review). `tools/csv-to-board.py` + `tools/validate-board.mjs` + a hand-maintained map holding the editorial half (merges, drops, labels). Generates the board AND its `games.json` entry, both validated by the engine's own validator. | P2 | built — 60/60, `M29`–`M41` run; adversarial review's 5 majors all fixed | agent | `docs/plans/C20.md` | — |
+| C21 | The C20 tool suite cannot run from a clone. `examples/*.csv` is gitignored for PII, so a fresh clone has the maps and not the data — the suite raised `FileNotFoundError` and reported no count at all. Now it names the absent file and exits non-zero, but **it still cannot RUN there**, which means it cannot run in CI either (`C15`). Two fixes are possible and the choice is the maintainer's: commit a redacted copy of the survey (the email column is already in `ignoreColumns`, so redacting it changes no assertion), or author a fictional fixture CSV and restate the expected numbers against it. Found by cloning the pushed repository and running the suite — it is green locally and cannot start from a clone. | P1 | open | Marty | — | `C20`, blocks `C15` |
 
 ## Gates (G)
 

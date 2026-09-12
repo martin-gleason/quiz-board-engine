@@ -559,8 +559,38 @@ def test_a_long_response_fails_clearly(tmp):
           f'stderr was {len(proc.stderr)} bytes')
 
 
+def missing_corpus():
+    """The survey CSVs are gitignored, so a FRESH CLONE has the maps and not the data.
+
+    Found by cloning the pushed repository and running this suite — which is the only way it
+    shows up, and the reason the harness contract asks for a `run` command rather than a
+    claim. Locally every file is present and the suite reports 60/60; from a clone it raised
+    `FileNotFoundError` and reported nothing at all. A suite that cannot run is not a green
+    suite and is not a red one — it is a suite whose count is missing, which the floor rule
+    exists to make visible.
+
+    The cause is correct and stays: `examples/*.csv` carries respondent email addresses and
+    this repository is public (`CLAUDE.md`). What was wrong is failing with a traceback
+    instead of saying which file is absent and why it is absent by design.
+    """
+    for path in (CSV, MAP):
+        if not os.path.exists(path):
+            return path
+    return None
+
+
 def main():
     print('C20 — csv-to-board')
+
+    absent = missing_corpus()
+    if absent:
+        print(f'\n  CANNOT RUN — {os.path.relpath(absent, REPO)} is not present.\n')
+        print('  This is expected in a fresh clone and is not a defect in the tool. Survey')
+        print('  exports are gitignored: they carry respondent email addresses and this')
+        print('  repository is public (CLAUDE.md). The MAP files beside them ARE tracked.\n')
+        print('  To run this suite you need the survey CSV the map names, placed at that path.')
+        print('  0/0 assertions ran — a missing count is not a pass.')
+        return 1
     with tempfile.TemporaryDirectory() as tmp:
         board, manifest_path = test_happy_path(tmp)
         test_columns_total_100(board)
