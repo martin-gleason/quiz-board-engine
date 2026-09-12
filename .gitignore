@@ -10,11 +10,15 @@ node_modules/
 # identifiable data in it, ever. Keep the evidence locally, or scrub it before tracking it.
 docs/handoffs/Runbook*Safari*.md
 
-# Survey response exports. Raw form responses carry respondent-supplied email addresses
-# and this repository is public — CLAUDE.md: "no identifiable or regulated data lives
-# here, ever." The MAP beside them (examples/*.map.json) carries no PII and IS tracked:
-# it is the editorial record of how a board was built. Chore C20.
-examples/*.csv
+# Survey response exports. The tracked copies under examples/ are REDACTED: the
+# "Have feedback? Drop your email in" column is blanked in every row, because raw form
+# responses carry respondent-supplied addresses and this repository is public — CLAUDE.md:
+# "no identifiable or regulated data lives here, ever." Redacting that column changes no
+# board and no assertion: the map already lists it in `ignoreColumns`, so it has never
+# reached a generated file. Maintainer's call, C21.
+#
+# The UNREDACTED originals stay here and are never committed.
+examples/.originals/
 
 # Python bytecode from tools/
 __pycache__/

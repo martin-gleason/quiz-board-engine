@@ -560,18 +560,21 @@ def test_a_long_response_fails_clearly(tmp):
 
 
 def missing_corpus():
-    """The survey CSVs are gitignored, so a FRESH CLONE has the maps and not the data.
+    """The corpus is tracked now, so absence means something is wrong rather than expected.
 
-    Found by cloning the pushed repository and running this suite — which is the only way it
-    shows up, and the reason the harness contract asks for a `run` command rather than a
-    claim. Locally every file is present and the suite reports 60/60; from a clone it raised
-    `FileNotFoundError` and reported nothing at all. A suite that cannot run is not a green
-    suite and is not a red one — it is a suite whose count is missing, which the floor rule
-    exists to make visible.
+    It was NOT tracked when this guard was written. The survey CSVs were gitignored for the
+    addresses they carried, so a fresh clone had the maps and not the data, and this suite
+    raised `FileNotFoundError` and reported no count at all — found by cloning the pushed
+    repository and running it, which is the only way it shows up, and the reason the harness
+    contract asks for a `run` command rather than a claim.
 
-    The cause is correct and stays: `examples/*.csv` carries respondent email addresses and
-    this repository is public (`CLAUDE.md`). What was wrong is failing with a traceback
-    instead of saying which file is absent and why it is absent by design.
+    `C21` closed that by committing REDACTED copies: the feedback column is blanked in every
+    row, which changes no board and no assertion, because the map already lists that column
+    in `ignoreColumns` and it has therefore never reached a generated file.
+
+    The guard stays anyway. A suite that cannot run is not green and not red — its count is
+    missing, and the floor rule exists to make that visible rather than let it read as a
+    crash in the tool.
     """
     for path in (CSV, MAP):
         if not os.path.exists(path):
@@ -585,10 +588,9 @@ def main():
     absent = missing_corpus()
     if absent:
         print(f'\n  CANNOT RUN — {os.path.relpath(absent, REPO)} is not present.\n')
-        print('  This is expected in a fresh clone and is not a defect in the tool. Survey')
-        print('  exports are gitignored: they carry respondent email addresses and this')
-        print('  repository is public (CLAUDE.md). The MAP files beside them ARE tracked.\n')
-        print('  To run this suite you need the survey CSV the map names, placed at that path.')
+        print('  This file IS tracked (C21), so its absence is unexpected: it has been')
+        print('  deleted, or this is a partial checkout. Restore it with:')
+        print('      git checkout -- examples/\n')
         print('  0/0 assertions ran — a missing count is not a pass.')
         return 1
     with tempfile.TemporaryDirectory() as tmp:
