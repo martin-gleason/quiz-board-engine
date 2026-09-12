@@ -166,17 +166,28 @@
   /* Upper bound on the point value. The *fitted* size actually used is derived
      from this and --qbe-column-count in §3 — a theme retunes the cap here and
      the density maths keeps working. */
-  --value-size: clamp(1rem, 2.2vw, 2.75rem);
+  /* EVERY SIZE IN THIS FILE GAINED 2px, except the toolbar — the maintainer read the
+     board at projector distance and called the toolbar right as it was. `calc(... + 2px)`
+     rather than editing each clamp term, so the increase is exactly 2px at EVERY viewport
+     width: bumping only the min and max would leave the mid-range, where the vw term wins,
+     completely unchanged. `.qbe-btn` and `.qbe-round-indicator` are deliberately untouched. */
+  --value-size: calc(clamp(1rem, 2.2vw, 2.75rem) + 2px);
   --value-color: #ffd45e;             /* 8.11:1 on --cell-bg (large text 3:1 ✓, and clears body 4.5 too) */
   /* Face text for a cell with no point value — a bingo square's term. Capped
      well below --value-size because this is a WORD ("Jupiter's Great Red Spot"),
      not three digits, and it has to wrap inside the card rather than overflow
      it. The fitted size actually used is derived from this in §3. */
-  --cell-text-size: clamp(0.85rem, 1.5vw, 1.6rem);
+  --cell-text-size: calc(clamp(0.85rem, 1.5vw, 1.6rem) + 2px);
 
   --column-label-bg: #1c1a17;
   --column-label-text: #f4efe6;       /* 15.16:1 on --column-label-bg (AAA ✓) */
-  --column-label-size: clamp(0.7rem, 1.05vw, 1.3rem);
+  /* 18pt IS A FLOOR THE MAINTAINER SET FROM THE BACK OF A ROOM, not a derived number.
+     It was clamp(0.7rem, 1.05vw, 1.3rem) — a 11.2px minimum, which is a caption, not a
+     category heading on a projector. `pt` rather than `rem` here on purpose: the request
+     was a physical minimum, and a rem floor would drop below it on a root smaller than
+     16px. The vw term still grows it on a wide screen; only the floor is pinned.
+     `.qbe-team-name` carries the same floor for the same reason. */
+  --column-label-size: clamp(18pt, 1.6vw, 2.25rem);
 
   /* --- Detail overlay --------------------------------------------------- */
 
@@ -188,7 +199,7 @@
   /* The back-of-the-room number (theme-contract §5.2). This is the single
      most-read text in the product; the floor is 1.5rem on purpose. Do not
      shrink it for elegance. */
-  --prompt-size: clamp(1.5rem, 4.2vw, 4rem);
+  --prompt-size: calc(clamp(1.5rem, 4.2vw, 4rem) + 2px);
   --answer-color: #0f5c4a;            /* 7.80:1 on --detail-bg (AA body ✓) */
   /* Close is the outline button, and its label sits on the SCRIM, not on the
      overlay. On this light-ground theme --board-bg is the paper colour and
@@ -472,7 +483,7 @@ body,
   font-family: var(--font-display);
   /* Big enough to read from the back of a room, capped so a three-strike band
      never crowds the board it sits above. */
-  font-size: clamp(2rem, 8vh, 4.5rem);
+  font-size: calc(clamp(2rem, 8vh, 4.5rem) + 2px);
   font-weight: 700;
   line-height: 1;
   /* Empty until struck — the mark is drawn by ::after so the glyph is styling,
@@ -521,7 +532,7 @@ body,
    appears mid-game would shift the score under the host's cursor. */
 .qbe-team-strikes {
   font-family: var(--font-display);
-  font-size: 1.1em;
+  font-size: calc(1.1em + 2px);
   line-height: 1;
   letter-spacing: 0.1em;
   color: var(--strike-team-color);
@@ -845,7 +856,7 @@ body,
 
 .qbe-team-score {
   font-family: var(--font-display);
-  font-size: clamp(1.1rem, 2vw, 2.5rem);
+  font-size: calc(clamp(1.1rem, 2vw, 2.5rem) + 2px);
   font-weight: 700;
   line-height: 1;
   font-variant-numeric: tabular-nums lining-nums;
@@ -881,7 +892,7 @@ body,
   background: rgba(0, 0, 0, 0);
   color: inherit;
   font-family: inherit;
-  font-size: clamp(0.75rem, 1.1vw, 1.25rem);
+  font-size: clamp(18pt, 1.6vw, 2rem);
   font-weight: 600;
   letter-spacing: 0.02em;
   text-align: center;
@@ -1057,7 +1068,7 @@ body,
   font-family: var(--font-display);
   /* Deliberately smaller than --prompt-size: this text is read by the host at
      arm's length before the game starts, not by the room from thirty feet. */
-  font-size: clamp(1.25rem, 2.6vw, 2.25rem);
+  font-size: calc(clamp(1.25rem, 2.6vw, 2.25rem) + 2px);
   line-height: 1.15;
 }
 
@@ -1080,7 +1091,7 @@ body,
 
 .qbe-setup-note {
   margin: 0;
-  font-size: clamp(0.9rem, 1.2vw, 1.1rem);
+  font-size: calc(clamp(0.9rem, 1.2vw, 1.1rem) + 2px);
   line-height: 1.45;
   opacity: 0.85;
 }
@@ -1120,7 +1131,7 @@ body,
 .qbe-startup-legend,
 .qbe-startup-theme > .qbe-startup-label {
   padding: 0;
-  font-size: clamp(0.8rem, 1vw, 0.95rem);
+  font-size: calc(clamp(0.8rem, 1vw, 0.95rem) + 2px);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1156,7 +1167,7 @@ body,
 
 .qbe-startup-label {
   flex: 1;
-  font-size: clamp(1rem, 1.5vw, 1.35rem);
+  font-size: calc(clamp(1rem, 1.5vw, 1.35rem) + 2px);
   line-height: 1.3;
   cursor: pointer;
 }
@@ -1177,7 +1188,7 @@ body,
   background: var(--detail-bg);
   color: var(--detail-text);
   font-family: var(--font-body);
-  font-size: clamp(0.95rem, 1.3vw, 1.15rem);
+  font-size: calc(clamp(0.95rem, 1.3vw, 1.15rem) + 2px);
 }
 
 /* D20. The route to the authoring page. Sized as a real second option, not as
@@ -1192,7 +1203,7 @@ body,
      the token audit caught it as INERT, which is exactly what that check is for: a custom
      property nobody defines silently does nothing, and the rule would have been invisible. */
   border-top: 1px solid color-mix(in srgb, var(--board-fg) 25%, transparent);
-  font-size: .95em;
+  font-size: calc(.95em + 2px);
 }
 
 .qbe-startup-editor {
@@ -1207,7 +1218,7 @@ body,
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  font-size: clamp(0.85rem, 1.1vw, 1.05rem);
+  font-size: calc(clamp(0.85rem, 1.1vw, 1.05rem) + 2px);
   font-weight: 600;
 }
 
@@ -1220,7 +1231,7 @@ body,
   background: var(--board-bg);
   color: var(--board-fg);             /* 15.16:1 on --board-bg (AAA ✓) */
   font-family: var(--font-body);
-  font-size: clamp(0.95rem, 1.4vw, 1.25rem);
+  font-size: calc(clamp(0.95rem, 1.4vw, 1.25rem) + 2px);
   font-weight: 400;
 }
 
@@ -1243,7 +1254,7 @@ body,
 
 .qbe-session-meta {
   flex: 1 1 100%;
-  font-size: 0.9em;
+  font-size: calc(0.9em + 2px);
   opacity: 0.8;
 }
 
@@ -1355,7 +1366,7 @@ body,
   background: var(--accent);
   color: var(--accent-contrast);       /* 6.04:1 on --accent (AA ✓) */
   font-family: var(--font-body);
-  font-size: clamp(0.95rem, 1.4vw, 1.4rem);
+  font-size: calc(clamp(0.95rem, 1.4vw, 1.4rem) + 2px);
   font-weight: 600;
   cursor: pointer;
 }
