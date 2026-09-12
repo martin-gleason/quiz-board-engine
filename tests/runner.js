@@ -5593,6 +5593,502 @@ async function runEditorSuite() {
   stage.remove();
 }
 
+// ---------------------------------------------------------------------------------------------
+// F15 / D23 — THE HOST'S PRINTED ANSWER SHEET
+// ---------------------------------------------------------------------------------------------
+//
+// WHY THIS IS TWO HALVES, AND WHY NEITHER HALF ALONE IS ENOUGH.
+//
+// Half one drives the real Print control against the real model and reads the sheet out of the
+// element the print dialog would render. That is where "built from the model, not scraped from the
+// page" is decided, and it is the whole reason this feature is not a stylesheet.
+//
+// Half two boots `editor/index.html` in an iframe, because the editor's styling is INLINE IN THAT
+// PAGE by deliberate choice (themes/ is the game's contract) — so it does not exist in this test
+// document at all, and an assertion about the print block made here would be an assertion about
+// nothing. The iframe is the only place the shipped `@media print` rules can be read and applied.
+//
+// APPLYING THEM IS THE POINT. `window.matchMedia('print')` is not a thing a page can switch on, so
+// the rules are lifted out of the page's own CSSOM — the shipped declarations, not a re-description
+// of them — and injected as unconditioned CSS, after a `:root { color-scheme: dark }` that stands in
+// for a host whose browser is in dark mode. What is then measured is `getComputedStyle` and
+// `getClientRects()`: the colours the paper gets, and whether a thing occupies the page at all.
+//
+// WHAT THIS CANNOT DO, stated rather than implied: it does not drive a real print dialog and cannot
+// see the rasterised page. A defect that lives only in a printer driver, in paginated layout, or in
+// the browser's "print background colours" default is out of reach of any assertion in this repo.
+
+/** Is this node on the page at all — not "what does `display` say", but does it occupy space. */
+function occupiesSpace(node) {
+  return node !== null && node.getClientRects().length > 0;
+}
+
+/** The `@media print` rules of a document's inline stylesheet, as unconditioned CSS text. */
+function printRulesText(doc) {
+  const out = [];
+  for (const sheet of [...doc.styleSheets]) {
+    let rules;
+    try {
+      rules = [...sheet.cssRules];
+    } catch (_err) {
+      continue; // cross-origin; there are none in this repo, but a throw here would be a lie
+    }
+    for (const rule of rules) {
+      const media = rule.media ? rule.media.mediaText : '';
+      if (!/\bprint\b/.test(media)) continue;
+      for (const inner of [...rule.cssRules]) out.push(inner.cssText);
+    }
+  }
+  return out.join('\n');
+}
+
+/** Boot the real editor page in an offscreen iframe and resolve once its controls are drawn. */
+function bootEditorPage(timeoutMs = 20000) {
+  return new Promise((resolve) => {
+    const frame = document.createElement('iframe');
+    frame.width = '1000';
+    frame.height = '900';
+    frame.style.setProperty('position', 'absolute');
+    frame.style.setProperty('left', '-4000px');
+    frame.style.setProperty('top', '0');
+    frame.setAttribute('title', 'editor boot: the printed answer sheet');
+    // Resolved against <base href="../">, i.e. the repo root — the real editor page, not a copy.
+    frame.setAttribute('src', 'editor/index.html');
+    document.body.appendChild(frame);
+    const started = performance.now();
+    const poll = () => {
+      let doc = null;
+      try {
+        doc = frame.contentDocument;
+      } catch (_err) {
+        doc = null;
+      }
+      const ready = doc && doc.querySelector('.ed-verdict') && doc.querySelector('.ed-rounds .ed-round');
+      if (ready) { resolve({ frame, doc, win: frame.contentWindow }); return; }
+      if (performance.now() - started > timeoutMs) { resolve({ frame, doc, win: null }); return; }
+      setTimeout(poll, 50);
+    };
+    poll();
+  });
+}
+
+/** The one Print control, found the way a host finds it: by the words on it. */
+function findPrintButton(root) {
+  return [...root.querySelectorAll('button')].find((b) => b.textContent === 'Print answer sheet')
+    || null;
+}
+
+async function runPrintSheetSuite() {
+  const settle = () => new Promise((r) => setTimeout(r, 30));
+
+  // ---- half one: the sheet is the MODEL, printed ----------------------------------------------
+  const stage = harnessStage();
+  const model = editor.__editor.model;
+
+  // THE FIXTURE IS CHOSEN SO THE TWO IMPLEMENTATIONS DISAGREE, which is the only kind of fixture
+  // worth having (`M28`, `M31`, `M51` all passed against fixtures that both implementations
+  // satisfied). Two things make it discriminating:
+  //
+  //   1. A 2000-character answer — `LIMITS.maxAnswerChars`, a legal answer. It is the length at
+  //      which an <input> clips on paper with nothing to say it did.
+  //   2. The model is set and RE-JUDGED, not rebuilt, so the round inputs on screen still hold the
+  //      empty board `boot` drew. A sheet scraped from the page — whether by cloning the inputs or
+  //      by reading their `.value` — therefore shows an empty board; a sheet built from the model
+  //      shows this one. The two answers differ, which is the point.
+  const TAIL = ' …and the end of this answer is the only thing that proves it was not clipped.';
+  const LONG = 'x'.repeat(LIMITS.maxAnswerChars - TAIL.length) + TAIL;
+
+  // BOOTED ON AN EMPTY BOARD FIRST, and the fixture set into the model afterwards with a re-judge
+  // rather than a rebuild — so the round inputs on screen still hold the empty board while the model
+  // holds this one. THAT IS WHAT MAKES THE FIXTURE DISCRIMINATING, and it was arrived at the hard
+  // way: the first version set the model BEFORE `boot`, so `boot`'s own rebuild drew the fixture
+  // into the inputs, and a sheet scraped from those inputs read exactly the same as a sheet built
+  // from the model. The mutation was applied and this assertion stayed green — a fixture both
+  // implementations satisfy, which is the failure this project has now shipped four times.
+  model.title = '';
+  model.pickerName = '';
+  model.note = null;
+  model.rounds = [editor.__editor.emptyRound()];
+  await editor.boot(stage);
+  await settle();
+
+  model.title = 'The host sheet board';
+  model.pickerName = 'The host sheet board';
+  model.filename = 'host-sheet.json';
+  model.note = null;
+  model.rounds = [
+    {
+      label: 'Name something a host forgets.',
+      answers: [
+        { answer: 'The answers', value: 40 },
+        { answer: 'The remote', value: 35 },
+        { answer: 'Their own name', value: 15 },
+      ],
+    },
+    {
+      label: 'Name something that will not fit in a box.',
+      answers: [
+        { answer: LONG, value: 100 },
+        { answer: 'A short one', value: 20 },
+        { answer: 'Another short one', value: 5 },
+      ],
+    },
+  ];
+
+  editor.__editor.refresh();
+  await settle();
+
+  const printBtn = findPrintButton(stage);
+  // STUBBED BEFORE THE CLICK, ALWAYS. A real `window.print()` opens a modal dialog and the run
+  // never finishes — so the stub is installed first and restored in a `finally`, and the count of
+  // calls is itself asserted rather than assumed.
+  let printCalls = 0;
+  const realPrint = window.print;
+  window.print = () => { printCalls += 1; };
+  try {
+    if (printBtn) printBtn.click();
+    await settle();
+    await settle();
+  } finally {
+    window.print = realPrint;
+  }
+
+  const sheet = editor.__editor.sheet();
+  record('print', 'the Print control is a real button and hands the page to the print dialog',
+    printBtn !== null && printBtn.tagName === 'BUTTON' && printBtn.disabled === false
+    && printCalls === 1 && sheet !== undefined && sheet !== null,
+    printBtn === null ? 'no Print control was drawn at all'
+      : '<button> "' + printBtn.textContent + '", disabled=' + printBtn.disabled
+        + ', window.print() called ' + printCalls + ' time(s)');
+
+  const sheetRounds = sheet ? [...sheet.querySelectorAll('.ed-sheet-round')] : [];
+  const answerTexts = sheet
+    ? [...sheet.querySelectorAll('.ed-sheet-answer-text')].map((n) => n.textContent) : [];
+  const longOnSheet = answerTexts.find((t) => t.indexOf('x'.repeat(50)) === 0) || '';
+
+  // M52. READ WHERE IT LEAVES THE SYSTEM — the element the print dialog renders — and compared
+  // against the string that went into the model, character for character. A truncated answer is a
+  // shorter string here, and a scraped one is the empty board still on screen.
+  //
+  // The second half of the check is the structural one: there is no <input> in the sheet. An input
+  // is the mechanism of the clipping, so a sheet containing one has the defect whatever its value
+  // happens to be at the moment the assertion looks.
+  const formControls = sheet ? sheet.querySelectorAll('input, textarea, select').length : -1;
+  record('print', 'a 2000-character answer reaches the printed sheet whole, not clipped in a box',
+    longOnSheet === LONG && longOnSheet.length === LIMITS.maxAnswerChars && formControls === 0,
+    'the sheet carries ' + longOnSheet.length + ' of ' + LONG.length + ' characters, ending "'
+    + longOnSheet.slice(-40) + '"; form controls in the sheet: ' + formControls);
+
+  // The point values, in rank order, per round — the other half of what a host is holding the paper
+  // for. Read off the sheet and compared with the numbers this fixture was written with, not with
+  // numbers walked back out of the model by the same traversal the code under test uses.
+  const values = sheet
+    ? [...sheet.querySelectorAll('.ed-sheet-answer-value')].map((n) => n.textContent) : [];
+  record('print', 'every answer prints with its own point value, in rank order',
+    values.join('|') === '40|35|15|100|20|5',
+    'the sheet reads: ' + values.join(', '));
+
+  // M55. IN THE RIGHT LOOP (`M12`): each round's total is read from THAT round's section and
+  // compared with that round's own arithmetic. 90 and 125 are distinct from each other and from
+  // their sum, so a total that adds up the wrong round — or every round — is a different number.
+  const totals = sheetRounds.map((r) => {
+    const node = r.querySelector('.ed-sheet-total');
+    return node ? node.textContent : '(no total)';
+  });
+  record('print', 'each round\'s total is the total of its own answers',
+    sheetRounds.length === 2 && totals[0] === 'Round total: 90' && totals[1] === 'Round total: 125',
+    sheetRounds.length + ' round(s) on the sheet; totals: ' + totals.join(' · '));
+
+  // The survey question is the column label, and it is what the round is ABOUT — a sheet of answers
+  // with no questions on it is not something a host can read aloud from.
+  const questions = sheetRounds.map((r) => {
+    const node = r.querySelector('.ed-sheet-question');
+    return node ? node.textContent : '(no question)';
+  });
+  const titleNode = sheet ? sheet.querySelector('.ed-sheet-title') : null;
+  record('print', 'the sheet carries the board title and every round\'s survey question',
+    titleNode !== null && titleNode.textContent === 'The host sheet board'
+    && /Name something a host forgets\./.test(questions[0] || '')
+    && /Name something that will not fit in a box\./.test(questions[1] || ''),
+    'title: "' + (titleNode ? titleNode.textContent : '(none)') + '"; questions: '
+    + questions.join(' · '));
+
+  // Printing is NOT export (`D23`). A valid board prints clean.
+  const draftOnValid = sheet ? sheet.querySelector('.ed-sheet-draft') : null;
+  record('print', 'a board that validates prints with no DRAFT stamp on it',
+    draftOnValid === null,
+    draftOnValid === null ? 'no draft stamp, and the board judged valid'
+      : 'stamped "' + draftOnValid.textContent + '" on a valid board');
+
+  // M56. THE SHEET IS REBUILT ON EVERY PRESS. The host corrects an answer and prints again; a
+  // cached sheet hands them the mistake they just fixed. Asserted in both directions — the new text
+  // present AND the old text gone — because "contains the new one" passes for a sheet that appended.
+  model.rounds[1].answers[1].answer = 'EDITED AFTER THE FIRST PRINT';
+  editor.__editor.refresh();
+  await settle();
+  const realPrint2 = window.print;
+  window.print = () => { printCalls += 1; };
+  try {
+    if (printBtn) printBtn.click();
+    await settle();
+    await settle();
+  } finally {
+    window.print = realPrint2;
+  }
+  const reprinted = editor.__editor.sheet();
+  const reprintedTexts = reprinted
+    ? [...reprinted.querySelectorAll('.ed-sheet-answer-text')].map((n) => n.textContent) : [];
+  record('print', 'an answer edited after printing prints again as edited, never from a cache',
+    reprintedTexts.indexOf('EDITED AFTER THE FIRST PRINT') !== -1
+    && reprintedTexts.indexOf('A short one') === -1
+    && printCalls === 2,
+    'after the edit the sheet reads: ' + reprintedTexts.map((t) => t.slice(0, 28)).join(' · ')
+    + ' (print calls: ' + printCalls + ')');
+
+  // ---- THE BROWSER'S OWN PRINT GESTURE (`M58`, `M59`) ---------------------------------------
+  //
+  // EVERY ASSERTION ABOVE PRESSES THE BUTTON FIRST, and that is precisely why the suite was green
+  // over two shipped defects. Cmd/Ctrl-P and File to Print never reach the click handler, and the
+  // `@media print` block hides the whole editor unconditionally — so a host printing the ordinary
+  // way got ONE BLANK PAGE, and, once the button HAD been pressed, a STALE answer key showing an
+  // answer they had already corrected. Silently wrong paper, carried into a room.
+  //
+  // Found by adversarial review printing the real page with `--print-to-pdf` and no click at all.
+  // These two rows fire the print signal directly and never touch the button, which is the only
+  // shape that can see the defect.
+  const firePrintSignal = () => {
+    // The real gesture raises `beforeprint` where the engine has it. Dispatched at `window`, which
+    // is where the editor listens; the media-query path cannot be driven from script at all, so it
+    // is covered by the shipped-CSS reading below rather than pretended at here.
+    window.dispatchEvent(new Event('beforeprint'));
+  };
+
+  // A FRESH page, never printed, must still put the board on paper. `sheet()` is emptied first so
+  // the assertion cannot pass on the sheet the earlier rows built — without that reset this row
+  // would be a tautology, which is the shape `M28` and `M51` were both recorded for.
+  const freshSheet = editor.__editor.sheet();
+  if (freshSheet) freshSheet.textContent = '';
+  firePrintSignal();
+  await settle();
+  const afterSignal = editor.__editor.sheet();
+  const signalTexts = afterSignal
+    ? [...afterSignal.querySelectorAll('.ed-sheet-answer-text')].map((n) => n.textContent) : [];
+  record('print', 'Cmd-P with the button never pressed still prints the board, not a blank page',
+    signalTexts.length > 0 && signalTexts.indexOf('EDITED AFTER THE FIRST PRINT') !== -1,
+    signalTexts.length === 0
+      ? 'the sheet was EMPTY — the browser would have printed a blank page'
+      : 'the sheet carries ' + signalTexts.length + ' answer(s): '
+        + signalTexts.map((t) => t.slice(0, 24)).join(' · '));
+
+  // And it must be CURRENT, not the sheet a previous press left behind. The answer is edited after
+  // a print and then printed by the gesture alone: a stale sheet still reads the old text, which is
+  // the defect a host would never notice until the paper was in their hand.
+  model.rounds[1].answers[1].answer = 'CORRECTED, PRINTED BY GESTURE';
+  editor.__editor.refresh();
+  await settle();
+  firePrintSignal();
+  await settle();
+  const gestureSheet = editor.__editor.sheet();
+  const gestureTexts = gestureSheet
+    ? [...gestureSheet.querySelectorAll('.ed-sheet-answer-text')].map((n) => n.textContent) : [];
+  record('print', 'Cmd-P after an edit prints the CORRECTION, never the answer the host fixed',
+    gestureTexts.indexOf('CORRECTED, PRINTED BY GESTURE') !== -1
+    && gestureTexts.indexOf('EDITED AFTER THE FIRST PRINT') === -1,
+    'printed by gesture: ' + gestureTexts.map((t) => t.slice(0, 30)).join(' · '));
+
+  // `M60`. THE ROUND NUMBER IS NOT SAID TWICE. A label is free text and authors put the round
+  // number in it — the repo's own `games/demo-feud-rounds.json` labels its columns "Round 1",
+  // "Round 2", "Round 3", which printed as "Round 1 — Round 1 — Name something...". Asserted with
+  // BOTH shapes in one board, because a fixture carrying only bare labels cannot tell the two
+  // implementations apart.
+  model.rounds[0].label = 'Round 1';                 // already says it
+  model.rounds[1].label = 'Name something you pack'; // does not
+  editor.__editor.refresh();
+  await settle();
+  firePrintSignal();
+  await settle();
+  const headingSheet = editor.__editor.sheet();
+  const headings = headingSheet
+    ? [...headingSheet.querySelectorAll('.ed-sheet-question')].map((n) => n.textContent) : [];
+  record('print', 'a round whose label already names it does not print "Round 1 — Round 1"',
+    headings[0] === 'Round 1'
+    && headings[1] === 'Round 2 — Name something you pack',
+    'headings: ' + headings.map((h) => JSON.stringify(h)).join(' · '));
+
+  // An INVALID board is printable, and says so on the paper. The open question in the plan, resolved
+  // by the maintainer: paper cannot break a board in front of a room, so the refusal that guards
+  // export (`M25`) is not copied here — the sheet is stamped instead.
+  // Invalid in a way the SCHEMA refuses, not in a way that merely looks wrong: `value` is an
+  // integer field, and "not a number" is the mistake a host actually makes while typing. An empty
+  // answer string is NOT a validation failure (`answer` has no minimum length), so the first
+  // version of this assertion ran against a board the validator was perfectly happy with and
+  // proved nothing about DRAFT at all — it failed, and that is how it was found.
+  model.rounds[1].answers[1].value = 'not a number';
+  editor.__editor.refresh();
+  await settle();
+  const downloadBtn = [...stage.querySelectorAll('button')]
+    .find((b) => b.textContent === 'Download board');
+  const realPrint3 = window.print;
+  window.print = () => { printCalls += 1; };
+  try {
+    if (printBtn) printBtn.click();
+    await settle();
+    await settle();
+  } finally {
+    window.print = realPrint3;
+  }
+  const draftSheet = editor.__editor.sheet();
+  const stamp = draftSheet ? draftSheet.querySelector('.ed-sheet-draft') : null;
+  record('print', 'an invalid board still prints, stamped DRAFT, while export stays refused',
+    stamp !== null && /DRAFT/.test(stamp.textContent) && printCalls === 3
+    && printBtn.disabled === false
+    && downloadBtn !== undefined && downloadBtn.disabled === true,
+    'stamp: ' + (stamp ? '"' + stamp.textContent + '"' : 'NONE') + '; print calls: ' + printCalls
+    + '; Print disabled=' + (printBtn ? printBtn.disabled : '(no control)')
+    + '; Download disabled=' + (downloadBtn ? downloadBtn.disabled : '(no control)'));
+
+  stage.remove();
+
+  // ---- half two: the shipped @media print block, applied and measured ------------------------
+  const booted = await bootEditorPage();
+  const doc = booted.doc;
+  const win = booted.win;
+  if (!win || !doc) {
+    record('print', 'editor/index.html boots so its print rules can be measured', false,
+      'the editor page never drew its controls in the iframe');
+    booted.frame.remove();
+    return;
+  }
+
+  // Authored through the REAL control, so the sheet in the iframe holds text a host actually typed.
+  const titleInput = doc.querySelector('.ed-meta .ed-input');
+  if (titleInput) {
+    titleInput.value = 'Paper board';
+    titleInput.dispatchEvent(new win.Event('input', { bubbles: true }));
+  }
+  const framePrintBtn = findPrintButton(doc);
+  let framePrintCalls = 0;
+  win.print = () => { framePrintCalls += 1; };
+  if (framePrintBtn) framePrintBtn.click();
+  for (let i = 0; i < 40; i++) {
+    const s = doc.querySelector('.ed-sheet');
+    if (s && s.querySelector('.ed-sheet-round')) break;
+    await settle();
+  }
+  const frameSheet = doc.querySelector('.ed-sheet');
+
+  // M57. THE SHEET IS NOT ON SCREEN. Asserted with a positive control in the same breath — the
+  // sheet exists and carries the board — because "it is not visible" passes just as well for a
+  // sheet that was never built.
+  record('print', 'the sheet is absent from the screen and present only for the printer',
+    frameSheet !== null && framePrintCalls === 1
+    && frameSheet.querySelector('.ed-sheet-round') !== null
+    && occupiesSpace(frameSheet) === false
+    && win.getComputedStyle(frameSheet).display === 'none',
+    frameSheet === null ? 'no .ed-sheet on the editor page at all'
+      : 'built (' + frameSheet.querySelectorAll('.ed-sheet-round').length + ' round(s), '
+        + frameSheet.textContent.trim().length + ' characters), on-screen display: '
+        + win.getComputedStyle(frameSheet).display + ', client rects: '
+        + frameSheet.getClientRects().length);
+
+  // The shipped print declarations, lifted out of the page's own CSSOM.
+  const printCss = printRulesText(doc);
+  record('print', 'editor/index.html ships an @media print block the browser has parsed',
+    printCss.length > 0 && /\.ed-sheet/.test(printCss),
+    printCss.length === 0 ? 'no @media print rules are in the page\'s parsed stylesheets'
+      : printCss.split('\n').length + ' parsed rule(s) in the print block');
+
+  // Applied unconditioned, after a stand-in for a browser in dark mode. The dark rule is injected
+  // FIRST so the print block has to win on its own, rather than by being the only thing there.
+  const darkStyle = doc.createElement('style');
+  darkStyle.textContent = ':root { color-scheme: dark; }\n'
+    + 'html, body { background: #101014; color: #f4f4f5; }';
+  doc.head.appendChild(darkStyle);
+  const printStyle = doc.createElement('style');
+  printStyle.textContent = printCss;
+  doc.head.appendChild(printStyle);
+  await settle();
+
+  const bodyStyle = win.getComputedStyle(doc.body);
+  const sheetStyle = frameSheet ? win.getComputedStyle(frameSheet) : null;
+  const firstAnswer = frameSheet ? frameSheet.querySelector('.ed-sheet-answer-text') : null;
+  const answerStyle = firstAnswer ? win.getComputedStyle(firstAnswer) : null;
+
+  // M53. BLACK ON WHITE REGARDLESS OF prefers-color-scheme, measured as computed colour with the
+  // page in dark mode. `rgb(255, 255, 255)` is what the paper gets; anything else is the host's
+  // dark theme going to the printer.
+  record('print', 'the printed sheet is black on white even with the page in dark mode',
+    bodyStyle.backgroundColor === 'rgb(255, 255, 255)'
+    && bodyStyle.color === 'rgb(0, 0, 0)'
+    && sheetStyle !== null && sheetStyle.color === 'rgb(0, 0, 0)'
+    && sheetStyle.backgroundColor === 'rgb(255, 255, 255)'
+    && answerStyle !== null && answerStyle.color === 'rgb(0, 0, 0)',
+    'body: ' + bodyStyle.color + ' on ' + bodyStyle.backgroundColor
+    + '; sheet: ' + (sheetStyle ? sheetStyle.color + ' on ' + sheetStyle.backgroundColor : '(none)')
+    + '; answer text: ' + (answerStyle ? answerStyle.color : '(none)'));
+
+  // `M61`. THE WRAP RULE — the feature's entire reason for existing, and nothing covered it.
+  //
+  // F15 is a BUILT SHEET rather than a print stylesheet for exactly one reason: answers may be 2000
+  // characters and they live in `<input>` elements, which print only what fits the box. Printing
+  // from the model buys wrapping — but only if the sheet actually wraps, and review showed the
+  // declaration could be DELETED with the suite still green at 492/492. The one line the plan calls
+  // the justification for the whole design was the one line no assertion touched.
+  //
+  // Asserted twice over, because the declaration alone is a restatement of the CSS rather than a
+  // test of it: the computed value, AND a real measurement with an unbroken token far wider than
+  // its column. `overflow-wrap: anywhere` is what breaks a token with no spaces in it; `break-word`
+  // would not survive the same measurement, so the two readings are distinguishable.
+  if (firstAnswer) firstAnswer.textContent = 'X'.repeat(300);
+  await settle();
+  const wrapStyle = firstAnswer ? win.getComputedStyle(firstAnswer) : null;
+  // MEASURED AS LINE BOXES, not as width. `.ed-sheet-answer-text` is a `<span>`, so it is INLINE
+  // and its `clientWidth` is 0 by definition — the first version of this assertion measured that
+  // and reported a 925px token in a 0px column, which is a true number about the wrong box. An
+  // inline element that wraps produces one client rect PER LINE, so the rect count is the direct
+  // reading of "did this wrap", and it stays correct whatever the column width happens to be.
+  const rects = firstAnswer ? firstAnswer.getClientRects().length : 0;
+  const widest = firstAnswer
+    ? Math.max(0, ...[...firstAnswer.getClientRects()].map((r) => r.width)) : 0;
+  const pageWidth = doc.body.clientWidth;
+  record('print', 'a long unbroken answer WRAPS on the sheet instead of running off the page',
+    wrapStyle !== null && wrapStyle.overflowWrap === 'anywhere'
+    && rects > 1 && widest <= pageWidth + 1,
+    'overflow-wrap: ' + (wrapStyle ? wrapStyle.overflowWrap : '(none)')
+    + '; a 300-character unbroken token drew ' + rects + ' line box(es), widest '
+    + Math.round(widest) + 'px against a ' + pageWidth + 'px page');
+
+  // M54. NO EDITING CHROME ON THE PAPER. Every button, every input, the open row, the verdict
+  // panel, the manifest line and the lede — checked as a POPULATION rather than one representative
+  // of it, and asserted on whether they occupy space rather than on what `display` says, because a
+  // hidden ancestor leaves a child's own `display` reading `block`.
+  const chrome = [
+    ...doc.querySelectorAll('button, input, select, .lede, .ed-open, .ed-meta, .ed-rounds, '
+      + '.ed-verdict, .ed-manifest, .ed-export-reason, h1'),
+  ];
+  const stillShowing = chrome.filter(occupiesSpace);
+  record('print', 'no button, tool, field or verdict panel survives onto the printed page',
+    chrome.length > 10 && stillShowing.length === 0,
+    chrome.length + ' chrome element(s) checked; still on the page: '
+    + (stillShowing.length === 0 ? 'none'
+      : stillShowing.slice(0, 6).map((n) => '<' + n.tagName.toLowerCase() + ' class="'
+        + n.className + '">').join(', ')));
+
+  // And the sheet itself IS on the page — the other half of the same rule, without which "nothing
+  // is visible" would pass for a print block that hid the entire document.
+  record('print', 'the sheet itself is what the print block leaves on the page',
+    occupiesSpace(frameSheet)
+    && frameSheet.querySelectorAll('.ed-sheet-round').length > 0
+    && occupiesSpace(frameSheet.querySelector('.ed-sheet-total')),
+    frameSheet === null ? 'no sheet' : 'sheet occupies '
+      + Math.round(frameSheet.getBoundingClientRect().height) + 'px of page height with '
+      + frameSheet.querySelectorAll('.ed-sheet-round').length + ' round(s) on it');
+
+  darkStyle.remove();
+  printStyle.remove();
+  booted.frame.remove();
+}
+
 // =============================================================================================
 // F14 / D22 — MOVING THE BOARD BACKWARD THROUGH ROUNDS
 // =============================================================================================
@@ -6160,6 +6656,9 @@ export async function run(mount) {
   // and before the invariants, which only read source text.
   await runStartupSuite();
   await runEditorSuite();
+  // F15/D23. After the editor suite because it drives the same module singleton, and it boots the
+  // editor PAGE in an iframe as well — the only document where the print block exists at all.
+  await runPrintSheetSuite();
   await runInvariantSuite();
 
   mount.textContent = '';
