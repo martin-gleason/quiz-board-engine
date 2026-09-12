@@ -9,3 +9,17 @@ node_modules/
 # contain a home-directory listing and a hostname; this repo is public and CLAUDE.md forbids
 # identifiable data in it, ever. Keep the evidence locally, or scrub it before tracking it.
 docs/handoffs/Runbook*Safari*.md
+
+# Survey response exports. Raw form responses carry respondent-supplied email addresses
+# and this repository is public — CLAUDE.md: "no identifiable or regulated data lives
+# here, ever." The MAP beside them (examples/*.map.json) carries no PII and IS tracked:
+# it is the editorial record of how a board was built. Chore C20.
+examples/*.csv
+
+# Python bytecode from tools/
+__pycache__/
+
+# Spreadsheet originals of survey exports. Same reason as examples/*.csv: these carry
+# respondent-supplied email addresses and this repository is public. Chore C20.
+*.numbers
+*.xlsx

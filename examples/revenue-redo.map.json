@@ -1,0 +1,292 @@
+{
+  "_note": "MAP for revenue-redo. C20, on the throwaway branch new-test. Derived from revenue-feud.map.json: the editorial judgments (merges, drops, labels) are identical because the responses are identical — examples/revenue_responses_redo.csv is byte-for-byte the same file as revenue_responses_17.csv. Only the board identity differs, so this exercises the generator end to end without pretending the data changed. MAP for revenue-feud. C20. This file is the EDITORIAL half of board generation and it is maintained by hand — the CSV is the counts, this is the judgment. Three things live here because no script can derive them from survey responses: which raw answers MERGE into one board row (`from` takes a list), which are DROPPED as long tail (`drop`), and what each row is CALLED on the board (`label`). Column order here IS board order. A raw answer appearing in neither `from` nor `drop` is an ERROR, not a silent drop and not a silent new row: the generator stops and names it, so a survey that grows can never quietly change the board. Blank responses are never answers but DO count toward the denominator, matching the hand-entered original. Percentages are NOT stored here — they are computed.",
+  "schemaVersion": 1,
+  "source": "revenue_responses_redo.csv",
+  "board": {
+    "title": "Revenue Redo",
+    "gameType": "feud",
+    "theme": "marquee",
+    "animation": "flip",
+    "pickerKey": "Revenue Redo",
+    "filename": "revenue-redo.json"
+  },
+  "ignoreColumns": [
+    "Timestamp",
+    "What is a medical procedure you would utilize, regardless of the cost?",
+    "Have feedback? Drop your email in and we'll get back to you!",
+    "Column 12"
+  ],
+  "_ignoreNote": "Every CSV column must be either mapped below or listed above, or the generator stops. The medical-procedure question was cut from the board by the maintainer; the email column is PII and never reaches a game file.",
+  "columns": [
+    {
+      "csvColumn": "Who is the worst billionaire?",
+      "label": "Who is the worst Billionaire?",
+      "answers": [
+        {
+          "label": "Elon Musk",
+          "from": [
+            "Elon Musk"
+          ]
+        },
+        {
+          "label": "Sam Altman",
+          "from": [
+            "Sam Altman"
+          ]
+        },
+        {
+          "label": "Jeff Bezos",
+          "from": [
+            "Jeff Bezos"
+          ]
+        },
+        {
+          "label": "All of them!",
+          "from": [
+            "All of them",
+            "They are all fully saturated with evil. I see no need to create false rankings."
+          ],
+          "_note": "The rant is an 'all of them' answer in longer words. Merged by the maintainer."
+        },
+        {
+          "label": "Rupert Murdoch",
+          "from": [
+            "Rupert Murdoch"
+          ],
+          "_note": "Spelled Murdock on the hand-entered board. Corrected here."
+        }
+      ],
+      "drop": []
+    },
+    {
+      "csvColumn": "What is Illinois' primary source of revenue?",
+      "label": "What is Illinois' primary source of revenue?",
+      "answers": [
+        {
+          "label": "Income Taxes (Right Answer)",
+          "from": [
+            "Income taxes"
+          ]
+        },
+        {
+          "label": "Sales Tax",
+          "from": [
+            "Sales Tax"
+          ]
+        },
+        {
+          "label": "Dispersement from the Feds",
+          "from": [
+            "Dispersement from the Federal Government"
+          ]
+        },
+        {
+          "label": "Weed/Booze/Gaming",
+          "from": [
+            "Weed/Booze"
+          ]
+        },
+        {
+          "label": "Property Taxes",
+          "from": [
+            "Property taxes"
+          ]
+        }
+      ],
+      "drop": [
+        "Investments"
+      ]
+    },
+    {
+      "csvColumn": "Which CTA bus line needs the most investment?",
+      "label": "Which CTA bus line needs the most investment?",
+      "answers": [
+        {
+          "label": "Any bus going south",
+          "from": [
+            "Any bus going South"
+          ]
+        },
+        {
+          "label": "The 79 (79th Street)",
+          "from": [
+            "The no. 79 (79th street)"
+          ]
+        },
+        {
+          "label": "The 8 (Halsted)",
+          "from": [
+            "The no. 8 (Halsted)"
+          ]
+        },
+        {
+          "label": "49",
+          "from": [
+            "49 the spine"
+          ]
+        }
+      ],
+      "drop": [
+        "Buses are for commoners.",
+        "62"
+      ]
+    },
+    {
+      "csvColumn": "Select what percentage of the Illinois Budget ($55.9 BILLION) should be used on housing programs?",
+      "label": "What percentage of the Illinois Budget should be used on Housing?",
+      "answers": [
+        {
+          "label": "10%",
+          "from": [
+            "10"
+          ]
+        },
+        {
+          "label": "5%",
+          "from": [
+            "5"
+          ]
+        },
+        {
+          "label": "2 - 3 %",
+          "from": [
+            "2",
+            "3"
+          ],
+          "_note": "Adjacent values merged into one band."
+        },
+        {
+          "label": "8%",
+          "from": [
+            "8"
+          ]
+        }
+      ],
+      "drop": []
+    },
+    {
+      "csvColumn": "What percentage of the Illinois Budget ($55.9 BILLION) was used on housing programs?",
+      "label": "What percentage of the Illinois Budget ( was used on housing programs?",
+      "answers": [
+        {
+          "label": ".44%",
+          "from": [
+            "0.44%"
+          ]
+        },
+        {
+          "label": "1%",
+          "from": [
+            "1%"
+          ]
+        },
+        {
+          "label": "10%",
+          "from": [
+            "10%"
+          ]
+        },
+        {
+          "label": ".01%",
+          "from": [
+            "0.01%"
+          ]
+        }
+      ],
+      "drop": []
+    },
+    {
+      "csvColumn": "How Many Billionaires are there in Illinois",
+      "label": "How many billionaires are there in Illinois?",
+      "answers": [
+        {
+          "label": "Too Many",
+          "from": [
+            "Too many"
+          ]
+        },
+        {
+          "label": "12",
+          "from": [
+            "12"
+          ]
+        },
+        {
+          "label": "13",
+          "from": [
+            "13"
+          ]
+        },
+        {
+          "label": "14",
+          "from": [
+            "14"
+          ]
+        }
+      ],
+      "drop": [
+        "11"
+      ]
+    },
+    {
+      "csvColumn": "Name the most important state budget priority,",
+      "label": "Name the most important state budget priority!",
+      "answers": [
+        {
+          "label": "Affordable Housing",
+          "from": [
+            "Affordable Housing"
+          ]
+        },
+        {
+          "label": "Health Care",
+          "from": [
+            "Health care"
+          ]
+        },
+        {
+          "label": "Education",
+          "from": [
+            "Education"
+          ]
+        },
+        {
+          "label": "Policing",
+          "from": [
+            "Policing"
+          ]
+        }
+      ],
+      "drop": []
+    },
+    {
+      "csvColumn": "How much of the illinois budget goes to law enforcement and policing?",
+      "label": "How much of the Illinois budget goes to law enforcement and policing?",
+      "answers": [
+        {
+          "label": "10%",
+          "from": [
+            "10%"
+          ]
+        },
+        {
+          "label": "5%",
+          "from": [
+            "5%"
+          ]
+        },
+        {
+          "label": "< 5%",
+          "from": [
+            "3%",
+            "4"
+          ],
+          "_note": "Two below-5 answers banded together."
+        }
+      ],
+      "drop": [
+        "Too damn much"
+      ]
+    }
+  ]
+}
