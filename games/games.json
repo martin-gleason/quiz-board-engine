@@ -8,6 +8,7 @@
     "General Knowledge": "demo.json",
     "Trivia Bingo": "demo-bingo.json",
     "Ranked Answers": "demo-feud.json",
-    "Revenue Feud": "revenue-feud.json"
+    "Revenue Redo": "revenue-redo.json",
+    "Revenue Redo 2": "revenue-redo2.json"
   }
 }
