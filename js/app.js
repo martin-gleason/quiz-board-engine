@@ -564,9 +564,21 @@ function startGame(ctx) {
   // stated in `renderToolbar` three lines above where it is built. Found in adversarial review.
   if (bundle.gametype.layout === 'ranked-list' && bundle.resolved.columnCount > 1) {
     toolbarHandlers.onRoundNext = () => state.setRound(ctx.bundle, currentRound(ctx) + 1);
+    // `D22`. The counterpart, behind the SAME gate and in the same line of thought: a board with one
+    // round has nowhere to go in either direction, so neither control is drawn on it.
+    //
+    // WHY THIS IS THE WHOLE OF THE FEATURE'S STATE WORK — one line, no schema, nothing persisted.
+    // `state.setRound` already accepts any index and clamps to `0..last`; cell keys are
+    // `"<column>:<row>"` so reveals are scoped to their round; strikes are already per round
+    // (`D15`); and `repaint` derives the entire board from the session every time. So writing an
+    // earlier `currentRound` back repaints that round in exactly the state the host left it,
+    // reveals and strikes intact, with no restore path to keep in step. `M43`/`M44` are the
+    // mutations that hold that claim honest rather than assumed.
+    toolbarHandlers.onRoundPrev = () => state.setRound(ctx.bundle, currentRound(ctx) - 1);
   }
   ctx.toolbar = renderer.renderToolbar({ mount: stage, handlers: toolbarHandlers });
   bindStrikeKey(ctx);
+  bindRoundKeys(ctx); // `D22`
 
   // Not unsubscribed anywhere, and that is correct rather than a leak: the document holds exactly
   // one game for its whole life, and the subscriber dies with the page.
@@ -655,6 +667,84 @@ function bindStrikeKey(ctx) {
   });
 }
 
+/**
+ * `←` and `→` move the board a round (`D22`).
+ *
+ * The keyboard budget goes from `Escape`/`Space`/`Enter`/`X` to those plus two, which is a
+ * maintainer decision taken at the gate rather than an implementation detail (plan Q12 fixed the
+ * budget deliberately small, and `D15` already widened it once by exactly one key).
+ *
+ * WHY THE ARROWS ARE SAFE HERE, AND IT IS NOT AN ASSUMPTION — this was the open risk the plan named
+ * and told us to test rather than reason about. Three claimants were checked, in the browser:
+ *
+ *   1. REVEAL.JS binds `←`/`→` to slide navigation by default, and would have been a genuine
+ *      collision. It cannot be one: `initReveal` forces `keyboard: false` into the config on every
+ *      call (`renderer.js`, and the comment there predicted exactly this fight), so reveal listens
+ *      for no key at all. `controls: false` means there is nothing focusable of reveal's either.
+ *   2. A FOCUSED CELL is a plain `<button>`. `←`/`→` have no platform behaviour on a lone button in
+ *      any of the three browsers — arrow semantics inside a control belong to radio groups,
+ *      `<select>`, and composite widgets with `role="radiogroup"`/`"tablist"`. This app DOES build
+ *      two of those: the startup picker's `input[name="qbe-game"]` radios and `select.qbe-startup-
+ *      select`. They are unreachable from here rather than absent, and the distinction matters to
+ *      whoever moves this listener: `bindRoundKeys` is called from `startGame`, which runs only
+ *      after the picker is gone, and the target guard below would catch them regardless. An earlier
+ *      draft of this comment claimed the app builds none — a right conclusion resting on a wrong
+ *      fact, which is the kind that survives until someone binds this to `window`. Found in review.
+ *      The board itself is navigated with `Tab`, which the arrows do not touch. Verified by pressing
+ *      the keys with a cell focused and watching `document.activeElement` stay put.
+ *   3. TEXT ENTRY is the one place `←`/`→` really do mean something — the caret. Every text input in
+ *      this app lives on a setup, resume or startup screen, so `ctx.screen` already covers them, and
+ *      the target check below is belt-and-braces for any future field that does not.
+ *
+ * Guards otherwise mirror `bindStrikeKey`, and `event.repeat` matters MORE here than it does for
+ * `X`: a strike is capped, so a held `X` was merely wasteful, whereas a held `←` would walk the
+ * board to Round 1 in about a second — past the round the host wanted, in front of the room, with
+ * a clone, a localStorage write and a full repaint on every tick of the way. `M49`.
+ */
+function bindRoundKeys(ctx) {
+  // Same gate as the two buttons: a board with one round, or one that is not a ranked list, has
+  // nowhere to go, and a key that silently does nothing is the keyboard's version of a dead control.
+  if (ctx.bundle.gametype.layout !== 'ranked-list' || ctx.bundle.resolved.columnCount <= 1) return;
+  ctx.doc.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+    if (event.repeat) return;
+    if (ctx.board && ctx.board.open) return;
+    if (ctx.screen) return; // a setup or resume overlay is up
+    // The caret wins wherever there is one. `closest` rather than a tag test so a field inside a
+    // label, or a future contenteditable, is covered by the same line.
+    const target = event.target;
+    if (target instanceof Element && target.closest('input, textarea, select, [contenteditable]')) return;
+    event.preventDefault();
+
+    // FOCUS SURVIVES THE MOVE, and this is the one thing the browser had to be asked about rather
+    // than reasoned about. Changing round sets the outgoing column `hidden` and `inert`, so a cell
+    // holding focus is taken out from under the host and focus falls to `<body>` — a keyboard host
+    // would then Tab from the top of the document back to the board on every single round change.
+    // The button path never had this problem, because pressing a button leaves focus on a button
+    // that does not move; the arrows created it, so the arrows repair it.
+    //
+    // Read BEFORE the state write, because the write repaints synchronously and the answer is gone
+    // by the time it returns. And only when a CELL held focus: a host whose focus is on the toolbar,
+    // or nowhere, must be left exactly where they are.
+    const active = ctx.doc.activeElement;
+    const cellHadFocus = !!(ctx.board && active instanceof Element
+      && ctx.board.root.contains(active) && active.closest('.qbe-cell'));
+
+    // REPAIR ONLY A MOVE THAT HAPPENED. `setRound` CLAMPS at both ends, so an arrow at the first
+    // or last round is a no-op — and the first version of this repaired focus anyway, moving the
+    // host from the answer they had tabbed to back to the top of a round that never changed. That
+    // is the very failure the repair exists to prevent, fired by the repair itself, and it landed
+    // on the two boundaries `F14-T4`'s checkpoint is about. Found by adversarial review driving
+    // real key presses at the clamp; no amount of reading the handler would have shown it, because
+    // the bug is in what `setRound` DIDN'T do.
+    const before = currentRound(ctx);
+    const delta = event.key === 'ArrowRight' ? 1 : -1;
+    state.setRound(ctx.bundle, before + delta);
+    if (cellHadFocus && currentRound(ctx) !== before) renderer.focusRoundCell(ctx.board);
+  });
+}
+
 /** The single repaint. `null` arrives when the live session is discarded; there is nothing to draw. */
 function repaint(ctx, session) {
   if (!session) return;
@@ -697,6 +787,26 @@ function repaint(ctx, session) {
       activeTeam: ctx.activeTeam,
       strikes: perTeamStrikes,
     });
+  }
+
+  // `D22`. Derived on every repaint from the same `round` the board was just painted with, for the
+  // reason everything else in this function is: a number computed once at build is right until the
+  // first press and wrong forever after, and a frozen round counter is worse than none — it denies
+  // the skip it exists to reveal. `M46`. The total is the board's own column count, which is what
+  // `state.setRound` clamps against, so the two can never disagree about where the last round is.
+  if (ctx.toolbar && ctx.toolbar.setRoundIndicator) {
+    ctx.toolbar.setRoundIndicator(round, ctx.bundle.resolved.columnCount);
+  }
+
+  // The same honesty rule as the strike controls below, driven from the same repaint so the two
+  // ends can never disagree with the indicator sitting beside them. `setRound` clamps, so without
+  // this `Previous round` was enabled and dead on every fresh board — Round 1 is where every game
+  // starts — and `Next round` was enabled and dead at the end. Computed from the round and the
+  // column count rather than tracked, for the reason the whole of `D22` is small: the session is
+  // the only source of truth about where the board is.
+  if (ctx.toolbar && ctx.toolbar.setRoundEnabled) {
+    const last = Math.max(0, ctx.bundle.resolved.columnCount - 1);
+    ctx.toolbar.setRoundEnabled(round > 0, round < last);
   }
 
   // A DISABLED BUTTON IS HONEST; a button that silently does nothing is not — the rule `renderer`

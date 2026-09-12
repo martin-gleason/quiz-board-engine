@@ -460,6 +460,38 @@ export function setRound(view, index) {
 }
 
 /**
+ * Put focus on the first cell of the round now showing (`D22`).
+ *
+ * THIS EXISTS BECAUSE `setRound` ABOVE TAKES FOCUS AWAY, and that was only ever reachable once the
+ * arrow keys existed. Changing round sets the outgoing column `hidden` and `inert`, so a cell that
+ * held focus is removed from the accessibility tree underneath the host and the browser drops focus
+ * to `<body>` — observed in Chrome, and the behaviour is the same wherever `inert` is implemented
+ * at all. It never showed up on the BUTTON path because activating a button leaves focus on the
+ * button, which does not move.
+ *
+ * A keyboard host dumped on `<body>` has to Tab from the top of the document back to the board, on
+ * every round change. That is WCAG 2.4.3 focus order, and it is the one thing `F14`'s keyboard
+ * checkpoint asks for by name — "moves both ways from the keyboard without disturbing cell focus".
+ *
+ * It is a REPAIR AND NOT A POLICY: the caller invokes it only when the keyboard press it is
+ * handling actually took focus off a cell. Calling it unconditionally would steal focus from the
+ * toolbar button a host had just pressed, which is the opposite defect.
+ *
+ * `.qbe-cell` rather than "first focusable": the cells are what the host is navigating, and the
+ * first one is where a fresh round starts. No `scrollIntoView` — the board is one screen by
+ * construction (spec §4.1), and a projector has nowhere to scroll to.
+ */
+export function focusRoundCell(view) {
+  if (!view || !view.columnEls) return false;
+  const columnEl = view.columnEls[view.currentRound];
+  if (!columnEl || columnEl.hidden) return false;
+  const cell = columnEl.querySelector('.qbe-cell');
+  if (!cell) return false;
+  tryFocus(cell);
+  return (cell.ownerDocument || document).activeElement === cell;
+}
+
+/**
  * The strike overlay (`D16`), and why it is one element with N children rather than N elements.
  *
  * The room reads a COUNT, not a list. Three separate marks that appear one at a time would each
@@ -1487,7 +1519,30 @@ export function renderToolbar({ mount, handlers }) {
     : null;
   if (undoBtn) root.appendChild(undoBtn);
   if (h.onStrikesClear) root.appendChild(chromeButton(doc, 'strikes-clear', 'Clear', 'Clear this round\'s strikes'));
-  if (h.onRoundNext) root.appendChild(chromeButton(doc, 'round-next', 'Next round ▸', 'Move the board to the next round'));
+  // `D22`. THE INDICATOR IS THE HALF OF THIS DELTA NOBODY ASKED FOR FIRST. A host who presses
+  // advance twice has no signal that they skipped a round until they read the question aloud, so a
+  // Previous control on its own would treat the symptom. It sits with the two controls it explains,
+  // and it obeys the same absence rule they do: a game type that passes no round handler has no
+  // rounds to number, and gets no element at all rather than one reading "Round 1 of 1".
+  //
+  // It is a plain `<span>`, deliberately NOT `role="status"`. The same reasoning as the strike band
+  // (see `buildStrikes`): announcement in this app goes through the one `.qbe-live` region, and a
+  // second live region in the footer would talk over it. The host reads this one; the room does not
+  // see it, which is why §2 puts it in the toolbar rather than on the board.
+  const roundIndicator = (h.onRoundPrev || h.onRoundNext) ? el(doc, 'span', 'qbe-round-indicator') : null;
+  if (roundIndicator) root.appendChild(roundIndicator);
+  // `D22`. The counterpart to round-next, same gate, same absence rule. U+25C2/U+25B8 BLACK
+  // LEFT/RIGHT-POINTING SMALL TRIANGLE — a character rather than an image, for the reason the
+  // strike mark is one: it inherits the theme's colour and weight and there is nothing to vendor.
+  // The glyph is never the accessible name; the word "Previous round" is in the label text itself.
+  const prevBtn = h.onRoundPrev
+    ? chromeButton(doc, 'round-prev', '◂ Previous round', 'Move the board to the previous round')
+    : null;
+  const nextBtn = h.onRoundNext
+    ? chromeButton(doc, 'round-next', 'Next round ▸', 'Move the board to the next round')
+    : null;
+  if (prevBtn) root.appendChild(prevBtn);
+  if (nextBtn) root.appendChild(nextBtn);
   if (h.onTeamsEdit) root.appendChild(chromeButton(doc, 'teams', 'Teams…', 'Edit the team names'));
   root.appendChild(exportBtn);
   root.appendChild(importBtn);
@@ -1502,6 +1557,7 @@ export function renderToolbar({ mount, handlers }) {
     else if (action === 'strike' && h.onStrike) h.onStrike();
     else if (action === 'strike-undo' && h.onStrikeUndo) h.onStrikeUndo();
     else if (action === 'strikes-clear' && h.onStrikesClear) h.onStrikesClear();
+    else if (action === 'round-prev' && h.onRoundPrev) h.onRoundPrev();
     else if (action === 'round-next' && h.onRoundNext) h.onRoundNext();
     else if (action === 'import') file.click();
   });
@@ -1537,6 +1593,60 @@ export function renderToolbar({ mount, handlers }) {
           : hasStrikes ? 'Take back the last strike from the active team'
             : 'The active team has no strikes to take back';
       }
+    },
+    /**
+     * Enable or disable the round controls (`D22`).
+     *
+     * A DISABLED BUTTON IS HONEST; A BUTTON THAT SILENTLY DOES NOTHING IS NOT. That rule is already
+     * written down in this file and already implemented three lines above for the strike controls,
+     * and the round buttons shipped without it: `setRound` clamps at both ends, so `Previous round`
+     * on a FRESH board — always Round 1 — was enabled, focusable, and dead. Not an end-of-game
+     * corner but the default state of every board that has the control. Found by adversarial
+     * review clicking it for real.
+     *
+     * `round-next` at the last round had the same defect and inherited it from `D17`; it is fixed
+     * here too rather than left as the one dishonest control in the toolbar.
+     *
+     * `disabled` rather than `aria-disabled`: these are real `<button>` elements, so the platform
+     * removes them from the tab order and announces the state without bespoke ARIA (CLAUDE.md).
+     */
+    setRoundEnabled(canGoBack, canGoForward) {
+      if (prevBtn) {
+        prevBtn.disabled = !canGoBack;
+        prevBtn.title = canGoBack
+          ? 'Move the board to the previous round'
+          : 'This is the first round';
+      }
+      if (nextBtn) {
+        nextBtn.disabled = !canGoForward;
+        nextBtn.title = canGoForward
+          ? 'Move the board to the next round'
+          : 'This is the last round';
+      }
+    },
+    /**
+     * Write the round indicator (`D22`).
+     *
+     * ONE-BASED, AND THAT IS THE WHOLE POINT OF THE METHOD TAKING THE RAW INDEX. `currentRound` is
+     * an array index everywhere else in the engine — the session stores it, `state.setRound` clamps
+     * it, `board[data-round-active]` carries it — and a host reading "Round 0 of 8" off a projector
+     * would be the index leaking into the only place it is not an index. The `+ 1` happens here,
+     * once, at the boundary between the data and the person, rather than in three callers.
+     *
+     * CALLED ON EVERY REPAINT, never once at build. A number written at build time is correct on
+     * the first round and wrong from then on, and a frozen indicator is worse than no indicator:
+     * it does not merely fail to report a skip, it actively denies one happened. `M46`.
+     *
+     * The guard is a write-only-on-change, not an optimisation: `repaint` runs on every score
+     * adjustment and every strike, and rewriting identical text into the footer sixty times a game
+     * is churn a screen reader can notice even without a live region on it.
+     */
+    setRoundIndicator(index, total) {
+      if (!roundIndicator) return;
+      const count = Number.isInteger(total) && total > 0 ? total : 1;
+      const shown = Number.isInteger(index) ? Math.min(Math.max(index, 0), count - 1) : 0;
+      const text = 'Round ' + (shown + 1) + ' of ' + count;
+      if (roundIndicator.textContent !== text) roundIndicator.textContent = text;
     },
     destroy: () => root.remove(),
   };
