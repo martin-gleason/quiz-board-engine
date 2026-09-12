@@ -338,6 +338,125 @@ function renderExport(result) {
   ui.manifestNote.hidden = !ok;
 }
 
+// =============================================================================================
+// SECTION 4b — the host's answer sheet (F15, delta D23)
+// =============================================================================================
+//
+// BUILT FROM THE MODEL, NEVER SCRAPED FROM THE PAGE, and that is the whole of this feature.
+//
+// The obvious implementation is a stylesheet: hide the chrome, let the round inputs print. It does
+// not work, and the way it fails is silent. An answer may be `LIMITS.maxAnswerChars` — 2000 —
+// characters, and answers live in `<input>` elements. An input prints ONLY WHAT FITS ITS BOX: the
+// remainder is clipped with nothing on the paper to say so, so the host is handed a truncated
+// answer and no warning, which is worse than no sheet at all. Text in a block element wraps.
+//
+// It is also `D46`'s rule applied where it belongs. The printed page is a SECOND ARTEFACT of this
+// file, and the register already records what happened the last time a secondary output here
+// skipped the rigor applied to the primary one (`M28`, the hand-concatenated manifest line). So the
+// sheet is built from the same object the validator judges, not from a second reading of the DOM.
+//
+// PRINTING IS NOT EXPORT. Export is refused while the board is invalid (`M25`) because a file the
+// game would reject must not leave this page. Paper cannot break a board, and a host may want a
+// draft in their hand, so an invalid board prints — stamped, so nobody mistakes it for the article.
+
+const DRAFT_STAMP = 'DRAFT — this board does not yet validate';
+
+/**
+ * The points on one answer as a NUMBER, or null when the host has not typed one yet.
+ *
+ * The model deliberately keeps a non-numeric entry as the host's own text (`"12abc"` must not
+ * quietly become 12), so the sheet has to say "no number here" rather than print a 0 the host never
+ * wrote and then add it to a total.
+ */
+function answerPoints(answer) {
+  if (typeof answer.value === 'string' && answer.value.trim() === '') return null;
+  const n = Number(answer.value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** The total of ONE round — `round.answers`, never an index into some other round's list. */
+function roundTotal(round) {
+  return round.answers.reduce((sum, a) => sum + (answerPoints(a) || 0), 0);
+}
+
+/**
+ * Draw the sheet into `target`, from the model, discarding whatever was there before.
+ *
+ * REBUILT ON EVERY PRESS. Building it once and keeping it is the cheap version and it prints
+ * yesterday's board: the host fixes a wrong answer, presses Print again, and the paper still
+ * carries the mistake they just corrected (`M56`).
+ */
+function buildSheet(target, valid) {
+  target.textContent = '';
+  target.appendChild(el('h2', 'ed-sheet-title',
+    model.title !== '' ? model.title : '(untitled board)'));
+  if (!valid) target.appendChild(el('p', 'ed-sheet-draft', DRAFT_STAMP));
+
+  model.rounds.forEach((round, r) => {
+    const section = el('section', 'ed-sheet-round');
+    // DO NOT SAY "ROUND 1" TWICE. The number is composed onto the label so a host can find their
+    // place, but a label is free text and authors put the round number in it — the repo's own
+    // `games/demo-feud-rounds.json` labels its columns "Round 1", "Round 2", "Round 3", which
+    // printed as "Round 1 — Round 1 — Name something...". Found by review printing shipped content
+    // rather than a fixture, which is the only way this shows up: an invented label never collides.
+    // The label wins when it already opens with its own number; the prefix is only ever added to a
+    // label that has not said it.
+    const ordinal = 'Round ' + (r + 1);
+    const label = round.label !== '' ? round.label : '(no survey question)';
+    const saysOrdinal = new RegExp('^\\s*' + ordinal + '\\b', 'i').test(label);
+    section.appendChild(el('h3', 'ed-sheet-question',
+      saysOrdinal ? label : ordinal + ' — ' + label));
+
+    // An ordered list, because rank order IS the content of a ranked-answers board and the platform
+    // already numbers one — the same reasoning that makes the cells real buttons.
+    const list = el('ol', 'ed-sheet-answers');
+    round.answers.forEach((a) => {
+      const item = el('li', 'ed-sheet-answer');
+      item.appendChild(el('span', 'ed-sheet-answer-text', a.answer !== '' ? a.answer : '(blank)'));
+      const points = answerPoints(a);
+      item.appendChild(el('span', 'ed-sheet-answer-value', points === null ? '—' : String(points)));
+      list.appendChild(item);
+    });
+    section.appendChild(list);
+    section.appendChild(el('p', 'ed-sheet-total', 'Round total: ' + roundTotal(round)));
+    target.appendChild(section);
+  });
+  return target;
+}
+
+/**
+ * Build the sheet and hand the page to the browser's print dialog.
+ *
+ * The board is re-judged HERE rather than trusting whatever the debounced `refresh()` last left
+ * behind, so the DRAFT stamp describes the board being printed rather than the board as it was some
+ * number of keystrokes ago. If the support documents cannot be fetched the sheet stays stamped,
+ * which is the honest answer: nothing has said this board validates.
+ */
+/**
+ * Build the sheet and hand the page to the printer.
+ *
+ * THE BUTTON IS NOT THE ONLY WAY TO PRINT, and the first version behaved as if it were. The
+ * `@media print` block hides the whole editor unconditionally, and the sheet was built only inside
+ * this click handler — so a host who pressed Cmd/Ctrl-P, or File to Print, got ONE BLANK PAGE.
+ * Worse once the button HAD been pressed: the built sheet stayed in the DOM, so the browser's own
+ * print gesture then produced a stale answer key, showing an answer the host had already corrected.
+ * Silently wrong paper, carried into a room. Found by adversarial review printing the real page
+ * with `--print-to-pdf` and no click at all; every assertion in the suite pressed the button first,
+ * which is exactly why they were green.
+ *
+ * `beforeprint` below is the fix, and it is why validity is read from `judgedText` rather than
+ * re-judged here. `beforeprint` is SYNCHRONOUS — the page is handed to the printer when it returns,
+ * so there is no awaiting a fetch inside it. `judgedText` is the string `refresh()` last judged and
+ * is null exactly when the board is invalid, which is the same verdict already painted on screen.
+ * Reading it makes the two print paths agree by construction instead of by two separate judgements
+ * that could disagree, and it removes a real defect in the old code besides: a host whose support
+ * documents failed to fetch got a DRAFT stamp on a board that validates.
+ */
+function printSheet() {
+  buildSheet(ui.sheet, judgedText !== null);
+  window.print();
+}
+
 // THE EXACT STRING THAT WAS JUDGED, or null while the board is invalid.
 //
 // `toFileText()` used to be called twice — once in `refresh()` to judge, once again at click time
@@ -607,6 +726,47 @@ export async function boot(root) {
   ui.exportReason = el('p', 'ed-export-reason');
   ui.exportReason.hidden = true;
 
+  // PRINT IS NOT GATED ON VALIDITY, unlike Download beside it. The two look alike and are not the
+  // same act: a file leaving this page can break a board in front of a room, and paper cannot. A
+  // host mid-authoring wants the draft in their hand, so the sheet prints and says DRAFT on it.
+  ui.print = el('button', 'ed-btn ed-primary', 'Print answer sheet');
+  ui.print.type = 'button';
+  ui.print.title = 'Print the questions, answers and point values on paper';
+  ui.print.addEventListener('click', () => {
+    printSheet();
+  });
+
+  // THE BROWSER'S OWN PRINT GESTURE, which is how most people print anything. Cmd/Ctrl-P and
+  // File to Print never reach the click handler above, so without this the page they hand to the
+  // printer is whatever is in the DOM — a blank sheet before the button has been pressed, and a
+  // STALE one after. Both were shipped; both were found by review printing the real page with no
+  // click. Rebuilding here means the paper always matches the model, whichever gesture started it.
+  //
+  // TWO LISTENERS, BOTH FEATURE-DETECTED, NEITHER A USER-AGENT BRANCH (CLAUDE.md forbids those).
+  // `beforeprint` is the direct signal and is not universal; the `print` media query fires in
+  // browsers that resolve print media without it. Whichever arrives first rebuilds, and a second
+  // arrival rebuilds again from the same model — `buildSheet` replaces its target's children
+  // rather than appending, so running twice is a repaint and not a duplicate sheet (`M56`).
+  const rebuildForPrint = () => buildSheet(ui.sheet, judgedText !== null);
+  if (typeof window.addEventListener === 'function') {
+    window.addEventListener('beforeprint', rebuildForPrint);
+  }
+  if (typeof window.matchMedia === 'function') {
+    const printMedia = window.matchMedia('print');
+    // `addEventListener` on a MediaQueryList is the modern spelling; `addListener` is the older one
+    // some engines still ship. Detected, not branched on a name.
+    if (typeof printMedia.addEventListener === 'function') {
+      printMedia.addEventListener('change', (e) => { if (e.matches) rebuildForPrint(); });
+    } else if (typeof printMedia.addListener === 'function') {
+      printMedia.addListener((e) => { if (e.matches) rebuildForPrint(); });
+    }
+  }
+
+  // Drawn empty and kept off the screen by CSS (`.ed-sheet { display: none }`), shown only inside
+  // the page's `@media print` block. A sheet visible on screen turns the editor into a document
+  // with a form stapled to it, and the host then has two copies of the board to keep in step by eye.
+  ui.sheet = el('section', 'ed-sheet');
+
   ui.manifestNote = el('section', 'ed-manifest');
   ui.manifestNote.hidden = true;
   ui.manifestNote.appendChild(el('p', null,
@@ -661,8 +821,10 @@ export async function boot(root) {
   mount.appendChild(addRound);
   mount.appendChild(ui.verdict);
   mount.appendChild(ui.download);
+  mount.appendChild(ui.print);
   mount.appendChild(ui.exportReason);
   mount.appendChild(ui.manifestNote);
+  mount.appendChild(ui.sheet);
 
   // THE VERDICT IS THE WHOLE PRODUCT OF THIS PAGE and it changed with nobody being told. A separate
   // polite region rather than `aria-live` on the panel itself: the panel repaints on every
@@ -704,4 +866,8 @@ export const __editor = {
   refresh: () => refresh(),
   judgedText: () => judgedText,
   lastDownloaded: () => lastDownloaded,
+  // F15. The sheet is read WHERE IT LEAVES THE SYSTEM — the element the print dialog renders —
+  // rather than by re-deriving what it ought to contain. `M24` survived two fixes that re-derived
+  // their expected bytes, so nothing here hands the suite a model to check against itself.
+  sheet: () => ui.sheet,
 };

@@ -128,6 +128,53 @@
     white-space: nowrap;
   }
 
+  /* ---- The host's answer sheet (F15, delta D23) ---------------------------------------------
+     NOT ON SCREEN. The sheet is a second rendering of the same board, and two copies of it visible
+     at once is a document with a form stapled to it — the host reads one and edits the other. It is
+     drawn into the page so the print dialog has something to render and nothing else. */
+  .ed-sheet { display: none; }
+
+  @media print {
+    /* BLACK ON WHITE REGARDLESS OF prefers-color-scheme. Everything above paints in the system
+       colours (Canvas / CanvasText), which a browser in dark mode resolves to pale-on-dark — on
+       paper that is a flooded page, or, once the printer's "ignore background colours" default has
+       had its say, white text on nothing. `color-scheme: light` re-resolves the system colours, and
+       the explicit #000/#fff do not depend on that having worked. */
+    :root { color-scheme: light; }
+    html, body { background: #fff !important; color: #000 !important; }
+
+    /* The editing chrome is not a document. Every control, the open row, the verdict panel, the
+       manifest line and the lede come off the page; `button` is listed as well as `.ed-btn` so a
+       control added later without the class cannot print by omission. */
+    .lede, h1, .ed-open, .ed-meta, .ed-rounds, .ed-verdict, .ed-export-reason,
+    .ed-manifest, .ed-btn, button { display: none !important; }
+
+    .ed-sheet { display: block !important; background: #fff; color: #000; }
+    .ed-sheet-title { font-size: 1.5rem; margin: 0 0 .4rem; }
+    .ed-sheet-draft {
+      display: inline-block;
+      margin: 0 0 1rem;
+      padding: .25rem .5rem;
+      border: 2px solid #000;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    /* A round that straddles a page break separates an answer from its question, which is the one
+       thing the host is holding the paper for. */
+    .ed-sheet-round { margin: 0 0 1.25rem; break-inside: avoid; page-break-inside: avoid; }
+    .ed-sheet-question { font-size: 1.05rem; margin: 0 0 .35rem; }
+    .ed-sheet-answers { margin: 0; padding-left: 1.6rem; }
+    .ed-sheet-answer { margin: .2rem 0; }
+    /* THE ANSWER WRAPS, and that is the entire reason this feature is a built sheet rather than a
+       stylesheet over the form: an <input> prints only what fits its box and clips the rest with
+       nothing on the paper to say so. 2000 characters is a legal answer. */
+    .ed-sheet-answer-text { overflow-wrap: anywhere; }
+    .ed-sheet-answer-value { font-weight: 700; }
+    .ed-sheet-answer-value::before { content: ' \2014 '; font-weight: 400; }
+    .ed-sheet-total { margin: .4rem 0 0; font-weight: 700; }
+  }
+
   .ed-manifest { margin-top: 1rem; }
   .ed-manifest-line {
     display: inline-block;
