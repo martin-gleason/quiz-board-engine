@@ -1,6 +1,33 @@
-# Theme & display contract — v1.6
+# Theme & display contract — v1.7
 
 **Status:** NORMATIVE for F3/F4/F5/F6/F7/F8/F9/F10. Derived from frozen spec §4.3, §4.4, §6.4, §8.
+
+> ## ⚠ AMENDED 2026-09-11 (v1.7) — ONE NEW ELEMENT, ONE NEW `data-action`, NO NEW TOKENS.
+>
+> Purely additive (`D22`, `F14`). Nothing was renamed, nothing was removed, and **no token was
+> added** — a v1.6 theme renders v1.7 correctly and needs no edit.
+>
+> **1. New in §2: `button.qbe-btn[data-action="round-prev"]`** — `◂ Previous round`, in the toolbar
+> beside `round-next`. It carries **the same absence rule** its twin already carries: the pair is
+> drawn only on a `ranked-list` layout, and only when that list has more than one column. A board
+> with one round has nowhere to go in either direction and gets neither control — absent, never
+> present-and-inert, because a dead button on a projected screen makes the host wonder mid-game
+> whether the app is broken. `data-action` was already a closed set in §3, and this is the sixth
+> member of it; a theme styling `.qbe-btn` generically needs no change at all.
+>
+> **2. New in §2: `span.qbe-round-indicator`** — `Round 3 of 8`, in the toolbar, same gate as the
+> two buttons. It is **host equipment and not room copy**, which is the reason it is in the footer
+> rather than on the board: on the board it would need per-theme contrast work against a cell and
+> would compete with the question the room is reading. `default.css` styles it from `--board-fg`
+> and `--font-display`, both of which every theme already sets, so an override sheet inherits
+> something correct without writing a rule. **If you do override it, keep it legible — this is the
+> one thing in the quiet footer a host has to find at a glance mid-game, so re-measure rather than
+> dimming it with `opacity`.**
+>
+> The number is **one-based**. `currentRound` is a zero-based array index everywhere else in the
+> engine — in the session, in `state.setRound`'s clamp, and in `.qbe-board[data-round-active]` — and
+> this element is the single place it is not, because it is the only one a person reads. Do not
+> build a selector that assumes the two agree.
 
 > ## ⚠ AMENDED 2026-08-17 (v1.6) — ONE NEW TOKEN, ONE ATTRIBUTE DOCUMENTED, ONE CORRECTED SHAPE, AND **ONE RULE CHANGE YOU MUST READ IF YOU EVER SET `--cell-shadow: none`**.
 >
@@ -238,12 +265,22 @@ Emitted by `renderer.js` via `createElement`/`textContent` only. Indentation sho
         .qbe-win[data-pattern]             one per completed pattern, in completion order
       footer.qbe-toolbar                   ALWAYS present, scoring or not; last NON-OVERLAY child
                                           of the stage (a setup overlay may be appended after it)
-        button.qbe-btn[data-action]        "strike", "strike-undo", "strikes-clear", "round-next",
-                                          "teams",
+        span.qbe-round-indicator           "Round 3 of 8" (D22). HOST-FACING — it is in the toolbar
+                                          and NOT on the board, so it needs no per-theme contrast
+                                          work against a cell and does not compete with the
+                                          question. ONE-BASED: `currentRound` is an array index
+                                          everywhere else, and this is the one place it is not.
+                                          Rewritten on every repaint, never built once. ABSENT on
+                                          any layout but ranked-list, and on a one-round board —
+                                          the same rule and the same gate as the two buttons below
+        button.qbe-btn[data-action]        "strike", "strike-undo", "strikes-clear", "round-prev",
+                                          "round-next", "teams",
                                           "export", "import". Each is ABSENT rather than inert
                                           when its handler is not passed: "teams" when the game
                                           type has no scoring, the first two when it declares no
-                                          `strikes`, "round-next" on any layout but ranked-list
+                                          `strikes`, "round-prev"/"round-next" on any layout but
+                                          ranked-list (and on a ranked list of one column, which
+                                          has nowhere to go in either direction)
         input.qbe-file[hidden]             the file picker Import opens; never visible
       .qbe-setup[data-screen]              overlay: "teams" or "resume". REMOVED when dismissed,
                                           never [hidden] (v1.6). "resume" is pre-game only, but

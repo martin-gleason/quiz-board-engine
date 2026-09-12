@@ -986,6 +986,34 @@ body,
   justify-content: flex-end;
 }
 
+/* "Round 3 of 8" (contract v1.7, D22). HOST EQUIPMENT, NOT ROOM COPY — it sits
+   in the toolbar rather than on the board, so it does not compete with the
+   question, and it is sized and coloured to be read at arm's length.
+
+   --board-fg on --board-bg is 15.16:1 here, which is the point: the toolbar is
+   quiet but this is the one thing in it a host has to be able to find at a
+   glance mid-game, and a "quiet" colour bought with opacity would have taken
+   the contrast down with it. Weight, not dimming, is what keeps it from
+   shouting. Sized off the same clamp as .qbe-btn so it sits on the buttons'
+   own baseline instead of floating above them.
+
+   Tabular figures for the same reason the award buttons have them: the number
+   changes under a fixed label, and proportional digits make "Round 1 of 12"
+   twitch sideways into "Round 2 of 12" every press. */
+.qbe-round-indicator {
+  align-self: center;
+  /* Pushes the round group away from Clear on its left; the toolbar's own gap
+     handles the space between the indicator and Previous. */
+  margin-left: 0.5rem;
+  color: var(--board-fg);              /* 15.16:1 on --board-bg (AA body ✓, AAA ✓) */
+  font-family: var(--font-display);
+  font-size: clamp(0.85rem, 1.2vw, 1.2rem);
+  font-variant-numeric: tabular-nums lining-nums;
+  font-weight: 600;
+  line-height: 1.1;
+  white-space: nowrap;                 /* "Round 3 of" / "8" across two lines reads as two facts */
+}
+
 /* ---- The pre-game overlay: team setup and the resume list ---------------- */
 
 /* Same geometry as .qbe-detail, and the same reason for the [hidden] rule

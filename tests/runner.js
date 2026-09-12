@@ -623,6 +623,13 @@ const CONTRACT_CLASSES = new Set([
   'qbe-session', 'qbe-session-title', 'qbe-session-meta',
   // D20: the startup screen's route to the authoring page.
   'qbe-startup-aside', 'qbe-startup-editor',
+  // contract v1.7 (F14/D22): the round indicator. It is transcribed here for the same reason every
+  // other class is — the published document is the authority — and it matters more than most,
+  // because it is the ONE new element the delta adds and it lives in the toolbar, which no
+  // assertContract call reached before this delta. `runRoundNavigationSuite` now renders a ranked
+  // board WITH its round chrome into a harness stage and walks it, so this entry is load-bearing
+  // rather than decorative: remove it and that walk reports an element §2 does not describe.
+  'qbe-round-indicator',
   // contract v1.5 (F8): the win rail. A completed pattern is an announcement to the room, so it is
   // DOM the design collaborator has to be able to style — which is why it went into the published
   // contract before it went into the renderer, and why it is transcribed here like everything else.
@@ -653,9 +660,18 @@ const CONTRACT_ATTR_VALUES = {
   // detector is driven by the game type's own `patterns` list, so an id outside this set reaching
   // the DOM would mean the renderer invented a pattern the config never asked for.
   'data-pattern': ['row', 'column', 'diagonal', 'full-card'],
+  // The toolbar's own actions were missing from this transcription until F14, and the omission was
+  // invisible rather than harmless: no assertContract call had ever walked a stage that CONTAINED a
+  // toolbar, so the list was never asked about them. `runRoundNavigationSuite` walks one now, which
+  // is what forced the gap into the open. The set below is §2's tree, which is the authority — §3's
+  // one-line prose enumeration of "the closed set" lags it and lists neither the strike controls
+  // (v1.3/v1.4) nor the round controls (v1.7).
   'data-action': [
     'score-up', 'score-down', 'export', 'import', 'teams',
-    'add-team', 'start', 'cancel', 'resume', 'discard', 'new',
+    'add-team', 'start', 'cancel', 'resume', 'discard', 'new', 'begin',
+    'strike', 'strike-undo', 'strikes-clear',
+    // contract v1.7 (`D22`). `round-next` shipped with `D17` and was never transcribed either.
+    'round-prev', 'round-next',
   ],
 };
 
@@ -5577,6 +5593,508 @@ async function runEditorSuite() {
   stage.remove();
 }
 
+// =============================================================================================
+// F14 / D22 — MOVING THE BOARD BACKWARD THROUGH ROUNDS
+// =============================================================================================
+//
+// WHY THIS SUITE IS MOSTLY A REAL BOOT rather than harness renders. `D22` adds almost no code: the
+// state layer already took any round index and clamped it, cell keys were already `"<column>:<row>"`
+// so reveals were already scoped to a round, and strikes were already per round (`D15`). The claim
+// the delta actually makes is therefore not "this function returns the right number" — it is *a host
+// who goes back finds the round exactly as they left it*, which is a statement about the whole
+// chain: a real button, the real `state`, the real `repaint`, the real board. Assert it anywhere
+// short of that and the assertion is testing the model that produced the answer instead of the
+// answer, which is the failure mode this project has shipped five times (conventions, "Assertions
+// are not evidence").
+//
+// So: `games/demo-feud-rounds.json` is booted in the shell, driven through the controls a host
+// presses, and read back out of the DOM the room would be looking at. The round a cell was revealed
+// in, the strike counts, and the indicator text are all read where they LEAVE the system.
+//
+// THE FIXTURE IS THE THREE-ROUND BOARD ON PURPOSE. `games/demo-feud.json` has one column, so on it
+// a board that refuses to go back is indistinguishable from a board with nowhere to go — and a
+// board with one round is also the one place "Round 1 of 1" reads correctly whether the number is
+// an index or a count. Three rounds, moved to the second before anything is asserted about going
+// back, is the smallest fixture where the right and the wrong implementations disagree.
+
+/** The label of the single visible round, straight off the board. */
+function visibleRoundLabel(doc) {
+  const shown = [...doc.querySelectorAll('.qbe-column')].filter((c) => !c.hidden);
+  if (shown.length !== 1) return '(' + shown.length + ' columns visible)';
+  const label = shown[0].querySelector('.qbe-column-label');
+  return label ? label.textContent : '(a visible column with no label)';
+}
+
+/**
+ * The round the ROOM can see, as a one-based number, derived from the game file's own text.
+ *
+ * `games/demo-feud-rounds.json` names its columns "Round 1 — …", "Round 2 — …", "Round 3 — …", and
+ * that text is authored content the indicator code never touches. Comparing the indicator against
+ * THIS rather than against `data-round-active` (which the same renderer call writes) is what keeps
+ * the `M45`/`M46` assertions from being two readings of one path agreeing with each other.
+ */
+function visibleRoundNumber(doc) {
+  const match = /^Round (\d+)/.exec(visibleRoundLabel(doc));
+  return match ? Number(match[1]) : null;
+}
+
+/** The indicator's text exactly as a host reads it off the footer. */
+function indicatorText(doc) {
+  const node = doc.querySelector('.qbe-round-indicator');
+  return node ? node.textContent : '(no .qbe-round-indicator in the DOM)';
+}
+
+/** Both readings at once — the room's round, and the footer's sentence about it. */
+function roundReading(doc) {
+  return visibleRoundNumber(doc) + '/' + indicatorText(doc);
+}
+
+/** A team row's strike marks, as the host sees them beside the name. */
+function teamStrikeMarks(doc, teamIndex) {
+  const node = doc.querySelector('.qbe-team[data-team="' + teamIndex + '"] .qbe-team-strikes');
+  return node ? node.textContent : '(no team row ' + teamIndex + ')';
+}
+
+/**
+ * Press a real key at the document, the way the host's keyboard delivers one.
+ *
+ * Dispatched on the document itself rather than on a cell, so `event.target` is not an Element and
+ * the handler's caret guard is not what happens to make the assertion pass. `repeat` is a first-class
+ * argument because `M49` is entirely about it.
+ */
+function pressKey(win, doc, key, options) {
+  const init = Object.assign({ key, bubbles: true, cancelable: true, repeat: false }, options || {});
+  doc.dispatchEvent(new win.KeyboardEvent('keydown', init));
+}
+
+async function runRoundNavigationSuite() {
+  // ---- 1. the renderer half: the absence rule, and the indicator's arithmetic ------------------
+  //
+  // `M47` lives here as well as in the booted app, because the toolbar is the only place the rule
+  // can be stated in both directions cheaply: the same function, called twice, with and without the
+  // round handlers. An "it is absent" assertion with no positive control passes just as well when
+  // the control is never drawn for anybody.
+  const roundStage = harnessStage();
+  const roundBar = renderer.renderToolbar({
+    mount: roundStage,
+    handlers: { onExport() {}, onImport() {}, onRoundPrev() {}, onRoundNext() {} },
+  });
+  const plainStage = harnessStage();
+  renderer.renderToolbar({ mount: plainStage, handlers: { onExport() {}, onImport() {} } });
+
+  const prevBtn = roundStage.querySelector('.qbe-btn[data-action="round-prev"]');
+  const nextBtn = roundStage.querySelector('.qbe-btn[data-action="round-next"]');
+  const indicatorEl = roundStage.querySelector('.qbe-round-indicator');
+  record('round', 'a toolbar given round handlers draws both controls and the indicator',
+    !!prevBtn && !!nextBtn && !!indicatorEl
+    && prevBtn.tagName === 'BUTTON' && indicatorEl.tagName === 'SPAN'
+    && prevBtn.closest('.qbe-toolbar') === roundBar.root
+    && indicatorEl.closest('.qbe-toolbar') === roundBar.root,
+    'round-prev: ' + (prevBtn ? '<' + prevBtn.tagName.toLowerCase() + '> "' + prevBtn.textContent + '"' : 'MISSING')
+    + '; round-next: ' + (nextBtn ? 'present' : 'MISSING')
+    + '; indicator: ' + (indicatorEl ? '<' + indicatorEl.tagName.toLowerCase() + '> in the toolbar' : 'MISSING'));
+
+  // `M47`, the renderer half. A game type with no rounds passes no round handler, and must get no
+  // element at all — not a disabled button, and not an empty indicator reading "Round 1 of 1".
+  const strayControls = plainStage.querySelectorAll(
+    '.qbe-btn[data-action="round-prev"], .qbe-btn[data-action="round-next"], .qbe-round-indicator');
+  record('round', 'a toolbar with no round handlers draws NO round chrome at all — absent, not inert',
+    strayControls.length === 0,
+    strayControls.length === 0
+      ? 'no round button and no indicator in a toolbar built without them'
+      : [...strayControls].map((n) => n.getAttribute('data-action') || classOf(n)).join(', ')
+        + ' survived into a toolbar that was passed no round handler');
+
+  // The click delegate: pressing the real button calls the real handler. Without this the app-level
+  // assertions below could pass for the wrong reason on a mutation that never wires `round-prev` up
+  // at all, because a board sitting on Round 2 and refusing to move looks identical to one whose
+  // button is dead.
+  let prevCalls = 0;
+  const wiredStage = harnessStage();
+  renderer.renderToolbar({
+    mount: wiredStage,
+    handlers: { onExport() {}, onImport() {}, onRoundPrev() { prevCalls += 1; }, onRoundNext() {} },
+  });
+  const wiredPrev = wiredStage.querySelector('.qbe-btn[data-action="round-prev"]');
+  if (wiredPrev) wiredPrev.click();
+  record('round', 'clicking round-prev reaches onRoundPrev through the toolbar\'s own delegate',
+    prevCalls === 1, 'onRoundPrev was called ' + prevCalls + ' time(s) for one click');
+
+  // `M45` at the boundary where the index becomes a sentence. Asserted at THREE indices, and the
+  // first one is the one that matters: a mutation printing the raw index reads "Round 0 of 3" at
+  // the start of the game, which is the only reading a host could not mistake for a real round.
+  // The later two are checked as well because an off-by-one that only appears after a move — a
+  // total that is really `count - 1`, say — would survive an assertion made once at boot.
+  if (roundBar.setRoundIndicator) {
+    roundBar.setRoundIndicator(0, 3);
+    const atFirst = indicatorText(roundStage);
+    roundBar.setRoundIndicator(1, 3);
+    const atSecond = indicatorText(roundStage);
+    roundBar.setRoundIndicator(2, 3);
+    const atLast = indicatorText(roundStage);
+    record('round', 'the indicator is ONE-BASED and names the total (index 0 reads "Round 1 of 3")',
+      atFirst === 'Round 1 of 3' && atSecond === 'Round 2 of 3' && atLast === 'Round 3 of 3',
+      'index 0 -> "' + atFirst + '", index 1 -> "' + atSecond + '", index 2 -> "' + atLast + '"');
+  } else {
+    record('round', 'the indicator is ONE-BASED and names the total (index 0 reads "Round 1 of 3")',
+      false, 'the toolbar view exposes no setRoundIndicator, so the indicator could not be written');
+  }
+
+  // A ranked board AND its round chrome in one stage, walked against theme-contract §2/§3. Every
+  // other assertContract call in this file looks at a stage with no toolbar in it, so until now the
+  // published shape of the toolbar — including v1.7's new element and new `data-action` — was
+  // transcribed in this file and checked against nothing.
+  const contractRounds = await synthBundle('contract-round-chrome', threeRoundContent(), 'feud');
+  if (!contractRounds.ok) {
+    record('round', 'a ranked board with round chrome validates for the contract walk', false,
+      contractRounds.failures.map(errors.formatFailure).join(' | '));
+  } else {
+    const chromeStage = harnessStage();
+    renderer.renderBoard({
+      bundle: contractRounds.value, session: { cellStates: {}, bonusCells: [] },
+      mount: chromeStage, handlers: {},
+    });
+    renderer.renderToolbar({
+      mount: chromeStage,
+      handlers: {
+        onExport() {}, onImport() {}, onStrike() {}, onStrikeUndo() {}, onStrikesClear() {},
+        onRoundPrev() {}, onRoundNext() {},
+      },
+    });
+    assertContract('ranked board with v1.7 round chrome', chromeStage);
+  }
+
+  // ---- 2. the app half: a real boot, driven the way a host drives it ---------------------------
+  await withEmptyShelf(async () => {
+    const booted = await bootShell('games/demo-feud-rounds.json');
+    const { frame, doc, win } = booted;
+    try {
+      if (booted.timedOut || !doc || !win || !booted.board) {
+        record('round', 'the three-round feud board boots for the round-navigation checks', false,
+          'the shell did not boot within the timeout, so nothing below could be driven');
+        return;
+      }
+
+      const prev = () => doc.querySelector('.qbe-toolbar .qbe-btn[data-action="round-prev"]');
+      const next = () => doc.querySelector('.qbe-toolbar .qbe-btn[data-action="round-next"]');
+
+      // `M47`, the app half and the positive control for every "nothing happened" assertion below:
+      // this board really does carry the chrome, so a later absence means something.
+      record('round', 'a three-round ranked board boots with Previous, Next and the indicator',
+        !!prev() && !!next() && !!doc.querySelector('.qbe-toolbar .qbe-round-indicator'),
+        'previous: ' + (prev() ? 'present' : 'MISSING') + ', next: ' + (next() ? 'present' : 'MISSING')
+        + ', indicator reads "' + indicatorText(doc) + '"');
+
+      if (!prev() || !next()) {
+        record('round', 'the board can be driven backward and forward through its rounds', false,
+          'the round controls were not drawn, so the rest of this suite had nothing to press');
+        return;
+      }
+
+      // `M45` on the real boot. The room is looking at "Round 1 — …" and the footer must agree with
+      // it in words a host reads, not in an index.
+      record('round', 'a freshly booted board reads "Round 1 of 3" while showing its first round',
+        visibleRoundNumber(doc) === 1 && indicatorText(doc) === 'Round 1 of 3',
+        'the board shows "' + visibleRoundLabel(doc) + '" and the footer says "' + indicatorText(doc) + '"');
+
+      // ---- the cell that has to survive the trip (M43) ----------------------------------------
+      //
+      // Revealed through the real overlay — click the cell, press the overlay's own button — rather
+      // than by writing a cell state, because the thing under test is whether a REVEAL made in a
+      // round is still there after leaving and returning. The answer text is the game file's own
+      // ("A toothbrush"), so the assertion after the return is anchored to authored content and
+      // cannot be satisfied by a board that merely re-renders something.
+      const cellIn = (key) => doc.querySelector('.qbe-cell[data-cell="' + key + '"]');
+      const firstCell = cellIn('0:0');
+      if (firstCell) {
+        firstCell.click();
+        const detail = doc.querySelector('.qbe-detail');
+        const nextStep = doc.querySelector('.qbe-detail-next');
+        if (nextStep) nextStep.click();      // hidden -> revealed, answer on screen
+        if (nextStep) nextStep.click();      // nowhere left to go -> the overlay closes
+        if (detail && !detail.hidden) {
+          const close = doc.querySelector('.qbe-detail-close');
+          if (close) close.click();
+        }
+      }
+      const revealedBefore = firstCell ? firstCell.getAttribute('data-state') : '(no cell 0:0)';
+      const revealedTextBefore = firstCell && firstCell.querySelector('.qbe-cell-text')
+        ? firstCell.querySelector('.qbe-cell-text').textContent : '';
+      record('round', 'a cell revealed in Round 1 is revealed before the board goes anywhere',
+        revealedBefore === 'revealed' && revealedTextBefore === 'A toothbrush',
+        'cell 0:0 is "' + revealedBefore + '" showing "' + revealedTextBefore + '"');
+
+      // ---- teams, so there is somebody to charge a strike to (M44) -----------------------------
+      //
+      // Through the toolbar's real Teams… screen. `bootShell` presses Start on empty boxes, which is
+      // a legal game with no teams — and `addStrike` against nobody is a documented no-op, so a
+      // strike assertion on that board would pass by measuring two zeroes.
+      const teamsBtn = doc.querySelector('.qbe-toolbar .qbe-btn[data-action="teams"]');
+      if (teamsBtn) {
+        teamsBtn.click();
+        const setup = doc.querySelector('.qbe-setup[data-screen="teams"]');
+        const boxes = setup ? [...setup.querySelectorAll('.qbe-field-input')] : [];
+        if (boxes[0]) boxes[0].value = 'Red';
+        if (boxes[1]) boxes[1].value = 'Blue';
+        const save = setup ? setup.querySelector('.qbe-btn[data-action="start"]') : null;
+        if (save) save.click();
+      }
+      const rosterReady = await waitFor(() => doc.querySelectorAll('.qbe-team').length === 2
+        && !doc.querySelector('.qbe-setup'), 4000);
+      record('round', 'two teams can be named through the toolbar, so a strike has an owner',
+        rosterReady,
+        rosterReady ? 'the score bar carries Red and Blue and the setup screen is gone'
+          : doc.querySelectorAll('.qbe-team').length + ' team row(s) after the Teams… screen');
+
+      const strikeBtn = () => doc.querySelector('.qbe-toolbar .qbe-btn[data-action="strike"]');
+      const redName = () => doc.querySelector('.qbe-team[data-team="0"] .qbe-team-name');
+      if (redName()) redName().click(); // marking a team is what makes X and Strike do anything
+      if (strikeBtn()) { strikeBtn().click(); strikeBtn().click(); }
+      const round1Strikes = teamStrikeMarks(doc, 0);
+      record('round', 'Red carries two strikes in Round 1 before the board moves',
+        round1Strikes === '✗✗',
+        'Red\'s row shows "' + round1Strikes + '" after two presses of Strike');
+
+      // ---- forward, then back: the whole delta in four presses ---------------------------------
+      next().click();
+      const movedForward = await waitFor(() => visibleRoundNumber(doc) === 2, 3000);
+      const afterNext = roundReading(doc);
+      const round2StrikesFresh = teamStrikeMarks(doc, 0);
+      const round2CellState = cellIn('1:0') ? cellIn('1:0').getAttribute('data-state') : '(no cell 1:0)';
+      record('round', 'Next round moves to Round 2, which carries its OWN empty strikes and hidden cells',
+        movedForward && afterNext === '2/Round 2 of 3'
+        && round2StrikesFresh === '' && round2CellState === 'hidden',
+        'the board reads ' + afterNext + '; Red\'s strikes here are "' + round2StrikesFresh
+        + '" and cell 1:0 is "' + round2CellState + '"');
+
+      // One strike in Round 2, so the two rounds hold DIFFERENT counts. With both at two, a bug that
+      // reads the strikes of the round it left would be indistinguishable from correct behaviour —
+      // the fixture would satisfy both implementations, which is a tautology with a green tick.
+      if (strikeBtn()) strikeBtn().click();
+      const round2Strikes = teamStrikeMarks(doc, 0);
+      record('round', 'Round 2 holds one strike while Round 1 holds two — the two rounds disagree',
+        round2Strikes === '✗',
+        'Red shows "' + round2Strikes + '" in Round 2 (Round 1 held "' + round1Strikes + '")');
+
+      // `M42`. Pressed from Round 2, so a Previous that is secretly `+ 1` lands on Round 3 rather
+      // than being swallowed by the clamp at the bottom of the board — which is exactly what would
+      // happen if this were pressed from Round 1, where the buggy and the correct implementation
+      // both leave the room looking at the same thing.
+      prev().click();
+      const wentBack = await waitFor(() => visibleRoundNumber(doc) === 1, 3000);
+      record('round', 'Previous round goes BACK a round, not forward (from Round 2 to Round 1)',
+        wentBack && roundReading(doc) === '1/Round 1 of 3',
+        'after pressing Previous from Round 2 the board reads ' + roundReading(doc));
+
+      // `M43`. The returned-to round still holds the reveal the host left in it — read off the cell
+      // on the board, with the answer the game file authored, and with a NEIGHBOUR still hidden so
+      // that a mutation which reveals everything fails here too.
+      const backState = cellIn('0:0') ? cellIn('0:0').getAttribute('data-state') : '(no cell 0:0)';
+      const backText = cellIn('0:0') && cellIn('0:0').querySelector('.qbe-cell-text')
+        ? cellIn('0:0').querySelector('.qbe-cell-text').textContent : '';
+      const neighbourState = cellIn('0:1') ? cellIn('0:1').getAttribute('data-state') : '(no cell 0:1)';
+      record('round', 'a returned-to round keeps every reveal it had, and nothing else',
+        backState === 'revealed' && backText === 'A toothbrush' && neighbourState === 'hidden',
+        'cell 0:0 came back "' + backState + '" showing "' + backText
+        + '", and its unopened neighbour 0:1 is "' + neighbourState + '"');
+
+      // `M44`. The strikes that come back are the ones this round was left with, not the ones the
+      // round we came FROM is holding.
+      const backStrikes = teamStrikeMarks(doc, 0);
+      record('round', 'a returned-to round shows ITS OWN strikes, not the later round\'s',
+        backStrikes === '✗✗',
+        'Red shows "' + backStrikes + '" back in Round 1, where two strikes were called'
+        + ' (Round 2 is holding "' + round2Strikes + '")');
+
+      // `M46`. The indicator has now been read after a Next AND after a Previous; going forward once
+      // more proves it is still following the board rather than having been written once and frozen.
+      // A frozen indicator is the failure the element exists to prevent: it does not merely fail to
+      // report a skipped round, it denies one happened.
+      next().click();
+      const forwardAgain = await waitFor(() => visibleRoundNumber(doc) === 2, 3000);
+      const afterReturn = teamStrikeMarks(doc, 0);
+      record('round', 'the indicator follows the board after a Previous as well as a Next',
+        forwardAgain && roundReading(doc) === '2/Round 2 of 3' && afterReturn === '✗',
+        'the board reads ' + roundReading(doc) + ' and Round 2 still holds "' + afterReturn + '"');
+
+      // ---- the arrow keys ---------------------------------------------------------------------
+      //
+      // The positive control for `M48`/`M49`: the keys move the board at all. Without it, every
+      // "the arrow did nothing" assertion below would pass on a build where the keys were never
+      // bound — the guard under test and the absence of the feature look identical from the DOM.
+      pressKey(win, doc, 'ArrowLeft');
+      const arrowBack = await waitFor(() => visibleRoundNumber(doc) === 1, 3000);
+      pressKey(win, doc, 'ArrowRight');
+      const arrowForward = await waitFor(() => visibleRoundNumber(doc) === 2, 3000);
+      record('round', 'the arrow keys move the board: ArrowLeft goes back, ArrowRight goes on',
+        arrowBack && arrowForward && roundReading(doc) === '2/Round 2 of 3',
+        'ArrowLeft reached Round 1 (' + arrowBack + '), ArrowRight returned to '
+        + roundReading(doc));
+
+      // `M49`. A HELD arrow is one round, not the whole game. The repeat press and the ordinary
+      // press are in the same assertion on purpose: the second half proves the first half was a
+      // guard doing its job rather than a key that never arrived. The board is on Round 2, so
+      // ArrowRight has somewhere to go and the clamp cannot be what holds it still.
+      const beforeRepeat = visibleRoundNumber(doc);
+      pressKey(win, doc, 'ArrowRight', { repeat: true });
+      pressKey(win, doc, 'ArrowRight', { repeat: true });
+      const afterRepeat = visibleRoundNumber(doc);
+      pressKey(win, doc, 'ArrowRight');
+      const afterRealPress = await waitFor(() => visibleRoundNumber(doc) === 3, 3000);
+      record('round', 'an auto-repeating arrow moves nothing, while the same key pressed once moves one round',
+        beforeRepeat === 2 && afterRepeat === 2 && afterRealPress,
+        'two repeat:true presses left the board on Round ' + afterRepeat
+        + '; one ordinary press then reached Round ' + visibleRoundNumber(doc));
+
+      // Back to Round 1 for the guard checks, using the control rather than a state write.
+      prev().click();
+      prev().click();
+      await waitFor(() => visibleRoundNumber(doc) === 1, 3000);
+
+      // `M48`, first half: the overlay owns the keyboard while it is up. ArrowRight rather than
+      // ArrowLeft, and from Round 1: ArrowLeft here is clamped at the bottom of the board and would
+      // hold still whether the guard exists or not.
+      const guardCell = cellIn('0:1');
+      if (guardCell) guardCell.click();
+      const overlayUp = !!doc.querySelector('.qbe-detail:not([hidden])');
+      const roundWithOverlay = visibleRoundNumber(doc);
+      pressKey(win, doc, 'ArrowRight');
+      const roundAfterOverlayArrow = visibleRoundNumber(doc);
+      const closeBtn = doc.querySelector('.qbe-detail-close');
+      if (closeBtn) closeBtn.click();
+      record('round', 'an arrow with the question overlay up moves nothing — the overlay owns the keyboard',
+        overlayUp && roundWithOverlay === 1 && roundAfterOverlayArrow === 1,
+        overlayUp ? 'ArrowRight with the detail overlay open left the board on Round '
+          + roundAfterOverlayArrow + ' (it was on ' + roundWithOverlay + ')'
+          : 'the detail overlay never opened, so the guard was never actually exercised');
+
+      // `M48`, second half: a setup overlay is the other thing that owns the keyboard, and it is
+      // the screen a host is most likely to be typing into.
+      const teamsAgain = doc.querySelector('.qbe-toolbar .qbe-btn[data-action="teams"]');
+      if (teamsAgain) teamsAgain.click();
+      const screenUp = !!doc.querySelector('.qbe-setup[data-screen="teams"]');
+      pressKey(win, doc, 'ArrowRight');
+      const roundAfterScreenArrow = visibleRoundNumber(doc);
+      const cancel = doc.querySelector('.qbe-setup[data-screen="teams"] .qbe-btn[data-action="cancel"]');
+      if (cancel) cancel.click();
+      record('round', 'an arrow with the Teams… screen up moves nothing',
+        screenUp && roundAfterScreenArrow === 1,
+        screenUp ? 'ArrowRight with the setup screen open left the board on Round '
+          + roundAfterScreenArrow
+          : 'the Teams… screen never opened, so the guard was never actually exercised');
+
+      // ---- the ends are honest (`M51`) --------------------------------------------------------
+      //
+      // A DISABLED BUTTON IS HONEST; A BUTTON THAT SILENTLY DOES NOTHING IS NOT — this file's own
+      // rule, already applied to the strike controls. `Previous round` shipped enabled and dead on
+      // every FRESH board, because every game starts on Round 1 and `setRound` clamps. Not an
+      // end-of-game corner: the default state of every board that has the control. Found by review
+      // clicking it for real, and the assertion then SURVIVED its first mutation here — disabling
+      // was implemented and nothing checked it.
+      //
+      // Asserted at BOTH ends and in the middle. The middle reading is what stops this passing on a
+      // build that simply disables everything forever, which is the other way to make a dead button.
+      await waitFor(() => visibleRoundNumber(doc) === 1, 3000);
+      const atFirst = { prev: prev().disabled, next: next().disabled };
+      next().click();
+      await waitFor(() => visibleRoundNumber(doc) === 2, 3000);
+      const inMiddle = { prev: prev().disabled, next: next().disabled };
+      next().click();
+      await waitFor(() => visibleRoundNumber(doc) === 3, 3000);
+      const atLast = { prev: prev().disabled, next: next().disabled };
+      record('round', 'the round controls disable at the ends and are live in between — no dead button',
+        atFirst.prev === true && atFirst.next === false
+        && inMiddle.prev === false && inMiddle.next === false
+        && atLast.prev === false && atLast.next === true,
+        'Round 1 ' + JSON.stringify(atFirst) + ', Round 2 ' + JSON.stringify(inMiddle)
+        + ', Round 3 ' + JSON.stringify(atLast));
+
+      // Hand the board back to the focus block on Round 1, where it starts. Walking the rounds to
+      // read the ends left it on Round 3, and the next block focuses a cell in column 0 — which is
+      // hidden and inert from any other round, so it would silently focus nothing and assert
+      // against null. A shared driven session is cheap, but it means every block owes the next one
+      // the state it found.
+      prev().click();
+      prev().click();
+      await waitFor(() => visibleRoundNumber(doc) === 1, 3000);
+
+      // ---- focus survives the move (`M50`) ----------------------------------------------------
+      //
+      // WHY THIS EXISTS AT ALL: the focus repair shipped with NOTHING covering it, and that was not
+      // an argument — it was measured. Review made `renderer.focusRoundCell` `return false` and the
+      // suite stayed green at 476/476, because no assertion anywhere read `document.activeElement`
+      // after a round change. The feature's only new accessibility behaviour had zero teeth on it.
+      //
+      // Changing round sets the outgoing column `hidden` and `inert`, so a cell holding focus is
+      // taken out from under the host and focus falls to `<body>`; a keyboard host would then Tab
+      // from the top of the document back to the board on every round change (WCAG 2.4.3). The
+      // button path never had this problem — pressing a button leaves focus on a button that does
+      // not move — so the arrows created it and the arrows repair it.
+      const focusCell = cellIn('0:1');
+      if (focusCell) focusCell.focus();
+      const focusStart = doc.activeElement && doc.activeElement.getAttribute('data-cell');
+      pressKey(win, doc, 'ArrowRight');
+      await waitFor(() => visibleRoundNumber(doc) === 2, 3000);
+      const focusAfterMove = doc.activeElement && doc.activeElement.getAttribute('data-cell');
+      record('round', 'an arrow that changes round carries focus onto the new round, not to <body>',
+        focusStart === '0:1' && focusAfterMove === '1:0',
+        'focus went from ' + focusStart + ' to '
+        + (focusAfterMove || (doc.activeElement && doc.activeElement.tagName)));
+
+      // THE OTHER HALF, and it fails against the code as first shipped. `setRound` CLAMPS, so an
+      // arrow at the first or last round is a no-op — and the repair fired anyway, moving a host
+      // who had tabbed to the last answer back to the top of a round that never changed. That is
+      // the exact failure the repair exists to prevent, caused by the repair. A fixture at a
+      // boundary is the only kind that can tell the two implementations apart: anywhere in the
+      // middle, "repair always" and "repair only on a real move" are indistinguishable.
+      prev().click();
+      await waitFor(() => visibleRoundNumber(doc) === 1, 3000);
+      const edgeCell = cellIn('0:1');
+      if (edgeCell) edgeCell.focus();
+      const edgeStart = doc.activeElement && doc.activeElement.getAttribute('data-cell');
+      pressKey(win, doc, 'ArrowLeft'); // clamped: already on the first round
+      const edgeAfter = doc.activeElement && doc.activeElement.getAttribute('data-cell');
+      record('round', 'a CLAMPED arrow leaves focus exactly where it was — it repairs only a real move',
+        edgeStart === '0:1' && edgeAfter === '0:1' && visibleRoundNumber(doc) === 1,
+        'focus went from ' + edgeStart + ' to ' + edgeAfter
+        + ' while the board stayed on Round ' + visibleRoundNumber(doc));
+    } finally {
+      frame.remove();
+    }
+  });
+
+  // `M47`, the last shape of it and the one a mutation is likeliest to survive: a board that is not
+  // a ranked list has no rounds at all, and a board with one round has nowhere to go in either
+  // direction. Both are real shipped boards rather than synthetic ones, so a regression here is a
+  // regression a host would meet.
+  await withEmptyShelf(async () => {
+    for (const [game, why] of [
+      ['games/demo-bingo.json', 'a bingo card is a grid — its columns are not rounds'],
+      ['games/demo-feud.json', 'a ranked board of ONE column has nowhere to go in either direction'],
+    ]) {
+      const booted = await bootShell(game);
+      const { frame, doc } = booted;
+      try {
+        if (booted.timedOut || !doc || !booted.board) {
+          record('round', game + ': draws no round chrome (' + why + ')', false,
+            'the shell did not boot, so the absence could not be measured');
+          continue;
+        }
+        const found = [...doc.querySelectorAll(
+          '.qbe-btn[data-action="round-prev"], .qbe-btn[data-action="round-next"], .qbe-round-indicator')];
+        record('round', game + ': draws no round chrome (' + why + ')',
+          found.length === 0,
+          found.length === 0
+            ? 'no Previous, no Next and no indicator anywhere in the booted app'
+            : found.map((n) => n.getAttribute('data-action') || 'the indicator').join(', ')
+              + ' reached a board that has no rounds to move between');
+      } finally {
+        frame.remove();
+      }
+    }
+  });
+}
+
 // ---------------------------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------------------------
@@ -5628,6 +6146,10 @@ export async function run(mount) {
   // source text. Both suites hand the session shelf back exactly as they found it (withEmptyShelf).
   await runStateSuite();
   await runBonusSuite();
+  // F14/D22. After the state suite because it boots the shell and uses the same shelf helpers, and
+  // next to it because what it proves is a state-and-repaint claim rather than a drawing one: the
+  // round a host goes back to is the round they left.
+  await runRoundNavigationSuite();
   // F8. Pure detection plus the rail that shows it — no shelf, no boot, so it can run anywhere in
   // this list; it sits after the state suite because it reads `state` and after the render suite
   // because it renders a real board to hang the rail on.
